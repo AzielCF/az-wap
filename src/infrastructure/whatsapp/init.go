@@ -408,9 +408,7 @@ func CleanupDatabase() error {
 }
 
 func removeFileIfExists(uri string) {
-	if strings.HasPrefix(uri, "file:") {
-		uri = strings.TrimPrefix(uri, "file:")
-	}
+	uri = strings.TrimPrefix(uri, "file:")
 	path := strings.Split(uri, "?")[0]
 	if path == "" || strings.HasPrefix(path, ":memory:") {
 		return
@@ -495,9 +493,8 @@ func handler(ctx context.Context, rawEvt any, repo domainChatStorage.IChatStorag
 		}
 	case *events.PairSuccess:
 		websocket.Broadcast <- websocket.BroadcastMessage{Code: "LOGIN_SUCCESS", Message: fmt.Sprintf("Successfully pair with %s", evt.ID.String())}
-		gDB, gKDB := db, keysDB
 		globalStateMu.RLock() // Safe read global vars
-		gDB, gKDB = db, keysDB
+		gDB, gKDB := db, keysDB
 		globalStateMu.RUnlock()
 		syncKeysDevice(ctx, gDB, gKDB)
 	case *events.LoggedOut:
@@ -683,7 +680,7 @@ func handleHistorySync(ctx context.Context, evt *events.HistorySync, repo domain
 	switch evt.Data.GetSyncType() {
 	case waHistorySync.HistorySync_INITIAL_BOOTSTRAP, waHistorySync.HistorySync_RECENT:
 		for _, conv := range evt.Data.GetConversations() {
-			processConversation(ctx, conv, repo, client)
+			processConversation(conv, repo, client)
 		}
 	case waHistorySync.HistorySync_PUSH_NAME:
 		for _, pn := range evt.Data.GetPushnames() {
@@ -694,8 +691,7 @@ func handleHistorySync(ctx context.Context, evt *events.HistorySync, repo domain
 		}
 	}
 }
-
-func processConversation(ctx context.Context, conv *waHistorySync.Conversation, repo domainChatStorage.IChatStorageRepository, client *whatsmeow.Client) {
+func processConversation(conv *waHistorySync.Conversation, repo domainChatStorage.IChatStorageRepository, client *whatsmeow.Client) {
 	chatJID := conv.GetID()
 	if chatJID == "" {
 		return
