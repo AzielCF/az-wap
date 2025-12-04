@@ -12,3 +12,4 @@ storages
 bin
 .playwright-mcp
 .cursor/mcp.json
+az-wap.exe
