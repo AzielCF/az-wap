@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	"go.mau.fi/whatsmeow/types/events"
 )
 

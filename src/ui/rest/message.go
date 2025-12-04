@@ -1,8 +1,8 @@
 package rest
 
 import (
-	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -31,6 +31,11 @@ func (controller *Message) RevokeMessage(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	request.MessageID = c.Params("message_id")
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.RevokeMessage(c.UserContext(), request)
@@ -128,6 +133,11 @@ func (controller *Message) StarMessage(c *fiber.Ctx) error {
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 	request.IsStarred = true
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	err = controller.Service.StarMessage(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -148,6 +158,11 @@ func (controller *Message) UnstarMessage(c *fiber.Ctx) error {
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 	request.IsStarred = false
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 	err = controller.Service.StarMessage(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -165,6 +180,11 @@ func (controller *Message) DownloadMedia(c *fiber.Ctx) error {
 	request.MessageID = c.Params("message_id")
 	request.Phone = c.Query("phone")
 	utils.SanitizePhone(&request.Phone)
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	response, err := controller.Service.DownloadMedia(c.UserContext(), request)
 	utils.PanicIfNeeded(err)

@@ -8,8 +8,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"go.mau.fi/whatsmeow"
 )
@@ -48,6 +48,12 @@ func (controller *Group) JoinGroupWithLink(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	response, err := controller.Service.JoinGroupWithLink(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -66,6 +72,12 @@ func (controller *Group) GetGroupInfoFromLink(c *fiber.Ctx) error {
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	response, err := controller.Service.GetGroupInfoFromLink(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -81,6 +93,12 @@ func (controller *Group) LeaveGroup(c *fiber.Ctx) error {
 	var request domainGroup.LeaveGroupRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.GroupID)
 
@@ -99,6 +117,12 @@ func (controller *Group) CreateGroup(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	groupID, err := controller.Service.CreateGroup(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -116,6 +140,12 @@ func (controller *Group) ListParticipants(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupParticipantsRequest
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	if request.GroupID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(utils.ResponseData{
@@ -142,6 +172,12 @@ func (controller *Group) ExportParticipants(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupParticipantsRequest
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	if request.GroupID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(utils.ResponseData{
@@ -246,6 +282,13 @@ func (controller *Group) manageParticipants(c *fiber.Ctx, action whatsmeow.Parti
 	var request domainGroup.ParticipantRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.GroupID)
 	request.Action = action
 	result, err := controller.Service.ManageParticipant(c.UserContext(), request)
@@ -263,6 +306,13 @@ func (controller *Group) handleRequestedParticipants(c *fiber.Ctx, action whatsm
 	var request domainGroup.GroupRequestParticipantsRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.GroupID)
 	request.Action = action
 	result, err := controller.Service.ManageGroupRequestParticipants(c.UserContext(), request)
@@ -279,6 +329,12 @@ func (controller *Group) SetGroupPhoto(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupPhotoRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.GroupID)
 
@@ -329,6 +385,12 @@ func (controller *Group) SetGroupName(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupName(c.UserContext(), request)
@@ -345,6 +407,12 @@ func (controller *Group) SetGroupLocked(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupLockedRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.GroupID)
 
@@ -368,6 +436,12 @@ func (controller *Group) SetGroupAnnounce(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupAnnounce(c.UserContext(), request)
@@ -389,6 +463,12 @@ func (controller *Group) SetGroupTopic(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupTopicRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.GroupID)
 
@@ -413,6 +493,12 @@ func (controller *Group) GroupInfo(c *fiber.Ctx) error {
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.GroupID)
 
 	response, err := controller.Service.GroupInfo(c.UserContext(), request)
@@ -430,6 +516,12 @@ func (controller *Group) GetGroupInviteLink(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupInviteLinkRequest
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.GroupID)
 

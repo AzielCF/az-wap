@@ -5,14 +5,14 @@ import (
 	"mime/multipart"
 	"time"
 
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 )
 
 func SetAutoConnectAfterBooting(service domainApp.IAppUsecase) {
 	time.Sleep(2 * time.Second)
-	_ = service.Reconnect(context.Background())
+	_ = service.Reconnect(context.Background(), "")
 }
 
 func SetAutoReconnectChecking(cli *whatsmeow.Client) {

@@ -19,8 +19,8 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	"github.com/AzielCF/az-wap/config"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"go.mau.fi/whatsmeow"
 )
 
@@ -71,6 +71,12 @@ func determineMediaExtension(originalFilename, mimeType string) string {
 		if ext := filepath.Ext(originalFilename); ext != "" {
 			return ext
 		}
+	}
+
+	// Normalizar algunos tipos de video no estándar (por ejemplo, m4v) a mp4
+	lower := strings.ToLower(strings.TrimSpace(mimeType))
+	if lower == "video/x-m4v" || lower == "video/m4v" {
+		mimeType = "video/mp4"
 	}
 
 	if ext, ok := resolveKnownDocumentExtension(mimeType); ok {

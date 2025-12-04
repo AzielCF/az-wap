@@ -5,24 +5,26 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"go.mau.fi/whatsmeow/store/sqlstore"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
-	domainChat "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chat"
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
-	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
-	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
-	domainNewsletter "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/newsletter"
-	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
-	domainUser "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/user"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatstorage"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/usecase"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+
+	"github.com/AzielCF/az-wap/config"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainInstance "github.com/AzielCF/az-wap/domains/instance"
+	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	domainSend "github.com/AzielCF/az-wap/domains/send"
+	domainUser "github.com/AzielCF/az-wap/domains/user"
+	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/usecase"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -50,12 +52,13 @@ var (
 	messageUsecase    domainMessage.IMessageUsecase
 	groupUsecase      domainGroup.IGroupUsecase
 	newsletterUsecase domainNewsletter.INewsletterUsecase
+	instanceUsecase   domainInstance.IInstanceUsecase
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Short: "Send free whatsapp API",
-	Long: `This application is from clone https://github.com/aldinokemal/go-whatsapp-web-multidevice, 
+	Long: `This application is from clone https://az-wap, 
 you can send whatsapp over http api but your whatsapp account have to be multi device version`,
 }
 
@@ -255,6 +258,51 @@ func initChatStorage() (*sql.DB, error) {
 	return db, nil
 }
 
+func autoConnectAllInstances(ctx context.Context) {
+	if instanceUsecase == nil {
+		return
+	}
+
+	instances, err := instanceUsecase.List(ctx)
+	if err != nil {
+		logrus.WithError(err).Error("[AUTO_CONNECT] failed to list instances for auto-connect")
+		return
+	}
+
+	for _, inst := range instances {
+		trimmedID := strings.TrimSpace(inst.ID)
+		if trimmedID == "" {
+			continue
+		}
+
+		go func(id string) {
+			client, _, err := whatsapp.GetOrInitInstanceClient(context.Background(), id, chatStorageRepo)
+			if err != nil {
+				logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to init client for instance %s", id)
+				return
+			}
+
+			// Client may be nil if instance has no device yet (needs login)
+			if client == nil {
+				logrus.Infof("[AUTO_CONNECT] instance %s has no device yet (needs login), skipping", id)
+				return
+			}
+
+			if client.IsConnected() && client.IsLoggedIn() {
+				logrus.Infof("[AUTO_CONNECT] instance %s already connected", id)
+				return
+			}
+
+			if err := client.Connect(); err != nil {
+				logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to connect instance %s", id)
+				return
+			}
+
+			logrus.Infof("[AUTO_CONNECT] instance %s connected on startup", id)
+		}(trimmedID)
+	}
+}
+
 func initApp() {
 	if config.AppDebug {
 		config.WhatsappLogLevel = "DEBUG"
@@ -287,13 +335,16 @@ func initApp() {
 	whatsappCli = whatsapp.InitWaCLI(ctx, whatsappDB, keysDB, chatStorageRepo)
 
 	// Usecase
-	appUsecase = usecase.NewAppService(chatStorageRepo)
-	chatUsecase = usecase.NewChatService(chatStorageRepo)
-	sendUsecase = usecase.NewSendService(appUsecase, chatStorageRepo)
+	instanceUsecase = usecase.NewInstanceService()
+	appUsecase = usecase.NewAppService(chatStorageRepo, instanceUsecase)
+	chatUsecase = usecase.NewChatService(chatStorageRepo, instanceUsecase)
+	sendUsecase = usecase.NewSendService(appUsecase, chatStorageRepo, instanceUsecase)
 	userUsecase = usecase.NewUserService()
-	messageUsecase = usecase.NewMessageService(chatStorageRepo)
-	groupUsecase = usecase.NewGroupService()
+	messageUsecase = usecase.NewMessageService(appUsecase, chatStorageRepo, instanceUsecase)
+	groupUsecase = usecase.NewGroupService(appUsecase)
 	newsletterUsecase = usecase.NewNewsletterService()
+
+	go autoConnectAllInstances(ctx)
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

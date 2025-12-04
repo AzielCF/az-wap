@@ -39,10 +39,13 @@ export default {
             }
         },
         async handleSubmit() {
+            await this.submitApi();
+        },
+        async submitApi() {
             if (this.submitting) return;
             try {
                 this.submitting = true;
-                const { data } = await http.get(`/app/login-with-code`, {
+                const { data } = await window.http.get('/app/login-with-code', {
                     params: {
                         phone: this.phone,
                     },
@@ -51,7 +54,7 @@ export default {
             } catch (err) {
                 if (err.response) {
                     showErrorInfo(err.response.data.message);
-                }else{
+                } else {
                     showErrorInfo(err.message);
                 }
             } finally {

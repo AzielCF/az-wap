@@ -9,9 +9,9 @@ import (
 
 	"go.mau.fi/whatsmeow/types"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/pkg/chatmedia"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -51,15 +51,20 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 			if err != nil {
 				logrus.Errorf("Error when parse jid: %v", err)
 			} else {
-				pn, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
-				if err != nil {
-					logrus.Errorf("Error when get pn for lid %s: %v", lid.String(), err)
-				}
-				if !pn.IsEmpty() {
-					if from_group != "" {
-						body["from"] = fmt.Sprintf("%s in %s", pn.String(), from_group)
-					} else {
-						body["from"] = pn.String()
+				client := getClientForContext(ctx)
+				if client == nil || client.Store == nil || client.Store.LIDs == nil {
+					logrus.Warnf("LID store not available; skipping PN lookup for lid %s", lid.String())
+				} else {
+					pn, err := client.Store.LIDs.GetPNForLID(ctx, lid)
+					if err != nil {
+						logrus.Errorf("Error when get pn for lid %s: %v", lid.String(), err)
+					}
+					if !pn.IsEmpty() {
+						if from_group != "" {
+							body["from"] = fmt.Sprintf("%s in %s", pn.String(), from_group)
+						} else {
+							body["from"] = pn.String()
+						}
 					}
 				}
 			}
@@ -76,12 +81,17 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 			if err != nil {
 				logrus.Errorf("Error when parse jid: %v", err)
 			} else {
-				pn, err := cli.Store.LIDs.GetPNForLID(ctx, lid)
-				if err != nil {
-					logrus.Errorf("Error when get pn for lid %s: %v", lid.String(), err)
-				}
-				if !pn.IsEmpty() {
-					message.Text = strings.Replace(message.Text, tag, fmt.Sprintf("@%s", pn.User), -1)
+				client := getClientForContext(ctx)
+				if client == nil || client.Store == nil || client.Store.LIDs == nil {
+					logrus.Warnf("LID store not available; skipping PN lookup for tag %s (lid %s)", tag, lid.String())
+				} else {
+					pn, err := client.Store.LIDs.GetPNForLID(ctx, lid)
+					if err != nil {
+						logrus.Errorf("Error when get pn for lid %s: %v", lid.String(), err)
+					}
+					if !pn.IsEmpty() {
+						message.Text = strings.Replace(message.Text, tag, fmt.Sprintf("@%s", pn.User), -1)
+					}
 				}
 			}
 		}
@@ -135,12 +145,26 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 
 	if audioMedia := evt.Message.GetAudioMessage(); audioMedia != nil {
 		if config.WhatsappAutoDownloadMedia {
-			path, err := utils.ExtractMedia(ctx, cli, config.PathMedia, audioMedia)
-			if err != nil {
-				logrus.Errorf("Failed to download audio from %s: %v", evt.Info.SourceString(), err)
-				return nil, pkgError.WebhookError(fmt.Sprintf("Failed to download audio: %v", err))
+			client := getClientForContext(ctx)
+			if client != nil {
+				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, audioMedia)
+				if err != nil {
+					logrus.Errorf("Failed to download audio from %s: %v", evt.Info.SourceString(), err)
+				} else {
+					body["audio"] = media
+					chatmedia.Add(evt.Info.ID, chatmedia.Item{
+						Kind:     "audio",
+						Path:     media.MediaPath,
+						MimeType: media.MimeType,
+						Caption:  media.Caption,
+					})
+				}
 			}
-			body["audio"] = path
+			if _, ok := body["audio"]; !ok {
+				body["audio"] = map[string]any{
+					"url": audioMedia.GetURL(),
+				}
+			}
 		} else {
 			body["audio"] = map[string]any{
 				"url": audioMedia.GetURL(),
@@ -154,12 +178,27 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 
 	if documentMedia := evt.Message.GetDocumentMessage(); documentMedia != nil {
 		if config.WhatsappAutoDownloadMedia {
-			path, err := utils.ExtractMedia(ctx, cli, config.PathMedia, documentMedia)
-			if err != nil {
-				logrus.Errorf("Failed to download document from %s: %v", evt.Info.SourceString(), err)
-				return nil, pkgError.WebhookError(fmt.Sprintf("Failed to download document: %v", err))
+			client := getClientForContext(ctx)
+			if client != nil {
+				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, documentMedia)
+				if err != nil {
+					logrus.Errorf("Failed to download document from %s: %v", evt.Info.SourceString(), err)
+				} else {
+					body["document"] = media
+					chatmedia.Add(evt.Info.ID, chatmedia.Item{
+						Kind:     "document",
+						Path:     media.MediaPath,
+						MimeType: media.MimeType,
+						Caption:  media.Caption,
+					})
+				}
 			}
-			body["document"] = path
+			if _, ok := body["document"]; !ok {
+				body["document"] = map[string]any{
+					"url":      documentMedia.GetURL(),
+					"filename": documentMedia.GetFileName(),
+				}
+			}
 		} else {
 			body["document"] = map[string]any{
 				"url":      documentMedia.GetURL(),
@@ -170,12 +209,27 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 
 	if imageMedia := evt.Message.GetImageMessage(); imageMedia != nil {
 		if config.WhatsappAutoDownloadMedia {
-			path, err := utils.ExtractMedia(ctx, cli, config.PathMedia, imageMedia)
-			if err != nil {
-				logrus.Errorf("Failed to download image from %s: %v", evt.Info.SourceString(), err)
-				return nil, pkgError.WebhookError(fmt.Sprintf("Failed to download image: %v", err))
+			client := getClientForContext(ctx)
+			if client != nil {
+				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, imageMedia)
+				if err != nil {
+					logrus.Errorf("Failed to download image from %s: %v", evt.Info.SourceString(), err)
+				} else {
+					body["image"] = media
+					chatmedia.Add(evt.Info.ID, chatmedia.Item{
+						Kind:     "image",
+						Path:     media.MediaPath,
+						MimeType: media.MimeType,
+						Caption:  media.Caption,
+					})
+				}
 			}
-			body["image"] = path
+			if _, ok := body["image"]; !ok {
+				body["image"] = map[string]any{
+					"url":     imageMedia.GetURL(),
+					"caption": imageMedia.GetCaption(),
+				}
+			}
 		} else {
 			body["image"] = map[string]any{
 				"url":     imageMedia.GetURL(),
@@ -202,12 +256,26 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 
 	if stickerMedia := evt.Message.GetStickerMessage(); stickerMedia != nil {
 		if config.WhatsappAutoDownloadMedia {
-			path, err := utils.ExtractMedia(ctx, cli, config.PathMedia, stickerMedia)
-			if err != nil {
-				logrus.Errorf("Failed to download sticker from %s: %v", evt.Info.SourceString(), err)
-				return nil, pkgError.WebhookError(fmt.Sprintf("Failed to download sticker: %v", err))
+			client := getClientForContext(ctx)
+			if client != nil {
+				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, stickerMedia)
+				if err != nil {
+					logrus.Errorf("Failed to download sticker from %s: %v", evt.Info.SourceString(), err)
+				} else {
+					body["sticker"] = media
+					chatmedia.Add(evt.Info.ID, chatmedia.Item{
+						Kind:     "sticker",
+						Path:     media.MediaPath,
+						MimeType: media.MimeType,
+						Caption:  media.Caption,
+					})
+				}
 			}
-			body["sticker"] = path
+			if _, ok := body["sticker"]; !ok {
+				body["sticker"] = map[string]any{
+					"url": stickerMedia.GetURL(),
+				}
+			}
 		} else {
 			body["sticker"] = map[string]any{
 				"url": stickerMedia.GetURL(),
@@ -217,12 +285,27 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 
 	if videoMedia := evt.Message.GetVideoMessage(); videoMedia != nil {
 		if config.WhatsappAutoDownloadMedia {
-			path, err := utils.ExtractMedia(ctx, cli, config.PathMedia, videoMedia)
-			if err != nil {
-				logrus.Errorf("Failed to download video from %s: %v", evt.Info.SourceString(), err)
-				return nil, pkgError.WebhookError(fmt.Sprintf("Failed to download video: %v", err))
+			client := getClientForContext(ctx)
+			if client != nil {
+				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, videoMedia)
+				if err != nil {
+					logrus.Errorf("Failed to download video from %s: %v", evt.Info.SourceString(), err)
+				} else {
+					body["video"] = media
+					chatmedia.Add(evt.Info.ID, chatmedia.Item{
+						Kind:     "video",
+						Path:     media.MediaPath,
+						MimeType: media.MimeType,
+						Caption:  media.Caption,
+					})
+				}
 			}
-			body["video"] = path
+			if _, ok := body["video"]; !ok {
+				body["video"] = map[string]any{
+					"url":     videoMedia.GetURL(),
+					"caption": videoMedia.GetCaption(),
+				}
+			}
 		} else {
 			body["video"] = map[string]any{
 				"url":     videoMedia.GetURL(),
@@ -232,4 +315,49 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 	}
 
 	return body, nil
+}
+
+// NormalizePhoneForChatwoot devuelve el número en formato +<digits> usando la
+// misma lógica que el webhook: toma el campo final "from" (ya resuelto vía
+// LID store cuando está disponible) y aplica
+//
+//	from.split('@')[0].split(':')[0].replace(/[^0-9]/g, '')
+//
+// para extraer solo los dígitos.
+func NormalizePhoneForChatwoot(ctx context.Context, evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+
+	payload, err := createMessagePayload(ctx, evt)
+	if err != nil {
+		logrus.WithError(err).Warn("[CHATWOOT] failed to build payload for phone normalization")
+		return ""
+	}
+
+	rawFrom, _ := payload["from"].(string)
+	from := strings.TrimSpace(rawFrom)
+	if from == "" {
+		return ""
+	}
+
+	// from.split('@')[0]
+	candidate := from
+	if idx := strings.Index(candidate, "@"); idx >= 0 {
+		candidate = candidate[:idx]
+	}
+
+	// .split(':')[0]
+	if idx := strings.Index(candidate, ":"); idx >= 0 {
+		candidate = candidate[:idx]
+	}
+
+	reDigits := regexp.MustCompile("[^0-9]+")
+	digits := reDigits.ReplaceAllString(candidate, "")
+	logrus.Debugf("[CHATWOOT] normalize phone from payload: from=%q candidate=%q digits=%q", from, candidate, digits)
+	if digits == "" {
+		return ""
+	}
+
+	return "+" + digits
 }

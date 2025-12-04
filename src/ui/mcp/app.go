@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -67,7 +67,7 @@ func (h *AppHandler) toolLoginWithQR() mcp.Tool {
 }
 
 func (h *AppHandler) handleLoginWithQR(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	resp, err := h.appService.Login(ctx)
+	resp, err := h.appService.Login(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (h *AppHandler) handleLoginWithCode(ctx context.Context, request mcp.CallTo
 	}
 
 	trimmedPhone := strings.TrimSpace(phone)
-	pairCode, err := h.appService.LoginWithCode(ctx, trimmedPhone)
+	pairCode, err := h.appService.LoginWithCode(ctx, "", trimmedPhone)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (h *AppHandler) toolLogout() mcp.Tool {
 }
 
 func (h *AppHandler) handleLogout(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if err := h.appService.Logout(ctx); err != nil {
+	if err := h.appService.Logout(ctx, ""); err != nil {
 		return nil, err
 	}
 
@@ -157,7 +157,7 @@ func (h *AppHandler) toolReconnect() mcp.Tool {
 }
 
 func (h *AppHandler) handleReconnect(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if err := h.appService.Reconnect(ctx); err != nil {
+	if err := h.appService.Reconnect(ctx, ""); err != nil {
 		return nil, err
 	}
 

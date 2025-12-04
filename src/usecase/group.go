@@ -6,23 +6,38 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
+	"github.com/AzielCF/az-wap/config"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/validations"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
-type serviceGroup struct{}
+type serviceGroup struct {
+	appService domainApp.IAppUsecase
+}
 
-func NewGroupService() domainGroup.IGroupUsecase {
-	return &serviceGroup{}
+func NewGroupService(appService domainApp.IAppUsecase) domainGroup.IGroupUsecase {
+	return &serviceGroup{appService: appService}
+}
+
+func (service serviceGroup) ensureClientForToken(ctx context.Context, token string) error {
+	if token == "" || service.appService == nil {
+		return nil
+	}
+	_, err := service.appService.FirstDevice(ctx, token)
+	return err
 }
 
 func (service serviceGroup) JoinGroupWithLink(ctx context.Context, request domainGroup.JoinGroupWithLinkRequest) (groupID string, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return groupID, err
+	}
+
 	if err = validations.ValidateJoinGroupWithLink(ctx, request); err != nil {
 		return groupID, err
 	}
@@ -36,6 +51,10 @@ func (service serviceGroup) JoinGroupWithLink(ctx context.Context, request domai
 }
 
 func (service serviceGroup) LeaveGroup(ctx context.Context, request domainGroup.LeaveGroupRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateLeaveGroup(ctx, request); err != nil {
 		return err
 	}
@@ -49,6 +68,10 @@ func (service serviceGroup) LeaveGroup(ctx context.Context, request domainGroup.
 }
 
 func (service serviceGroup) CreateGroup(ctx context.Context, request domainGroup.CreateGroupRequest) (groupID string, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return groupID, err
+	}
+
 	if err = validations.ValidateCreateGroup(ctx, request); err != nil {
 		return groupID, err
 	}
@@ -75,6 +98,10 @@ func (service serviceGroup) CreateGroup(ctx context.Context, request domainGroup
 }
 
 func (service serviceGroup) GetGroupInfoFromLink(ctx context.Context, request domainGroup.GetGroupInfoFromLinkRequest) (response domainGroup.GetGroupInfoFromLinkResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateGetGroupInfoFromLink(ctx, request); err != nil {
 		return response, err
 	}
@@ -101,6 +128,10 @@ func (service serviceGroup) GetGroupInfoFromLink(ctx context.Context, request do
 }
 
 func (service serviceGroup) ManageParticipant(ctx context.Context, request domainGroup.ParticipantRequest) (result []domainGroup.ParticipantStatus, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return result, err
+	}
+
 	if err = validations.ValidateParticipant(ctx, request); err != nil {
 		return result, err
 	}
@@ -141,6 +172,10 @@ func (service serviceGroup) ManageParticipant(ctx context.Context, request domai
 }
 
 func (service serviceGroup) GetGroupParticipants(ctx context.Context, request domainGroup.GetGroupParticipantsRequest) (response domainGroup.GetGroupParticipantsResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateGetGroupParticipants(ctx, request); err != nil {
 		return response, err
 	}
@@ -177,6 +212,10 @@ func (service serviceGroup) GetGroupParticipants(ctx context.Context, request do
 }
 
 func (service serviceGroup) GetGroupRequestParticipants(ctx context.Context, request domainGroup.GetGroupRequestParticipantsRequest) (result []domainGroup.GetGroupRequestParticipantsResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return result, err
+	}
+
 	if err = validations.ValidateGetGroupRequestParticipants(ctx, request); err != nil {
 		return result, err
 	}
@@ -202,6 +241,10 @@ func (service serviceGroup) GetGroupRequestParticipants(ctx context.Context, req
 }
 
 func (service serviceGroup) ManageGroupRequestParticipants(ctx context.Context, request domainGroup.GroupRequestParticipantsRequest) (result []domainGroup.ParticipantStatus, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return result, err
+	}
+
 	if err = validations.ValidateManageGroupRequestParticipants(ctx, request); err != nil {
 		return result, err
 	}
@@ -257,6 +300,10 @@ func (service serviceGroup) participantToJID(participants []string) ([]types.JID
 }
 
 func (service serviceGroup) SetGroupPhoto(ctx context.Context, request domainGroup.SetGroupPhotoRequest) (pictureID string, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return pictureID, err
+	}
+
 	if err = validations.ValidateSetGroupPhoto(ctx, request); err != nil {
 		return pictureID, err
 	}
@@ -294,6 +341,10 @@ func (service serviceGroup) SetGroupPhoto(ctx context.Context, request domainGro
 }
 
 func (service serviceGroup) SetGroupName(ctx context.Context, request domainGroup.SetGroupNameRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateSetGroupName(ctx, request); err != nil {
 		return err
 	}
@@ -307,6 +358,10 @@ func (service serviceGroup) SetGroupName(ctx context.Context, request domainGrou
 }
 
 func (service serviceGroup) SetGroupLocked(ctx context.Context, request domainGroup.SetGroupLockedRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateSetGroupLocked(ctx, request); err != nil {
 		return err
 	}
@@ -320,6 +375,10 @@ func (service serviceGroup) SetGroupLocked(ctx context.Context, request domainGr
 }
 
 func (service serviceGroup) SetGroupAnnounce(ctx context.Context, request domainGroup.SetGroupAnnounceRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateSetGroupAnnounce(ctx, request); err != nil {
 		return err
 	}
@@ -333,6 +392,10 @@ func (service serviceGroup) SetGroupAnnounce(ctx context.Context, request domain
 }
 
 func (service serviceGroup) SetGroupTopic(ctx context.Context, request domainGroup.SetGroupTopicRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateSetGroupTopic(ctx, request); err != nil {
 		return err
 	}
@@ -377,6 +440,10 @@ func (service serviceGroup) GroupInfo(ctx context.Context, request domainGroup.G
 }
 
 func (service serviceGroup) GetGroupInviteLink(ctx context.Context, request domainGroup.GetGroupInviteLinkRequest) (response domainGroup.GetGroupInviteLinkResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateGetGroupInviteLink(ctx, request); err != nil {
 		return response, err
 	}

@@ -7,6 +7,7 @@ type ListChatsRequest struct {
 	Offset   int    `json:"offset" query:"offset"`
 	Search   string `json:"search" query:"search"`
 	HasMedia bool   `json:"has_media" query:"has_media"`
+	Token    string `json:"token,omitempty"`
 }
 
 type ListChatsResponse struct {
@@ -23,6 +24,7 @@ type GetChatMessagesRequest struct {
 	MediaOnly bool    `json:"media_only" query:"media_only"`
 	IsFromMe  *bool   `json:"is_from_me" query:"is_from_me"`
 	Search    string  `json:"search" query:"search"`
+	Token     string  `json:"token,omitempty"`
 }
 
 type GetChatMessagesResponse struct {
@@ -35,6 +37,7 @@ type GetChatMessagesResponse struct {
 type PinChatRequest struct {
 	ChatJID string `json:"chat_jid" uri:"chat_jid"`
 	Pinned  bool   `json:"pinned"`
+	Token   string `json:"token,omitempty"`
 }
 
 type PinChatResponse struct {

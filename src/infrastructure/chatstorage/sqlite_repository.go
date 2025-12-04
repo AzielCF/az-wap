@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -606,24 +606,10 @@ func (r *SQLiteRepository) TruncateAllDataWithLogging(logPrefix string) error {
 		logrus.Infof("[%s] Storage before truncation: %d chats, %d messages", logPrefix, chatCount, messageCount)
 	}
 
-	// Perform truncation
-	if err := r.TruncateAllChats(); err != nil {
-		return fmt.Errorf("failed to truncate chatstorage data: %w", err)
-	}
-
-	// Verify truncation
-	chatCountAfter, messageCountAfter, err := r.GetStorageStatistics()
-	if err != nil {
-		logrus.Warnf("[%s] Failed to get storage statistics after truncation: %v", logPrefix, err)
-	} else {
-		logrus.Infof("[%s] Storage after truncation: %d chats, %d messages", logPrefix, chatCountAfter, messageCountAfter)
-		if chatCountAfter == 0 && messageCountAfter == 0 {
-			logrus.Infof("[%s] ✅ Chatstorage truncation completed successfully", logPrefix)
-		} else {
-			logrus.Warnf("[%s] ⚠️ Truncation may not have completed fully", logPrefix)
-		}
-	}
-
+	// In multi-instance mode we avoid mass DELETE/TRUNCATE operations on chatstorage to
+	// ensure better scalability with large datasets. Cleanup can be handled per-instance
+	// or via external maintenance tools if needed.
+	logrus.Infof("[%s] Skipping chatstorage truncation to avoid mass delete operations", logPrefix)
 	return nil
 }
 

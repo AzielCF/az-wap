@@ -53,21 +53,34 @@
     </div>
 
     <div class="ui horizontal divider">
+        Instances
+    </div>
+
+    <div class="ui one column stackable grid cards">
+        <instance-manager
+            :instances="instances"
+            :selected-token="activeInstanceToken"
+            @refresh-instances="loadInstances"
+            @set-active-token="setActiveToken"
+        ></instance-manager>
+    </div>
+
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         App
     </div>
 
-    <div class="ui three column stackable grid cards">
+    <div class="ui three column stackable grid cards" v-if="instances && instances.length">
         <app-login :connected="connected_devices"></app-login>
         <app-logout @reload-devices="handleReloadDevice"></app-logout>
         <app-reconnect @reload-devices="handleReloadDevice"></app-reconnect>
         <app-login-with-code :connected="connected_devices"></app-login-with-code>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Send
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <send-message></send-message>
         <send-image></send-image>
         <send-file max-file-size="{{ .MaxFileSize }}"></send-file>
@@ -86,11 +99,11 @@
         <send-link></send-link>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Message
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <message-delete></message-delete>
         <message-revoke></message-revoke>
         <message-react></message-react>
@@ -98,11 +111,11 @@
         <message-read></message-read>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Group
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <group-list :connected="connected_devices"></group-list>
         <group-create></group-create>
         <group-join-with-link></group-join-with-link>
@@ -117,19 +130,19 @@
         <group-info></group-info>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Newsletter
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <newsletter-list></newsletter-list>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Account
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <account-avatar></account-avatar>
         <account-change-avatar></account-change-avatar>
         <account-change-push-name></account-change-push-name>
@@ -140,11 +153,11 @@
         <account-user-check></account-user-check>
     </div>
 
-    <div class="ui horizontal divider">
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         Chat Management
     </div>
 
-    <div class="ui three column doubling grid cards">
+    <div class="ui three column doubling grid cards" v-if="instances && instances.length">
         <chat-pin-manager></chat-pin-manager>
         <chat-list></chat-list>
         <chat-messages></chat-messages>
@@ -179,9 +192,9 @@
     window.http = axios.create({
         baseURL: `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}{{ .AppBasePath }}`
     });
-    {{ if isEnableBasicAuth .BasicAuthToken }}
+    // {{ if isEnableBasicAuth .BasicAuthToken }}
     window.http.defaults.headers.common['Authorization'] = "{{ .BasicAuthToken }}";
-    {{ end }}
+    // {{ end }}
 </script>
 <script type="module">
     import AppLogin from "{{ .AppBasePath }}/components/AppLogin.js";
@@ -229,6 +242,7 @@
     import ChatPinManager from "{{ .AppBasePath }}/components/ChatPinManager.js";
     import ChatList from "{{ .AppBasePath }}/components/ChatList.js";
     import ChatMessages from "{{ .AppBasePath }}/components/ChatMessages.js";
+    import InstanceManager from "{{ .AppBasePath }}/components/InstanceManager.js";
 
     const showErrorInfo = (message) => {
         $('body').toast({
@@ -264,19 +278,54 @@
             GroupList, GroupCreate, GroupJoinWithLink, GroupInfoFromLink, GroupAddParticipants, GroupSetPhoto, GroupSetName, GroupSetLocked, GroupSetAnnounce, GroupSetTopic, GroupGetInviteLink, GroupInfo,
             NewsletterList,
             AccountAvatar, AccountUserInfo, AccountPrivacy, AccountChangeAvatar, AccountContact, AccountChangePushName, AccountUserCheck, AccountBusinessProfile,
-            ChatPinManager, ChatList, ChatMessages
+            ChatPinManager, ChatList, ChatMessages,
+            InstanceManager,
         },
         delimiters: ['[[', ']]'],
         data() {
             return {
                 app_ws: null,
                 connected_devices: null,
+                instances: [],
+                activeInstanceToken: '',
             }
         },
         methods: {
             handleReloadDevice() {
-                this.app_ws.send(JSON.stringify({"code": "FETCH_DEVICES"}))
-            }
+                if (this.app_ws && this.app_ws.readyState === WebSocket.OPEN) {
+                    this.app_ws.send(JSON.stringify({
+                        code: "FETCH_DEVICES",
+                        message: "List device",
+                        token: this.activeInstanceToken || ""
+                    }))
+                }
+
+                // Siempre refrescar la lista de instancias para que el estado ONLINE/OFFLINE
+                // se actualice después de acciones como logout/reconnect.
+                this.loadInstances()
+            },
+            async loadInstances() {
+                try {
+                    const { data } = await window.http.get('/instances');
+                    this.instances = data.results || [];
+                } catch (err) {
+                    console.error('Failed to load instances', err);
+                }
+            },
+            setActiveToken(token) {
+                this.activeInstanceToken = token || '';
+                if (this.activeInstanceToken) {
+                    window.http.defaults.headers.common['X-Instance-Token'] = this.activeInstanceToken;
+                } else {
+                    delete window.http.defaults.headers.common['X-Instance-Token'];
+                }
+                window.ACTIVE_INSTANCE_TOKEN = this.activeInstanceToken;
+
+                // Refrescar devices para la instancia activa si el WS está abierto
+                if (this.app_ws && this.app_ws.readyState === WebSocket.OPEN) {
+                    this.handleReloadDevice();
+                }
+            },
         },
         mounted() {
             // Initialize app container as hidden
@@ -287,8 +336,9 @@
 
                 this.app_ws.onopen = (evt) => {
                     this.app_ws.send(JSON.stringify({
-                        "code": "FETCH_DEVICES",
-                        "message": "List device"
+                        code: "FETCH_DEVICES",
+                        message: "List device",
+                        token: this.activeInstanceToken || ""
                     }));
                     
                     // Show app container and hide splash screen with a slight delay
@@ -317,6 +367,22 @@
 
                             // fetch devices
                             this.handleReloadDevice()
+
+                            // Hacer polling de instancias unos segundos para que, en cuanto
+                            // el cliente quede completamente conectado y logueado, el estado
+                            // ONLINE se refleje en la tabla sin necesidad de recargar la página.
+                            {
+                                let attempts = 0;
+                                const maxAttempts = 5;
+                                const poll = () => {
+                                    this.loadInstances();
+                                    attempts++;
+                                    if (attempts < maxAttempts) {
+                                        setTimeout(poll, 1000);
+                                    }
+                                };
+                                poll();
+                            }
                             break;
                         case 'LIST_DEVICES':
                             this.connected_devices = message.result
@@ -337,6 +403,8 @@
                 // Hide splash screen if WebSocket is not supported
                 document.getElementById('splash-screen').classList.add('fade-out');
             }
+
+            this.loadInstances();
         },
     }).mount('#app')
 </script>

@@ -10,17 +10,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 
 func submitWebhook(ctx context.Context, payload map[string]any, url string) error {
+	cfg := getWebhookConfigForContext(ctx)
+
 	// Configure HTTP client with optional TLS skip verification
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: config.WhatsappWebhookInsecureSkipVerify,
+			InsecureSkipVerify: cfg.InsecureSkipVerify,
 		},
 	}
 	client := &http.Client{
@@ -38,7 +39,7 @@ func submitWebhook(ctx context.Context, payload map[string]any, url string) erro
 		return pkgError.WebhookError(fmt.Sprintf("error when create http object %v", err))
 	}
 
-	secretKey := []byte(config.WhatsappWebhookSecret)
+	secretKey := []byte(cfg.Secret)
 	signature, err := utils.GetMessageDigestOrSignature(postBody, secretKey)
 	if err != nil {
 		return pkgError.WebhookError(fmt.Sprintf("error when create signature %v", err))

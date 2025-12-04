@@ -3,8 +3,8 @@ package middleware
 import (
 	"fmt"
 
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
 )

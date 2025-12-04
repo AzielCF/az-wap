@@ -20,6 +20,8 @@ tags:
     description: Group setting
   - name: newsletter
     description: newsletter setting
+  - name: instance
+    description: Instance management for multi-session
 security:
   - basicAuth: []
 
@@ -30,6 +32,19 @@ paths:
       tags:
         - app
       summary: Login to whatsapp server
+      parameters:
+        - name: X-Instance-Token
+          in: header
+          schema:
+            type: string
+          required: false
+          description: Instance token for multi-session. If omitted, the default/global session is used.
+        - name: token
+          in: query
+          schema:
+            type: string
+          required: false
+          description: Alternative to X-Instance-Token. Takes precedence if both are provided.
       responses:
         '200':
           description: OK
@@ -50,6 +65,18 @@ paths:
         - app
       summary: Login with pairing code
       parameters:
+        - name: X-Instance-Token
+          in: header
+          schema:
+            type: string
+          required: false
+          description: Instance token for multi-session. If omitted, the default/global session is used.
+        - name: token
+          in: query
+          schema:
+            type: string
+          required: false
+          description: Alternative to X-Instance-Token. Takes precedence if both are provided.
         - name: phone
           in: query
           schema:
@@ -75,6 +102,19 @@ paths:
       tags:
         - app
       summary: Remove database and logout
+      parameters:
+        - name: X-Instance-Token
+          in: header
+          schema:
+            type: string
+          required: false
+          description: Instance token for multi-session. If omitted, the default/global session is used.
+        - name: token
+          in: query
+          schema:
+            type: string
+          required: false
+          description: Alternative to X-Instance-Token. Takes precedence if both are provided.
       responses:
         '200':
           description: OK
@@ -94,6 +134,19 @@ paths:
       tags:
         - app
       summary: Reconnecting to whatsapp server
+      parameters:
+        - name: X-Instance-Token
+          in: header
+          schema:
+            type: string
+          required: false
+          description: Instance token for multi-session. If omitted, the default/global session is used.
+        - name: token
+          in: query
+          schema:
+            type: string
+          required: false
+          description: Alternative to X-Instance-Token. Takes precedence if both are provided.
       responses:
         '200':
           description: OK
@@ -113,6 +166,19 @@ paths:
       tags:
         - app
       summary: Get list connected devices
+      parameters:
+        - name: X-Instance-Token
+          in: header
+          schema:
+            type: string
+          required: false
+          description: Instance token for multi-session. If omitted, the default/global session is used.
+        - name: token
+          in: query
+          schema:
+            type: string
+          required: false
+          description: Alternative to X-Instance-Token. Takes precedence if both are provided.
       responses:
         '200':
           description: OK
@@ -2760,6 +2826,53 @@ components:
               device:
                 type: string
                 example: '628960561XXX.0:64@s.whatsapp.net'
+    InstanceCreatedResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+          example: Instance created
+        results:
+          type: object
+          properties:
+            id:
+              type: string
+              example: 'instance-1'
+            name:
+              type: string
+              example: 'my-bot-ventas'
+            token:
+              type: string
+              example: 'c4b5f4b6-12ab-4cde-9f01-234567890abc'
+            status:
+              type: string
+              example: 'CREATED'
+    InstanceListResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: SUCCESS
+        message:
+          type: string
+          example: Instances fetched
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: 'instance-1'
+              name:
+                type: string
+                example: 'my-bot-ventas'
+              status:
+                type: string
+                example: 'CREATED'
     LoginWithCodeResponse:
       type: object
       properties:

@@ -1,4 +1,4 @@
-module github.com/aldinokemal/go-whatsapp-web-multidevice
+module github.com/AzielCF/az-wap
 
 go 1.24.0
 

@@ -3,10 +3,10 @@ package rest
 import (
 	"fmt"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/AzielCF/az-wap/config"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -27,7 +27,11 @@ func InitRestApp(app fiber.Router, service domainApp.IAppUsecase) App {
 }
 
 func (handler *App) Login(c *fiber.Ctx) error {
-	response, err := handler.Service.Login(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	response, err := handler.Service.Login(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -42,7 +46,11 @@ func (handler *App) Login(c *fiber.Ctx) error {
 }
 
 func (handler *App) LoginWithCode(c *fiber.Ctx) error {
-	pairCode, err := handler.Service.LoginWithCode(c.UserContext(), c.Query("phone"))
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	pairCode, err := handler.Service.LoginWithCode(c.UserContext(), token, c.Query("phone"))
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -56,7 +64,11 @@ func (handler *App) LoginWithCode(c *fiber.Ctx) error {
 }
 
 func (handler *App) Logout(c *fiber.Ctx) error {
-	err := handler.Service.Logout(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	err := handler.Service.Logout(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -68,7 +80,11 @@ func (handler *App) Logout(c *fiber.Ctx) error {
 }
 
 func (handler *App) Reconnect(c *fiber.Ctx) error {
-	err := handler.Service.Reconnect(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	err := handler.Service.Reconnect(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -80,7 +96,11 @@ func (handler *App) Reconnect(c *fiber.Ctx) error {
 }
 
 func (handler *App) Devices(c *fiber.Ctx) error {
-	devices, err := handler.Service.FetchDevices(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	devices, err := handler.Service.FetchDevices(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{

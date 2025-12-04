@@ -6,12 +6,12 @@ import (
 )
 
 type IAppUsecase interface {
-	Login(ctx context.Context) (response LoginResponse, err error)
-	LoginWithCode(ctx context.Context, phoneNumber string) (loginCode string, err error)
-	Logout(ctx context.Context) (err error)
-	Reconnect(ctx context.Context) (err error)
-	FirstDevice(ctx context.Context) (response DevicesResponse, err error)
-	FetchDevices(ctx context.Context) (response []DevicesResponse, err error)
+	Login(ctx context.Context, token string) (response LoginResponse, err error)
+	LoginWithCode(ctx context.Context, token string, phoneNumber string) (loginCode string, err error)
+	Logout(ctx context.Context, token string) (err error)
+	Reconnect(ctx context.Context, token string) (err error)
+	FirstDevice(ctx context.Context, token string) (response DevicesResponse, err error)
+	FetchDevices(ctx context.Context, token string) (response []DevicesResponse, err error)
 }
 
 type DevicesResponse struct {

@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/helpers"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/middleware"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/websocket"
+	"github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/ui/rest"
+	"github.com/AzielCF/az-wap/ui/rest/helpers"
+	"github.com/AzielCF/az-wap/ui/rest/middleware"
+	"github.com/AzielCF/az-wap/ui/websocket"
 	"github.com/dustin/go-humanize"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
@@ -25,7 +25,7 @@ import (
 var restCmd = &cobra.Command{
 	Use:   "rest",
 	Short: "Send whatsapp API over http",
-	Long:  `This application is from clone https://github.com/aldinokemal/go-whatsapp-web-multidevice`,
+	Long:  `This application is from clone https://az-wap`,
 	Run:   restServer,
 }
 
@@ -86,6 +86,19 @@ func restServer(_ *cobra.Command, _ []string) {
 
 		app.Use(basicauth.New(basicauth.Config{
 			Users: account,
+			Next: func(c *fiber.Ctx) bool {
+				path := c.Path()
+				basePath := config.AppBasePath
+				if basePath != "" && !strings.HasPrefix(basePath, "/") {
+					basePath = "/" + basePath
+				}
+				prefix := basePath + "/instances/"
+				suffix := "/chatwoot/webhook"
+				if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, suffix) {
+					return true
+				}
+				return false
+			},
 		}))
 	}
 
@@ -103,6 +116,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestMessage(apiGroup, messageUsecase)
 	rest.InitRestGroup(apiGroup, groupUsecase)
 	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
+	rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase)
 
 	apiGroup.Get("/", func(c *fiber.Ctx) error {
 		return c.Render("views/index", fiber.Map{

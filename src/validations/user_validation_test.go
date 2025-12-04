@@ -2,8 +2,8 @@ package validations
 
 import (
 	"context"
-	domainUser "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/user"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	domainUser "github.com/AzielCF/az-wap/domains/user"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

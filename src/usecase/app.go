@@ -5,52 +5,127 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
+	"github.com/AzielCF/az-wap/config"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainInstance "github.com/AzielCF/az-wap/domains/instance"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	"github.com/AzielCF/az-wap/validations"
 	fiberUtils "github.com/gofiber/fiber/v2/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/libsignal/logger"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 type serviceApp struct {
 	chatStorageRepo domainChatStorage.IChatStorageRepository
+	instanceService domainInstance.IInstanceUsecase
 }
 
-func NewAppService(chatStorageRepo domainChatStorage.IChatStorageRepository) domainApp.IAppUsecase {
+func NewAppService(chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainApp.IAppUsecase {
 	return &serviceApp{
 		chatStorageRepo: chatStorageRepo,
+		instanceService: instanceService,
 	}
 }
 
-func (service *serviceApp) Login(_ context.Context) (response domainApp.LoginResponse, err error) {
-	client := whatsapp.GetClient()
+func (service *serviceApp) validateToken(ctx context.Context, token string) error {
+	if service.instanceService == nil {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(token)
+	if trimmed == "" {
+		return pkgError.ValidationError("token: cannot be blank.")
+	}
+
+	_, err := service.instanceService.GetByToken(ctx, trimmed)
+	return err
+}
+
+func (service *serviceApp) getClientAndDB(ctx context.Context, token string) (*whatsmeow.Client, *sqlstore.Container, error) {
+	if service.instanceService == nil {
+		client := whatsapp.GetClient()
+		if client == nil {
+			return nil, nil, pkgError.ErrWaCLI
+		}
+		return client, whatsapp.GetDB(), nil
+	}
+
+	trimmed := strings.TrimSpace(token)
+	if trimmed == "" {
+		return nil, nil, pkgError.ValidationError("token: cannot be blank.")
+	}
+
+	instance, err := service.instanceService.GetByToken(ctx, trimmed)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Registrar configuración de webhooks específica de la instancia (si está disponible).
+	whatsapp.SetInstanceWebhookConfig(
+		instance.ID,
+		instance.WebhookURLs,
+		instance.WebhookSecret,
+		instance.WebhookInsecureSkipVerify,
+	)
+
+	client, instDB, err := whatsapp.GetOrInitInstanceClient(ctx, instance.ID, service.chatStorageRepo)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// If client is nil, the instance needs login first
 	if client == nil {
-		return response, pkgError.ErrWaCLI
+		logrus.Warnf("[INSTANCE] Client for instance %s is nil (needs login), using DB only", instance.ID)
+		return nil, instDB, nil
+	}
+
+	return client, instDB, nil
+}
+
+func (service *serviceApp) Login(ctx context.Context, token string) (response domainApp.LoginResponse, err error) {
+	client, currentDB, err := service.getClientAndDB(ctx, token)
+	if err != nil {
+		return response, err
 	}
 
 	// [DEBUG] Log database state before login
 	logrus.Info("[DEBUG] Starting login process...")
-	devices, dbErr := whatsapp.GetDB().GetAllDevices(context.Background())
-	if dbErr != nil {
-		logrus.Errorf("[DEBUG] Error getting devices before login: %v", dbErr)
-	} else {
-		logrus.Infof("[DEBUG] Devices before login: %d found", len(devices))
-		for _, device := range devices {
-			logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
+	if currentDB != nil {
+		devices, dbErr := currentDB.GetAllDevices(ctx)
+		if dbErr != nil {
+			logrus.Errorf("[DEBUG] Error getting devices before login: %v", dbErr)
+		} else {
+			logrus.Infof("[DEBUG] Devices before login: %d found", len(devices))
+			for _, device := range devices {
+				logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
+			}
 		}
 	}
 
+	// If client is nil, create a new one for this instance (fresh login)
+	if client == nil {
+		logrus.Info("[DEBUG] Client is nil - creating new client for fresh login")
+		if currentDB == nil {
+			return response, pkgError.ErrWaCLI
+		}
+		device := currentDB.NewDevice()
+		client = whatsmeow.NewClient(device, waLog.Stdout("Client", config.WhatsappLogLevel, true))
+		client.EnableAutoReconnect = true
+		client.AutoTrustIdentity = true
+	}
+
 	// [DEBUG] Log client state
-	if client.Store.ID != nil {
+	if client.Store != nil && client.Store.ID != nil {
 		logrus.Infof("[DEBUG] Client has existing store ID: %s", client.Store.ID.String())
 	} else {
 		logrus.Info("[DEBUG] Client has no store ID")
@@ -118,19 +193,22 @@ func (service *serviceApp) Login(_ context.Context) (response domainApp.LoginRes
 	logrus.Infof("[DEBUG] Login connection established - IsConnected: %v, IsLoggedIn: %v",
 		client.IsConnected(), client.IsLoggedIn())
 
-	// Ensure global client is synchronized with service client
-	whatsapp.UpdateGlobalClient(client, whatsapp.GetDB())
+	// Store the client for this instance after successful login
+	whatsapp.SetInstanceClient(whatsapp.GetActiveInstanceID(), client, currentDB)
 
 	return response, nil
 }
 
-func (service *serviceApp) LoginWithCode(ctx context.Context, phoneNumber string) (loginCode string, err error) {
+func (service *serviceApp) LoginWithCode(ctx context.Context, token string, phoneNumber string) (loginCode string, err error) {
 	if err = validations.ValidateLoginWithCode(ctx, phoneNumber); err != nil {
 		logrus.Errorf("Error when validate login with code: %s", err.Error())
 		return loginCode, err
 	}
 
-	client := whatsapp.GetClient()
+	client, _, err := service.getClientAndDB(ctx, token)
+	if err != nil {
+		return loginCode, err
+	}
 	// detect is already logged in
 	if client.Store.ID != nil || client.IsLoggedIn() {
 		logrus.Warn("User is already logged in")
@@ -138,7 +216,7 @@ func (service *serviceApp) LoginWithCode(ctx context.Context, phoneNumber string
 	}
 
 	// reconnect first
-	if err = service.Reconnect(ctx); err != nil {
+	if err = service.Reconnect(ctx, token); err != nil {
 		logrus.Errorf("Error when reconnecting before login with code: %s", err.Error())
 		return loginCode, err
 	}
@@ -168,55 +246,102 @@ func (service *serviceApp) LoginWithCode(ctx context.Context, phoneNumber string
 	return loginCode, nil
 }
 
-func (service *serviceApp) Logout(ctx context.Context) (err error) {
-	// [DEBUG] Log database state before logout
-	logrus.Info("[DEBUG] Starting logout process...")
-	devices, dbErr := whatsapp.GetDB().GetAllDevices(ctx)
+func (service *serviceApp) Logout(ctx context.Context, token string) (err error) {
+	if err = service.validateToken(ctx, token); err != nil {
+		return err
+	}
+
+	// Legacy/global logout when no token is provided or instanceService is not available
+	if token == "" || service.instanceService == nil {
+		logrus.Info("[DEBUG] Starting logout process (global)...")
+		devices, dbErr := whatsapp.GetDB().GetAllDevices(ctx)
+		if dbErr != nil {
+			logrus.Errorf("[DEBUG] Error getting devices before logout: %v", dbErr)
+		} else {
+			logrus.Infof("[DEBUG] Devices before logout: %d found", len(devices))
+			for _, device := range devices {
+				logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
+			}
+		}
+
+		logrus.Info("[DEBUG] Calling WhatsApp client logout (global)...")
+		if err = whatsapp.GetClient().Logout(ctx); err != nil {
+			logrus.Errorf("[DEBUG] WhatsApp logout failed: %v", err)
+		} else {
+			logrus.Info("[DEBUG] WhatsApp logout completed successfully")
+		}
+
+		devices, dbErr = whatsapp.GetDB().GetAllDevices(ctx)
+		if dbErr != nil {
+			logrus.Errorf("[DEBUG] Error getting devices after logout: %v", dbErr)
+		} else {
+			logrus.Infof("[DEBUG] Devices after logout: %d found", len(devices))
+		}
+
+		newDB, newCli, err := whatsapp.PerformCleanupAndUpdateGlobals(ctx, "MANUAL_LOGOUT", service.chatStorageRepo)
+		if err != nil {
+			logrus.Errorf("[DEBUG] Cleanup failed: %v", err)
+			return err
+		}
+
+		whatsapp.UpdateGlobalClient(newCli, newDB)
+		logrus.Info("[DEBUG] Logout process completed successfully (global)")
+		return nil
+	}
+
+	// Instance-scoped logout when a token is provided
+	client, currentDB, err := service.getClientAndDB(ctx, token)
+	if err != nil {
+		return err
+	}
+
+	logrus.Info("[DEBUG] Starting logout process (instance)...")
+	devices, dbErr := currentDB.GetAllDevices(ctx)
 	if dbErr != nil {
-		logrus.Errorf("[DEBUG] Error getting devices before logout: %v", dbErr)
+		logrus.Errorf("[DEBUG] Error getting devices before logout (instance): %v", dbErr)
 	} else {
-		logrus.Infof("[DEBUG] Devices before logout: %d found", len(devices))
+		logrus.Infof("[DEBUG] Devices before logout (instance): %d found", len(devices))
 		for _, device := range devices {
 			logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
 		}
 	}
 
-	// [DEBUG] Call WhatsApp client logout first to disconnect from server
-	logrus.Info("[DEBUG] Calling WhatsApp client logout...")
-	err = whatsapp.GetClient().Logout(ctx)
-	if err != nil {
-		logrus.Errorf("[DEBUG] WhatsApp logout failed: %v", err)
-		// Continue with cleanup even if logout fails
+	logrus.Info("[DEBUG] Calling WhatsApp client logout (instance)...")
+	if err = client.Logout(ctx); err != nil {
+		logrus.Errorf("[DEBUG] WhatsApp logout failed (instance): %v", err)
 	} else {
-		logrus.Info("[DEBUG] WhatsApp logout completed successfully")
+		logrus.Info("[DEBUG] WhatsApp logout completed successfully (instance)")
 	}
 
-	// [DEBUG] Verify devices after logout
-	devices, dbErr = whatsapp.GetDB().GetAllDevices(ctx)
+	devices, dbErr = currentDB.GetAllDevices(ctx)
 	if dbErr != nil {
-		logrus.Errorf("[DEBUG] Error getting devices after logout: %v", dbErr)
+		logrus.Errorf("[DEBUG] Error getting devices after logout (instance): %v", dbErr)
 	} else {
-		logrus.Infof("[DEBUG] Devices after logout: %d found", len(devices))
+		logrus.Infof("[DEBUG] Devices after logout (instance): %d found", len(devices))
 	}
 
-	// Perform complete cleanup with global client synchronization
-	newDB, newCli, err := whatsapp.PerformCleanupAndUpdateGlobals(ctx, "MANUAL_LOGOUT", service.chatStorageRepo)
+	inst, err := service.instanceService.GetByToken(ctx, token)
 	if err != nil {
-		logrus.Errorf("[DEBUG] Cleanup failed: %v", err)
 		return err
 	}
 
-	// Update service references
-	whatsapp.UpdateGlobalClient(newCli, newDB)
+	if err := whatsapp.CleanupInstanceSession(ctx, inst.ID, service.chatStorageRepo); err != nil {
+		logrus.Errorf("[DEBUG] Instance cleanup failed: %v", err)
+		return err
+	}
 
-	logrus.Info("[DEBUG] Logout process completed successfully")
+	logrus.Info("[DEBUG] Logout process completed successfully (instance)")
 	return nil
 }
 
-func (service *serviceApp) Reconnect(_ context.Context) (err error) {
+func (service *serviceApp) Reconnect(_ context.Context, token string) (err error) {
+	// Reconnect sigue usando el cliente global; el token se valida en Login/LoginWithCode cuando no está vacío.
 	logrus.Info("[DEBUG] Starting reconnect process...")
 
-	client := whatsapp.GetClient()
+	client, db, err := service.getClientAndDB(context.Background(), token)
+	if err != nil {
+		return err
+	}
 	client.Disconnect()
 	err = client.Connect()
 
@@ -230,18 +355,19 @@ func (service *serviceApp) Reconnect(_ context.Context) (err error) {
 		client.IsConnected(), client.IsLoggedIn())
 
 	// Ensure global client is synchronized with service client
-	whatsapp.UpdateGlobalClient(client, whatsapp.GetDB())
+	whatsapp.UpdateGlobalClient(client, db)
 
 	logrus.Info("[DEBUG] Reconnect process completed successfully")
 	return err
 }
 
-func (service *serviceApp) FirstDevice(ctx context.Context) (response domainApp.DevicesResponse, err error) {
-	if whatsapp.GetClient() == nil {
-		return response, pkgError.ErrWaCLI
+func (service *serviceApp) FirstDevice(ctx context.Context, token string) (response domainApp.DevicesResponse, err error) {
+	_, currentDB, err := service.getClientAndDB(ctx, token)
+	if err != nil {
+		return response, err
 	}
 
-	devices, err := whatsapp.GetDB().GetFirstDevice(ctx)
+	devices, err := currentDB.GetFirstDevice(ctx)
 	if err != nil {
 		return response, err
 	}
@@ -256,12 +382,13 @@ func (service *serviceApp) FirstDevice(ctx context.Context) (response domainApp.
 	return response, nil
 }
 
-func (service *serviceApp) FetchDevices(ctx context.Context) (response []domainApp.DevicesResponse, err error) {
-	if whatsapp.GetClient() == nil {
-		return response, pkgError.ErrWaCLI
+func (service *serviceApp) FetchDevices(ctx context.Context, token string) (response []domainApp.DevicesResponse, err error) {
+	_, currentDB, err := service.getClientAndDB(ctx, token)
+	if err != nil {
+		return response, err
 	}
 
-	devices, err := whatsapp.GetDB().GetAllDevices(ctx)
+	devices, err := currentDB.GetAllDevices(ctx)
 	if err != nil {
 		return nil, err
 	}

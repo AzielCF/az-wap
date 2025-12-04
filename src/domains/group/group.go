@@ -11,21 +11,25 @@ import (
 
 type JoinGroupWithLinkRequest struct {
 	Link string `json:"link" form:"link"`
+	Token string `json:"token,omitempty" form:"token"`
 }
 
 type LeaveGroupRequest struct {
 	GroupID string `json:"group_id" form:"group_id"`
+	Token   string `json:"token,omitempty" form:"token"`
 }
 
 type CreateGroupRequest struct {
 	Title        string   `json:"title" form:"title"`
 	Participants []string `json:"participants" form:"participants"`
+	Token        string   `json:"token,omitempty" form:"token"`
 }
 
 type ParticipantRequest struct {
 	GroupID      string                      `json:"group_id" form:"group_id"`
 	Participants []string                    `json:"participants" form:"participants"`
 	Action       whatsmeow.ParticipantChange `json:"action" form:"action"`
+	Token        string                      `json:"token,omitempty" form:"token"`
 }
 
 type ParticipantStatus struct {
@@ -36,6 +40,7 @@ type ParticipantStatus struct {
 
 type GetGroupParticipantsRequest struct {
 	GroupID string `json:"group_id" query:"group_id"`
+	Token   string `json:"token,omitempty" query:"token"`
 }
 
 type GroupParticipant struct {
@@ -55,6 +60,7 @@ type GetGroupParticipantsResponse struct {
 
 type GetGroupRequestParticipantsRequest struct {
 	GroupID string `json:"group_id" query:"group_id"`
+	Token   string `json:"token,omitempty" query:"token"`
 }
 
 type GetGroupRequestParticipantsResponse struct {
@@ -66,11 +72,13 @@ type GroupRequestParticipantsRequest struct {
 	GroupID      string                             `json:"group_id" form:"group_id"`
 	Participants []string                           `json:"participants" form:"participants"`
 	Action       whatsmeow.ParticipantRequestChange `json:"action" form:"action"`
+	Token        string                             `json:"token,omitempty" form:"token"`
 }
 
 type SetGroupPhotoRequest struct {
 	GroupID string                `json:"group_id" form:"group_id"`
 	Photo   *multipart.FileHeader `json:"photo" form:"photo"`
+	Token   string                `json:"token,omitempty" form:"token"`
 }
 
 type SetGroupPhotoResponse struct {
@@ -81,25 +89,30 @@ type SetGroupPhotoResponse struct {
 type SetGroupNameRequest struct {
 	GroupID string `json:"group_id" form:"group_id"`
 	Name    string `json:"name" form:"name"`
+	Token   string `json:"token,omitempty" form:"token"`
 }
 
 type SetGroupLockedRequest struct {
 	GroupID string `json:"group_id" form:"group_id"`
 	Locked  bool   `json:"locked" form:"locked"`
+	Token   string `json:"token,omitempty" form:"token"`
 }
 
 type SetGroupAnnounceRequest struct {
 	GroupID  string `json:"group_id" form:"group_id"`
 	Announce bool   `json:"announce" form:"announce"`
+	Token    string `json:"token,omitempty" form:"token"`
 }
 
 type SetGroupTopicRequest struct {
 	GroupID string `json:"group_id" form:"group_id"`
 	Topic   string `json:"topic" form:"topic"`
+	Token   string `json:"token,omitempty" form:"token"`
 }
 
 type GetGroupInfoFromLinkRequest struct {
-	Link string `json:"link" form:"link"`
+	Link  string `json:"link" form:"link"`
+	Token string `json:"token,omitempty" form:"token"`
 }
 
 type GetGroupInfoFromLinkResponse struct {
@@ -116,11 +129,13 @@ type GetGroupInfoFromLinkResponse struct {
 
 type GroupInfoRequest struct {
 	GroupID string `json:"group_id" query:"group_id"`
+	Token   string `json:"token,omitempty" query:"token"`
 }
 
 type GetGroupInviteLinkRequest struct {
 	GroupID string `json:"group_id" query:"group_id"`
 	Reset   bool   `json:"reset" query:"reset"`
+	Token   string `json:"token,omitempty" query:"token"`
 }
 
 type GetGroupInviteLinkResponse struct {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	domainGroup "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/group"
-	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
+	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"go.mau.fi/whatsmeow"
 )

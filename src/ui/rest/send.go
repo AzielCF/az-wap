@@ -1,8 +1,8 @@
 package rest
 
 import (
-	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainSend "github.com/AzielCF/az-wap/domains/send"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -32,6 +32,12 @@ func (controller *Send) SendText(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendText(c.UserContext(), request)
@@ -57,6 +63,12 @@ func (controller *Send) SendImage(c *fiber.Ctx) error {
 		request.Image = file
 	}
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendImage(c.UserContext(), request)
@@ -79,6 +91,13 @@ func (controller *Send) SendFile(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	request.File = file
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendFile(c.UserContext(), request)
@@ -101,6 +120,12 @@ func (controller *Send) SendVideo(c *fiber.Ctx) error {
 	if videoFile, errFile := c.FormFile("video"); errFile == nil {
 		request.Video = videoFile
 	}
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -125,6 +150,12 @@ func (controller *Send) SendSticker(c *fiber.Ctx) error {
 		request.Sticker = stickerFile
 	}
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendSticker(c.UserContext(), request)
@@ -142,6 +173,12 @@ func (controller *Send) SendContact(c *fiber.Ctx) error {
 	var request domainSend.ContactRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -161,6 +198,12 @@ func (controller *Send) SendLink(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendLink(c.UserContext(), request)
@@ -178,6 +221,12 @@ func (controller *Send) SendLocation(c *fiber.Ctx) error {
 	var request domainSend.LocationRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -201,6 +250,29 @@ func (controller *Send) SendAudio(c *fiber.Ctx) error {
 	if audioFile, errFile := c.FormFile("audio"); errFile == nil {
 		request.Audio = audioFile
 	}
+
+	// In multipart/form-data BodyParser a veces no popula punteros a string,
+	// así que recuperamos audio_url manualmente si sigue vacío.
+	if request.AudioURL == nil || (request.AudioURL != nil && *request.AudioURL == "") {
+		if audioURL := c.FormValue("audio_url"); audioURL != "" {
+			request.AudioURL = &audioURL
+		}
+	}
+
+	if request.Audio == nil && (request.AudioURL == nil || (request.AudioURL != nil && *request.AudioURL == "")) {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: "either Audio or AudioURL must be provided",
+			Results: nil,
+		})
+	}
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -238,6 +310,12 @@ func (controller *Send) SendPresence(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	response, err := controller.Service.SendPresence(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -253,6 +331,12 @@ func (controller *Send) SendChatPresence(c *fiber.Ctx) error {
 	var request domainSend.ChatPresenceRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.BaseRequest.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 

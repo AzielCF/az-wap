@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/AzielCF/az-wap/config"
 	"github.com/sirupsen/logrus"
 	_ "golang.org/x/image/webp" // Register WebP format
 )
@@ -310,7 +310,7 @@ func DownloadAudioFromURL(audioURL string) ([]byte, string, error) {
 	}
 
 	// Extract only the MIME type portion (ignore parameters like charset)
-	contentType := strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
+	contentTypeHeader := strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
 
 	// Align audio MIME validation with the one used for uploaded files to ensure consistency with WhatsApp requirements.
 	allowedMimes := map[string]bool{
@@ -332,6 +332,28 @@ func DownloadAudioFromURL(audioURL string) ([]byte, string, error) {
 		"audio/x-wav":    true,
 	}
 
+	// Some servers (including certain Chatwoot/ActiveStorage setups) may return generic
+	// content types like application/octet-stream for valid audio files (e.g., .mp3).
+	// In that case, try to infer a proper audio MIME type from the file extension.
+	if contentTypeHeader == "" || contentTypeHeader == "application/octet-stream" {
+		ext := strings.ToLower(filepath.Ext(audioURL))
+		extToMime := map[string]string{
+			".mp3":  "audio/mpeg",
+			".mpeg": "audio/mpeg",
+			".mpga": "audio/mpeg",
+			".ogg":  "audio/ogg",
+			".oga":  "audio/ogg",
+			".wav":  "audio/wav",
+			".aac":  "audio/aac",
+			".m4a":  "audio/m4a",
+			".amr":  "audio/amr",
+		}
+		if guessed, ok := extToMime[ext]; ok {
+			contentTypeHeader = guessed
+		}
+	}
+
+	contentType := contentTypeHeader
 	if !allowedMimes[contentType] {
 		return nil, "", fmt.Errorf("invalid content type: %s", contentType)
 	}

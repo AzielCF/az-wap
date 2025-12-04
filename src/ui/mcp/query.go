@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	domainChat "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chat"
-	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
-	domainUser "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/user"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	domainUser "github.com/AzielCF/az-wap/domains/user"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

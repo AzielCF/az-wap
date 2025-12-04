@@ -6,7 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
 )
@@ -16,6 +16,7 @@ type client struct{}
 type BroadcastMessage struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Token   string `json:"token,omitempty"`
 	Result  any    `json:"result"`
 }
 
@@ -110,7 +111,7 @@ func RegisterRoutes(app fiber.Router, service domainApp.IAppUsecase) {
 				}
 
 				if messageData.Code == "FETCH_DEVICES" {
-					devices, _ := service.FetchDevices(context.Background())
+					devices, _ := service.FetchDevices(context.Background(), messageData.Token)
 					Broadcast <- BroadcastMessage{
 						Code:    "LIST_DEVICES",
 						Message: "Device found",

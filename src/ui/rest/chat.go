@@ -1,8 +1,8 @@
 package rest
 
 import (
-	domainChat "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chat"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -29,6 +29,12 @@ func (controller *Chat) ListChats(c *fiber.Ctx) error {
 	request.Offset = c.QueryInt("offset", 0)
 	request.Search = c.Query("search", "")
 	request.HasMedia = c.QueryBool("has_media", false)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	response, err := controller.Service.ListChats(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -57,6 +63,12 @@ func (controller *Chat) GetChatMessages(c *fiber.Ctx) error {
 	if startTime := c.Query("start_time"); startTime != "" {
 		request.StartTime = &startTime
 	}
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 	if endTime := c.Query("end_time"); endTime != "" {
 		request.EndTime = &endTime
 	}

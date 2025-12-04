@@ -7,12 +7,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
-	domainMessage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/message"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
+	"github.com/AzielCF/az-wap/config"
+	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainInstance "github.com/AzielCF/az-wap/domains/instance"
+	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/validations"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
@@ -24,16 +27,55 @@ import (
 )
 
 type serviceMessage struct {
+	appService      domainApp.IAppUsecase
 	chatStorageRepo domainChatStorage.IChatStorageRepository
+	instanceService domainInstance.IInstanceUsecase
 }
 
-func NewMessageService(chatStorageRepo domainChatStorage.IChatStorageRepository) domainMessage.IMessageUsecase {
+func NewMessageService(appService domainApp.IAppUsecase, chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainMessage.IMessageUsecase {
 	return &serviceMessage{
+		appService:      appService,
 		chatStorageRepo: chatStorageRepo,
+		instanceService: instanceService,
 	}
 }
 
+// getChatStorageForToken devuelve el repositorio de chatstorage apropiado según el token.
+// Si hay instancia y token válido, utiliza el storage por instancia; en caso contrario, el global.
+func (service serviceMessage) getChatStorageForToken(ctx context.Context, token string) domainChatStorage.IChatStorageRepository {
+	repo := service.chatStorageRepo
+	if token == "" || service.instanceService == nil {
+		return repo
+	}
+
+	inst, err := service.instanceService.GetByToken(ctx, token)
+	if err != nil {
+		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to resolve instance for token in message service, falling back to global chatstorage")
+		return repo
+	}
+
+	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(inst.ID)
+	if err != nil {
+		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to get instance chatstorage repo in message service, falling back to global chatstorage")
+		return repo
+	}
+
+	return instanceRepo
+}
+
+func (service serviceMessage) ensureClientForToken(ctx context.Context, token string) error {
+	if token == "" || service.appService == nil {
+		return nil
+	}
+	_, err := service.appService.FirstDevice(ctx, token)
+	return err
+}
+
 func (service serviceMessage) MarkAsRead(ctx context.Context, request domainMessage.MarkAsReadRequest) (response domainMessage.GenericResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateMarkAsRead(ctx, request); err != nil {
 		return response, err
 	}
@@ -60,6 +102,10 @@ func (service serviceMessage) MarkAsRead(ctx context.Context, request domainMess
 }
 
 func (service serviceMessage) ReactMessage(ctx context.Context, request domainMessage.ReactionRequest) (response domainMessage.GenericResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateReactMessage(ctx, request); err != nil {
 		return response, err
 	}
@@ -90,6 +136,10 @@ func (service serviceMessage) ReactMessage(ctx context.Context, request domainMe
 }
 
 func (service serviceMessage) RevokeMessage(ctx context.Context, request domainMessage.RevokeRequest) (response domainMessage.GenericResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateRevokeMessage(ctx, request); err != nil {
 		return response, err
 	}
@@ -109,6 +159,10 @@ func (service serviceMessage) RevokeMessage(ctx context.Context, request domainM
 }
 
 func (service serviceMessage) DeleteMessage(ctx context.Context, request domainMessage.DeleteRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateDeleteMessage(ctx, request); err != nil {
 		return err
 	}
@@ -143,6 +197,10 @@ func (service serviceMessage) DeleteMessage(ctx context.Context, request domainM
 }
 
 func (service serviceMessage) UpdateMessage(ctx context.Context, request domainMessage.UpdateMessageRequest) (response domainMessage.GenericResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateUpdateMessage(ctx, request); err != nil {
 		return response, err
 	}
@@ -165,6 +223,10 @@ func (service serviceMessage) UpdateMessage(ctx context.Context, request domainM
 
 // StarMessage implements message.IMessageService.
 func (service serviceMessage) StarMessage(ctx context.Context, request domainMessage.StarRequest) (err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return err
+	}
+
 	if err = validations.ValidateStarMessage(ctx, request); err != nil {
 		return err
 	}
@@ -189,6 +251,10 @@ func (service serviceMessage) StarMessage(ctx context.Context, request domainMes
 
 // DownloadMedia implements message.IMessageService.
 func (service serviceMessage) DownloadMedia(ctx context.Context, request domainMessage.DownloadMediaRequest) (response domainMessage.DownloadMediaResponse, err error) {
+	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
+		return response, err
+	}
+
 	if err = validations.ValidateDownloadMedia(ctx, request); err != nil {
 		return response, err
 	}
@@ -198,8 +264,11 @@ func (service serviceMessage) DownloadMedia(ctx context.Context, request domainM
 		return response, err
 	}
 
+	// Resolver el repositorio de chatstorage adecuado según el token (instancia) o global.
+	repo := service.getChatStorageForToken(ctx, request.Token)
+
 	// Query the message from chat storage
-	message, err := service.chatStorageRepo.GetMessageByID(request.MessageID)
+	message, err := repo.GetMessageByID(request.MessageID)
 	if err != nil {
 		return response, fmt.Errorf("message not found: %v", err)
 	}
@@ -218,8 +287,9 @@ func (service serviceMessage) DownloadMedia(ctx context.Context, request domainM
 		return response, fmt.Errorf("message %s does not belong to chat %s", request.MessageID, dataWaRecipient.String())
 	}
 
-	// Create directory structure for organized storage
-	chatDir := filepath.Join(config.PathMedia, utils.ExtractPhoneNumber(message.ChatJID))
+	// Create directory structure for organized storage outside statics/media
+	baseDir := filepath.Join(config.PathStorages, "downloads")
+	chatDir := filepath.Join(baseDir, utils.ExtractPhoneNumber(message.ChatJID))
 	dateDir := filepath.Join(chatDir, message.Timestamp.Format("2006-01-02"))
 
 	err = os.MkdirAll(dateDir, 0755)

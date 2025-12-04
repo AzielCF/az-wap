@@ -5,23 +5,48 @@ import (
 	"fmt"
 	"time"
 
-	domainChat "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chat"
-	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
-	"github.com/aldinokemal/go-whatsapp-web-multidevice/validations"
+	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainInstance "github.com/AzielCF/az-wap/domains/instance"
+	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
+	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/validations"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/appstate"
 )
 
 type serviceChat struct {
 	chatStorageRepo domainChatStorage.IChatStorageRepository
+	instanceService domainInstance.IInstanceUsecase
 }
 
-func NewChatService(chatStorageRepo domainChatStorage.IChatStorageRepository) domainChat.IChatUsecase {
+func NewChatService(chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainChat.IChatUsecase {
 	return &serviceChat{
 		chatStorageRepo: chatStorageRepo,
+		instanceService: instanceService,
 	}
+}
+
+func (service serviceChat) getChatStorageForToken(ctx context.Context, token string) domainChatStorage.IChatStorageRepository {
+	repo := service.chatStorageRepo
+	if token == "" || service.instanceService == nil {
+		return repo
+	}
+
+	inst, err := service.instanceService.GetByToken(ctx, token)
+	if err != nil {
+		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to resolve instance for token, falling back to global chatstorage")
+		return repo
+	}
+
+	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(inst.ID)
+	if err != nil {
+		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to get instance chatstorage repo, falling back to global chatstorage")
+		return repo
+	}
+
+	return instanceRepo
 }
 
 func (service serviceChat) ListChats(ctx context.Context, request domainChat.ListChatsRequest) (response domainChat.ListChatsResponse, err error) {
@@ -37,15 +62,17 @@ func (service serviceChat) ListChats(ctx context.Context, request domainChat.Lis
 		HasMedia:   request.HasMedia,
 	}
 
+	repo := service.getChatStorageForToken(ctx, request.Token)
+
 	// Get chats from storage
-	chats, err := service.chatStorageRepo.GetChats(filter)
+	chats, err := repo.GetChats(filter)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get chats from storage")
 		return response, err
 	}
 
 	// Get total count for pagination
-	totalCount, err := service.chatStorageRepo.GetTotalChatCount()
+	totalCount, err := repo.GetTotalChatCount()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get total chat count")
 		// Continue with partial data
@@ -90,8 +117,10 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 		return response, err
 	}
 
+	repo := service.getChatStorageForToken(ctx, request.Token)
+
 	// Get chat info first
-	chat, err := service.chatStorageRepo.GetChat(request.ChatJID)
+	chat, err := repo.GetChat(request.ChatJID)
 	if err != nil {
 		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get chat info")
 		return response, err
@@ -130,14 +159,14 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 	var messages []*domainChatStorage.Message
 	if request.Search != "" {
 		// Use search functionality if search query is provided
-		messages, err = service.chatStorageRepo.SearchMessages(request.ChatJID, request.Search, request.Limit)
+		messages, err = repo.SearchMessages(request.ChatJID, request.Search, request.Limit)
 		if err != nil {
 			logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to search messages")
 			return response, err
 		}
 	} else {
 		// Use regular filter
-		messages, err = service.chatStorageRepo.GetMessages(filter)
+		messages, err = repo.GetMessages(filter)
 		if err != nil {
 			logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get messages")
 			return response, err
@@ -145,7 +174,7 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 	}
 
 	// Get total message count for pagination
-	totalCount, err := service.chatStorageRepo.GetChatMessageCount(request.ChatJID)
+	totalCount, err := repo.GetChatMessageCount(request.ChatJID)
 	if err != nil {
 		logrus.WithError(err).WithField("chat_jid", request.ChatJID).Error("Failed to get message count")
 		// Continue with partial data
