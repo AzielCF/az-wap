@@ -31,6 +31,12 @@ func (controller *User) UserInfo(c *fiber.Ctx) error {
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.Info(c.UserContext(), request)
@@ -48,6 +54,12 @@ func (controller *User) UserAvatar(c *fiber.Ctx) error {
 	var request domainUser.AvatarRequest
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -70,6 +82,12 @@ func (controller *User) UserChangeAvatar(c *fiber.Ctx) error {
 	request.Avatar, err = c.FormFile("avatar")
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	err = controller.Service.ChangeAvatar(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -81,7 +99,11 @@ func (controller *User) UserChangeAvatar(c *fiber.Ctx) error {
 }
 
 func (controller *User) UserMyPrivacySetting(c *fiber.Ctx) error {
-	response, err := controller.Service.MyPrivacySetting(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	response, err := controller.Service.MyPrivacySetting(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -93,7 +115,11 @@ func (controller *User) UserMyPrivacySetting(c *fiber.Ctx) error {
 }
 
 func (controller *User) UserMyListGroups(c *fiber.Ctx) error {
-	response, err := controller.Service.MyListGroups(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	response, err := controller.Service.MyListGroups(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -105,7 +131,11 @@ func (controller *User) UserMyListGroups(c *fiber.Ctx) error {
 }
 
 func (controller *User) UserMyListNewsletter(c *fiber.Ctx) error {
-	response, err := controller.Service.MyListNewsletter(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	response, err := controller.Service.MyListNewsletter(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -117,7 +147,11 @@ func (controller *User) UserMyListNewsletter(c *fiber.Ctx) error {
 }
 
 func (controller *User) UserMyListContacts(c *fiber.Ctx) error {
-	response, err := controller.Service.MyListContacts(c.UserContext())
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	response, err := controller.Service.MyListContacts(c.UserContext(), token)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -133,6 +167,12 @@ func (controller *User) UserChangePushName(c *fiber.Ctx) error {
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
 
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
+
 	err = controller.Service.ChangePushName(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -147,6 +187,12 @@ func (controller *User) UserCheck(c *fiber.Ctx) error {
 	var request domainUser.CheckRequest
 	err := c.QueryParser(&request)
 	utils.PanicIfNeeded(err)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	response, err := controller.Service.IsOnWhatsApp(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -165,6 +211,12 @@ func (controller *User) UserBusinessProfile(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	utils.SanitizePhone(&request.Phone)
+
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+	request.Token = token
 
 	response, err := controller.Service.BusinessProfile(c.UserContext(), request)
 	utils.PanicIfNeeded(err)

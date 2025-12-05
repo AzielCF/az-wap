@@ -8,6 +8,7 @@ import (
 
 type InfoRequest struct {
 	Phone string `json:"phone" query:"phone"`
+	Token string `json:"token,omitempty"`
 }
 
 type InfoResponseDataDevice struct {
@@ -33,6 +34,7 @@ type AvatarRequest struct {
 	Phone       string `json:"phone" query:"phone"`
 	IsPreview   bool   `json:"is_preview" query:"is_preview"`
 	IsCommunity bool   `json:"is_community" query:"is_community"`
+	Token       string `json:"token,omitempty"`
 }
 
 type AvatarResponse struct {
@@ -59,6 +61,7 @@ type MyListNewsletterResponse struct {
 
 type ChangeAvatarRequest struct {
 	Avatar *multipart.FileHeader `json:"avatar" form:"avatar"`
+	Token  string                `json:"token,omitempty"`
 }
 
 type MyListContactsResponse struct {
@@ -72,10 +75,12 @@ type MyListContactsResponseData struct {
 
 type ChangePushNameRequest struct {
 	PushName string `json:"push_name" form:"push_name"`
+	Token    string `json:"token,omitempty"`
 }
 
 type CheckRequest struct {
 	Phone string `json:"phone" query:"phone"`
+	Token string `json:"token,omitempty"`
 }
 
 type CheckResponse struct {
@@ -84,6 +89,7 @@ type CheckResponse struct {
 
 type BusinessProfileRequest struct {
 	Phone string `json:"phone" query:"phone"`
+	Token string `json:"token,omitempty"`
 }
 
 type BusinessProfileCategory struct {

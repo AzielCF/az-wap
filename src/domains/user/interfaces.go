@@ -20,14 +20,14 @@ type IUserProfile interface {
 
 // IUserListing handles user listing operations
 type IUserListing interface {
-	MyListGroups(ctx context.Context) (response MyListGroupsResponse, err error)
-	MyListNewsletter(ctx context.Context) (response MyListNewsletterResponse, err error)
-	MyListContacts(ctx context.Context) (response MyListContactsResponse, err error)
+	MyListGroups(ctx context.Context, token string) (response MyListGroupsResponse, err error)
+	MyListNewsletter(ctx context.Context, token string) (response MyListNewsletterResponse, err error)
+	MyListContacts(ctx context.Context, token string) (response MyListContactsResponse, err error)
 }
 
 // IUserPrivacy handles user privacy operations
 type IUserPrivacy interface {
-	MyPrivacySetting(ctx context.Context) (response MyPrivacySettingResponse, err error)
+	MyPrivacySetting(ctx context.Context, token string) (response MyPrivacySettingResponse, err error)
 }
 
 // IUserUsecase combines all user interfaces for backward compatibility

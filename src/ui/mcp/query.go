@@ -47,7 +47,8 @@ func (h *QueryHandler) toolListContacts() mcp.Tool {
 }
 
 func (h *QueryHandler) handleListContacts(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	resp, err := h.userService.MyListContacts(ctx)
+	_ = request
+	resp, err := h.userService.MyListContacts(ctx, "")
 	if err != nil {
 		return nil, err
 	}
