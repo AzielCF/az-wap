@@ -18,8 +18,9 @@ body {
 }
 
 .container {
-    padding: 2em 1em !important;
-    max-width: 1400px !important;
+    width: 100% !important;
+    max-width: 80% !important;
+    padding: 2em 0.5em !important;
     margin: 0 auto !important;
 }
 
@@ -267,6 +268,16 @@ body {
     animation: fadeIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+.ui.grid.cards {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+.instance-manager {
+    width: 100%;
+}
+
 .ui.modal {
     border-radius: 20px !important;
     background-color: var(--message-background) !important;
@@ -291,6 +302,34 @@ body {
     color: white !important;
     font-weight: 600 !important;
     letter-spacing: 0.5px;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+}
+
+.modal-panel {
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: #ffffff !important;
+    border-radius: 16px !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.modal-panel--wide {
+    max-width: 760px;
+}
+
+.modal-panel--narrow {
+    max-width: 520px;
 }
 
 /* Splash Screen Styles */

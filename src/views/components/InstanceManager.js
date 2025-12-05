@@ -675,8 +675,8 @@ export default {
         },
     },
     template: `
-    <div>
-        <div class="green card" style="cursor: default">
+    <div class="instance-manager">
+        <div class="green card" style="cursor: default; width: 100%;">
             <div class="content">
             <a class="ui teal right ribbon label">Instances</a>
             <div class="header">Instance Manager</div>
@@ -1075,8 +1075,8 @@ export default {
             </div>
 
             <!-- Modal Chatwoot configuración de instancia -->
-            <div v-if="chatwootEditingInstanceId" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-                <div class="ui segment" style="max-width: 640px; width: 100%; max-height: 80vh; overflow-y: auto; background: #ffffff;">
+            <div v-if="chatwootEditingInstanceId" class="modal-overlay">
+                <div class="ui segment modal-panel modal-panel--wide">
                     <h4 class="ui header">Chatwoot configuration</h4>
                     <div class="ui form">
                         <div class="field">
@@ -1143,8 +1143,8 @@ export default {
                 </div>
             </div>
 
-            <div v-if="showBotModal" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-            <div class="ui segment" style="max-width: 640px; width: 100%; max-height: 80vh; overflow-y: auto; background: #ffffff;">
+            <div v-if="showBotModal" class="modal-overlay">
+            <div class="ui segment modal-panel modal-panel--wide">
                 <h4 class="ui header">{{ editingBotId ? 'Edit Bot AI' : 'New Bot AI' }}</h4>
                 <div class="ui form">
                             <div class="fields">
@@ -1258,8 +1258,8 @@ export default {
                 </div>
             </div>
         </div>
-        <div v-if="showCredentialModal" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-            <div class="ui segment" style="max-width: 520px; width: 100%; background: #ffffff;">
+        <div v-if="showCredentialModal" class="modal-overlay">
+            <div class="ui segment modal-panel modal-panel--narrow">
                 <h4 class="ui header">{{ credentialEditingId ? 'Edit credential' : 'New credential' }}</h4>
                 <div class="ui form">
                     <div class="fields">
