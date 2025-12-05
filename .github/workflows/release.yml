@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Normalize owner (lowercase)
+        run: |
+          OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LOWER=${OWNER_LOWER}" >> $GITHUB_ENV
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -123,8 +128,8 @@ jobs:
           release:
             draft: false
             github:
-              owner: "aldinokemal"
-              name: "go-whatsapp-web-multidevice"
+              owner: "${{ env.OWNER_LOWER }}"
+              name: "az-wap"
           EOF
 
       - name: Run GoReleaser for Linux/Windows
@@ -139,6 +144,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Normalize owner (lowercase)
+        run: |
+          OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LOWER=${OWNER_LOWER}" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -195,8 +205,8 @@ jobs:
           release:
             draft: false
             github:
-              owner: "aldinokemal"
-              name: "go-whatsapp-web-multidevice"
+              owner: "${{ env.OWNER_LOWER }}"
+              name: "az-wap"
           EOF
 
       - name: Run GoReleaser for macOS
