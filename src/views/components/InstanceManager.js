@@ -678,8 +678,7 @@ export default {
     <div class="instance-manager">
         <div class="green card" style="cursor: default; width: 100%;">
             <div class="content">
-            <a class="ui teal right ribbon label">Instances</a>
-            <div class="header">Instance Manager</div>
+            <a class="ui teal right ribbon label">Instance Manager</a>
             <div class="description">
                 <div class="ui form">
                     <div class="field">
@@ -712,7 +711,6 @@ export default {
                                         <option value="Europe/Madrid">Europe/Madrid</option>
                                         <option value="Europe/London">Europe/London</option>
                                     </select>
-                                </div>
                                 </div>
                                 <button type="button" class="ui button" :class="{ loading: savingGlobalGeminiPrompt }" @click="saveGlobalGeminiPrompt" :disabled="savingGlobalGeminiPrompt">
                                     Save global settings
@@ -796,13 +794,13 @@ export default {
                                 </button>
                             </div>
                             <div v-if="showNewInstanceSection" style="margin-top: 0.75rem;">
-                                <div class="fields">
-                                    <div class="ten wide field">
-                                        <label>New instance name</label>
+                                <div class="ui form">
+                                    <div class="field">
+                                        <label>Instance name</label>
                                         <input type="text" v-model="newName" placeholder="e.g. my-bot-ventas" :disabled="creating"
                                                @keyup.enter="createInstance">
                                     </div>
-                                    <div class="six wide field" style="padding-top: 23px;">
+                                    <div class="field" style="padding-top: 23px;">
                                         <button class="ui primary button" type="button" @click="createInstance" :disabled="creating || !newName">
                                             <i class="plus icon"></i>
                                             Create instance
