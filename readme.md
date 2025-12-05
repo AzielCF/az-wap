@@ -13,17 +13,16 @@
 Your support helps ensure the library stays maintained and receives regular updates!
 ___
 
-![release version](https://img.shields.io/github/v/release/aldinokemal/go-whatsapp-web-multidevice)
-![Build Image](https://github.com/aldinokemal/go-whatsapp-web-multidevice/actions/workflows/build-docker-image.yaml/badge.svg)
-![Binary Release](https://github.com/aldinokemal/go-whatsapp-web-multidevice/actions/workflows/release.yml/badge.svg)
+![release version](https://img.shields.io/github/v/release/AzielCF/az-wap)
+![Build Image](https://github.com/AzielCF/az-wap/actions/workflows/build-docker-image.yaml/badge.svg)
+![Binary Release](https://github.com/AzielCF/az-wap/actions/workflows/release.yml/badge.svg)
 
 ## Support for `ARM` & `AMD` Architecture along with `MCP` Support
 
 Download:
 
-- [Release](https://github.com/aldinokemal/go-whatsapp-web-multidevice/releases/latest)
-- [Docker Hub](https://hub.docker.com/r/aldinokemal2104/go-whatsapp-web-multidevice/tags)
-- [GitHub Container Registry](https://github.com/aldinokemal/go-whatsapp-web-multidevice/pkgs/container/go-whatsapp-web-multidevice)
+- [Release](https://github.com/AzielCF/az-wap/releases/latest)
+- [GitHub Container Registry](https://github.com/AzielCF/az-wap/pkgs/container/az-wap)
 
 ## Support n8n package (n8n.io)
 
@@ -39,7 +38,7 @@ Download:
     - for example: `./whatsapp mcp`
 - `v7`
   - Starting version 7.x we are using goreleaser to build the binary, so you can download the binary
-      from [release](https://github.com/aldinokemal/go-whatsapp-web-multidevice/releases/latest)
+      from [release](https://github.com/AzielCF/az-wap/releases/latest)
 
 ## Feature
 
@@ -177,7 +176,7 @@ Note: Command-line flags will override any values set in environment variables o
 
 ### Basic
 
-1. Clone this repo: `git clone https://github.com/aldinokemal/go-whatsapp-web-multidevice`
+1. Clone this repo: `git clone https://github.com/AzielCF/az-wap`
 2. Open the folder that was cloned via cmd/terminal.
 3. run `cd src`
 4. run `go run . rest` (for REST API mode)
@@ -185,14 +184,14 @@ Note: Command-line flags will override any values set in environment variables o
 
 ### Docker (you don't need to install in required)
 
-1. Clone this repo: `git clone https://github.com/aldinokemal/go-whatsapp-web-multidevice`
+1. Clone this repo: `git clone https://github.com/AzielCF/az-wap`
 2. Open the folder that was cloned via cmd/terminal.
 3. run `docker-compose up -d --build`
 4. open `http://localhost:3000`
 
 ### Build your own binary
 
-1. Clone this repo `git clone https://github.com/aldinokemal/go-whatsapp-web-multidevice`
+1. Clone this repo `git clone https://github.com/AzielCF/az-wap`
 2. Open the folder that was cloned via cmd/terminal.
 3. run `cd src`
 4. run
