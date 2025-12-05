@@ -2,11 +2,14 @@ package rest
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/AzielCF/az-wap/config"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
+	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -206,6 +209,11 @@ func InitRestInstance(app fiber.Router, service domainInstance.IInstanceUsecase,
 	app.Put("/instances/:id/webhook", rest.UpdateInstanceWebhookConfig)
 	app.Put("/instances/:id/chatwoot", rest.UpdateInstanceChatwootConfig)
 	app.Post("/instances/:id/chatwoot/webhook", rest.ReceiveChatwootWebhook)
+	app.Put("/instances/:id/bot", rest.UpdateInstanceBotConfig)
+	app.Put("/instances/:id/gemini", rest.UpdateInstanceGeminiConfig)
+	app.Post("/instances/:id/gemini/memory/clear", rest.ClearInstanceGeminiMemory)
+	app.Get("/settings/gemini", rest.GetGeminiSettings)
+	app.Put("/settings/gemini", rest.UpdateGeminiSettings)
 	return rest
 }
 
@@ -252,6 +260,17 @@ func (handler *Instance) ListInstances(c *fiber.Ctx) error {
 			"chatwoot_account_id":          instance.ChatwootAccountID,
 			"chatwoot_inbox_id":            instance.ChatwootInboxID,
 			"chatwoot_inbox_identifier":    instance.ChatwootInboxIdentifier,
+			"chatwoot_enabled":             instance.ChatwootEnabled,
+			"bot_id":                       instance.BotID,
+			"gemini_enabled":               instance.GeminiEnabled,
+			"gemini_api_key":               instance.GeminiAPIKey,
+			"gemini_model":                 instance.GeminiModel,
+			"gemini_system_prompt":         instance.GeminiSystemPrompt,
+			"gemini_knowledge_base":        instance.GeminiKnowledgeBase,
+			"gemini_timezone":              instance.GeminiTimezone,
+			"gemini_audio_enabled":         instance.GeminiAudioEnabled,
+			"gemini_image_enabled":         instance.GeminiImageEnabled,
+			"gemini_memory_enabled":        instance.GeminiMemoryEnabled,
 		})
 	}
 
@@ -321,6 +340,19 @@ func (handler *Instance) UpdateInstanceWebhookConfig(c *fiber.Ctx) error {
 		"chatwoot_bot_token":           inst.ChatwootBotToken,
 		"chatwoot_account_id":          inst.ChatwootAccountID,
 		"chatwoot_inbox_id":            inst.ChatwootInboxID,
+		"chatwoot_inbox_identifier":    inst.ChatwootInboxIdentifier,
+		"chatwoot_credential_id":       inst.ChatwootCredentialID,
+		"chatwoot_enabled":             inst.ChatwootEnabled,
+		"bot_id":                       inst.BotID,
+		"gemini_enabled":               inst.GeminiEnabled,
+		"gemini_api_key":               inst.GeminiAPIKey,
+		"gemini_model":                 inst.GeminiModel,
+		"gemini_system_prompt":         inst.GeminiSystemPrompt,
+		"gemini_knowledge_base":        inst.GeminiKnowledgeBase,
+		"gemini_timezone":              inst.GeminiTimezone,
+		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
+		"gemini_image_enabled":         inst.GeminiImageEnabled,
+		"gemini_memory_enabled":        inst.GeminiMemoryEnabled,
 	}
 
 	return c.JSON(utils.ResponseData{
@@ -340,6 +372,8 @@ func (handler *Instance) UpdateInstanceChatwootConfig(c *fiber.Ctx) error {
 		InboxIdentifier string `json:"inbox_identifier"`
 		AccountToken    string `json:"account_token"`
 		BotToken        string `json:"bot_token"`
+		CredentialID    string `json:"credential_id"`
+		Enabled         bool   `json:"enabled"`
 	}
 
 	if err := c.BodyParser(&request); err != nil {
@@ -351,7 +385,7 @@ func (handler *Instance) UpdateInstanceChatwootConfig(c *fiber.Ctx) error {
 		})
 	}
 
-	inst, err := handler.Service.UpdateChatwootConfig(c.UserContext(), id, request.BaseURL, request.AccountID, request.InboxID, request.InboxIdentifier, request.AccountToken, request.BotToken)
+	inst, err := handler.Service.UpdateChatwootConfig(c.UserContext(), id, request.BaseURL, request.AccountID, request.InboxID, request.InboxIdentifier, request.AccountToken, request.BotToken, request.CredentialID, request.Enabled)
 	if err != nil {
 		return c.Status(400).JSON(utils.ResponseData{
 			Status:  400,
@@ -375,12 +409,155 @@ func (handler *Instance) UpdateInstanceChatwootConfig(c *fiber.Ctx) error {
 		"chatwoot_account_id":          inst.ChatwootAccountID,
 		"chatwoot_inbox_id":            inst.ChatwootInboxID,
 		"chatwoot_inbox_identifier":    inst.ChatwootInboxIdentifier,
+		"gemini_enabled":               inst.GeminiEnabled,
+		"bot_id":                       inst.BotID,
+		"gemini_api_key":               inst.GeminiAPIKey,
+		"gemini_model":                 inst.GeminiModel,
+		"gemini_system_prompt":         inst.GeminiSystemPrompt,
+		"gemini_knowledge_base":        inst.GeminiKnowledgeBase,
+		"gemini_timezone":              inst.GeminiTimezone,
+		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
+		"gemini_image_enabled":         inst.GeminiImageEnabled,
 	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Instance chatwoot config updated",
+		Results: response,
+	})
+}
+
+func (handler *Instance) UpdateInstanceGeminiConfig(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var request struct {
+		Enabled       bool   `json:"enabled"`
+		APIKey        string `json:"api_key"`
+		Model         string `json:"model"`
+		SystemPrompt  string `json:"system_prompt"`
+		KnowledgeBase string `json:"knowledge_base"`
+		Timezone      string `json:"timezone"`
+		AudioEnabled  bool   `json:"audio_enabled"`
+		ImageEnabled  bool   `json:"image_enabled"`
+		MemoryEnabled bool   `json:"memory_enabled"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	inst, err := handler.Service.UpdateGeminiConfig(c.UserContext(), id, request.Enabled, request.APIKey, request.Model, request.SystemPrompt, request.KnowledgeBase, request.Timezone, request.AudioEnabled, request.ImageEnabled, request.MemoryEnabled)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	response := map[string]any{
+		"id":                           inst.ID,
+		"name":                         inst.Name,
+		"status":                       inst.Status,
+		"token":                        inst.Token,
+		"webhook_urls":                 inst.WebhookURLs,
+		"webhook_secret":               inst.WebhookSecret,
+		"webhook_insecure_skip_verify": inst.WebhookInsecureSkipVerify,
+		"chatwoot_base_url":            inst.ChatwootBaseURL,
+		"chatwoot_account_token":       inst.ChatwootAccountToken,
+		"chatwoot_bot_token":           inst.ChatwootBotToken,
+		"chatwoot_account_id":          inst.ChatwootAccountID,
+		"chatwoot_inbox_id":            inst.ChatwootInboxID,
+		"chatwoot_inbox_identifier":    inst.ChatwootInboxIdentifier,
+		"gemini_enabled":               inst.GeminiEnabled,
+		"gemini_api_key":               inst.GeminiAPIKey,
+		"gemini_model":                 inst.GeminiModel,
+		"gemini_system_prompt":         inst.GeminiSystemPrompt,
+		"gemini_knowledge_base":        inst.GeminiKnowledgeBase,
+		"gemini_timezone":              inst.GeminiTimezone,
+		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
+		"gemini_image_enabled":         inst.GeminiImageEnabled,
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Instance gemini config updated",
+		Results: response,
+	})
+}
+
+func (handler *Instance) UpdateInstanceBotConfig(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var request struct {
+		BotID *string `json:"bot_id"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	if request.BotID == nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: "bot_id: cannot be null.",
+			Results: nil,
+		})
+	}
+
+	inst, err := handler.Service.UpdateBotConfig(c.UserContext(), id, *request.BotID)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	response := map[string]any{
+		"id":                           inst.ID,
+		"name":                         inst.Name,
+		"status":                       inst.Status,
+		"token":                        inst.Token,
+		"webhook_urls":                 inst.WebhookURLs,
+		"webhook_secret":               inst.WebhookSecret,
+		"webhook_insecure_skip_verify": inst.WebhookInsecureSkipVerify,
+		"chatwoot_base_url":            inst.ChatwootBaseURL,
+		"chatwoot_account_token":       inst.ChatwootAccountToken,
+		"chatwoot_bot_token":           inst.ChatwootBotToken,
+		"chatwoot_account_id":          inst.ChatwootAccountID,
+		"chatwoot_inbox_id":            inst.ChatwootInboxID,
+		"chatwoot_inbox_identifier":    inst.ChatwootInboxIdentifier,
+		"chatwoot_enabled":             inst.ChatwootEnabled,
+		"bot_id":                       inst.BotID,
+		"gemini_enabled":               inst.GeminiEnabled,
+		"gemini_api_key":               inst.GeminiAPIKey,
+		"gemini_model":                 inst.GeminiModel,
+		"gemini_system_prompt":         inst.GeminiSystemPrompt,
+		"gemini_knowledge_base":        inst.GeminiKnowledgeBase,
+		"gemini_timezone":              inst.GeminiTimezone,
+		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
+		"gemini_image_enabled":         inst.GeminiImageEnabled,
+		"gemini_memory_enabled":        inst.GeminiMemoryEnabled,
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Instance bot config updated",
 		Results: response,
 	})
 }
@@ -891,5 +1068,108 @@ func (handler *Instance) ReceiveChatwootWebhook(c *fiber.Ctx) error {
 		Code:    "SUCCESS",
 		Message: "Chatwoot message forwarded to WhatsApp",
 		Results: sendResp,
+	})
+}
+
+func (handler *Instance) ClearInstanceGeminiMemory(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if strings.TrimSpace(id) == "" {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: "id: cannot be blank.",
+			Results: nil,
+		})
+	}
+
+	instances, err := handler.Service.List(c.UserContext())
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_ERROR",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	found := false
+	for _, inst := range instances {
+		if inst.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return c.Status(404).JSON(utils.ResponseData{
+			Status:  404,
+			Code:    "NOT_FOUND",
+			Message: "Instance not found",
+			Results: nil,
+		})
+	}
+
+	integrationGemini.ClearInstanceMemory(id)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Instance gemini memory cleared",
+		Results: nil,
+	})
+}
+
+func (handler *Instance) GetGeminiSettings(c *fiber.Ctx) error {
+	_ = handler
+	response := map[string]any{
+		"global_system_prompt": config.GeminiGlobalSystemPrompt,
+		"timezone":             config.GeminiTimezone,
+	}
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Gemini settings fetched",
+		Results: response,
+	})
+}
+
+func (handler *Instance) UpdateGeminiSettings(c *fiber.Ctx) error {
+	_ = handler
+	var request struct {
+		GlobalSystemPrompt string `json:"global_system_prompt"`
+		Timezone           string `json:"timezone"`
+	}
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+	if err := config.SaveGeminiGlobalSystemPrompt(request.GlobalSystemPrompt); err != nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_ERROR",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+	if err := config.SaveGeminiTimezone(request.Timezone); err != nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_ERROR",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+	response := map[string]any{
+		"global_system_prompt": config.GeminiGlobalSystemPrompt,
+		"timezone":             config.GeminiTimezone,
+	}
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Gemini settings updated",
+		Results: response,
 	})
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/AzielCF/az-wap/config"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	chatwoot "github.com/AzielCF/az-wap/integrations/chatwoot"
+	"github.com/AzielCF/az-wap/integrations/gemini"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/websocket"
@@ -559,6 +560,15 @@ func handleMessage(ctx context.Context, evt *events.Message, repo domainChatStor
 	if config.WhatsappAutoMarkRead && !evt.Info.IsFromMe {
 		if client := getClientForContext(ctx); client != nil {
 			client.MarkRead(context.Background(), []types.MessageID{evt.Info.ID}, time.Now(), evt.Info.Chat, evt.Info.Sender)
+		}
+	}
+
+	client := getClientForContext(ctx)
+	if client != nil {
+		if instanceID := GetInstanceIDFromContext(ctx); instanceID != "" {
+			// Usamos exactamente el mismo mecanismo de normalización que para el inbound a Chatwoot
+			phone := NormalizePhoneForChatwoot(ctx, evt)
+			go gemini.HandleIncomingMessage(ctx, client, instanceID, phone, evt)
 		}
 	}
 
