@@ -1,13 +1,11 @@
 services:
-  whatsapp_go:
+  azwap:
+    image: ghcr.io/azielcf/az-wap:latest
     logging:
       driver: "json-file"
       options:
         max-size: "200k"
         max-file: "10"
-    build:
-      context: .
-      dockerfile: ./docker/golang.Dockerfile
     restart: "on-failure"
     ports:
       - "3000:3000"
