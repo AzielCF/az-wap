@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+
 	"github.com/AzielCF/az-wap/cmd"
 )
 
