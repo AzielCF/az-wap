@@ -13,8 +13,10 @@ import (
 
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainBot "github.com/AzielCF/az-wap/domains/bot"
 	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
@@ -52,6 +54,8 @@ var (
 	messageUsecase    domainMessage.IMessageUsecase
 	groupUsecase      domainGroup.IGroupUsecase
 	newsletterUsecase domainNewsletter.INewsletterUsecase
+	botUsecase        domainBot.IBotUsecase
+	credentialUsecase domainCredential.ICredentialUsecase
 	instanceUsecase   domainInstance.IInstanceUsecase
 )
 
@@ -343,6 +347,8 @@ func initApp() {
 	messageUsecase = usecase.NewMessageService(appUsecase, chatStorageRepo, instanceUsecase)
 	groupUsecase = usecase.NewGroupService(appUsecase)
 	newsletterUsecase = usecase.NewNewsletterService()
+	botUsecase = usecase.NewBotService()
+	credentialUsecase = usecase.NewCredentialService()
 
 	go autoConnectAllInstances(ctx)
 }

@@ -92,6 +92,66 @@ func ensureInstanceWebhookColumns(db *sql.DB) error {
 			return err
 		}
 	}
+	if !columns["chatwoot_enabled"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN chatwoot_enabled INTEGER NOT NULL DEFAULT 1`); err != nil {
+			return err
+		}
+	}
+	if !columns["chatwoot_credential_id"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN chatwoot_credential_id TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_enabled"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_enabled INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_api_key"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_api_key TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_model"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_model TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_system_prompt"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_system_prompt TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_memory_enabled"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_memory_enabled INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_knowledge_base"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_knowledge_base TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_audio_enabled"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_audio_enabled INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_image_enabled"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_image_enabled INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columns["gemini_timezone"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN gemini_timezone TEXT`); err != nil {
+			return err
+		}
+	}
+	if !columns["bot_id"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN bot_id TEXT`); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -149,7 +209,9 @@ func (service *instanceService) UpdateWebhookConfig(_ context.Context, id string
 }
 
 // UpdateChatwootConfig actualiza la configuración de Chatwoot para una instancia específica.
-func (service *instanceService) UpdateChatwootConfig(_ context.Context, id string, baseURL, accountID, inboxID, inboxIdentifier, accountToken, botToken string) (domainInstance.Instance, error) {
+// Si credentialID no está vacío e existe una credencial kind='chatwoot',
+// baseURL y accountToken se resolverán desde dicha credencial.
+func (service *instanceService) UpdateChatwootConfig(ctx context.Context, id string, baseURL, accountID, inboxID, inboxIdentifier, accountToken, botToken, credentialID string, enabled bool) (domainInstance.Instance, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return domainInstance.Instance{}, pkgError.ValidationError("id: cannot be blank.")
@@ -174,12 +236,35 @@ func (service *instanceService) UpdateChatwootConfig(_ context.Context, id strin
 		return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
 	}
 
-	inst.ChatwootBaseURL = strings.TrimSpace(baseURL)
+	// Si se pasa credentialID e existe base en tabla credentials, la usamos para baseURL y accountToken.
+	credTrim := strings.TrimSpace(credentialID)
+	resolvedBaseURL := strings.TrimSpace(baseURL)
+	resolvedAccountToken := strings.TrimSpace(accountToken)
+	if credTrim != "" && service.db != nil {
+		var credBaseURL, credAccountToken sql.NullString
+		query := `SELECT chatwoot_base_url, chatwoot_account_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`
+		if err := service.db.QueryRowContext(ctx, query, credTrim).Scan(&credBaseURL, &credAccountToken); err != nil {
+			if err != sql.ErrNoRows {
+				logrus.WithError(err).WithField("instance_id", trimmedID).Error("[INSTANCE] failed to resolve Chatwoot credential")
+			}
+		} else {
+			if credBaseURL.Valid && strings.TrimSpace(credBaseURL.String) != "" {
+				resolvedBaseURL = strings.TrimSpace(credBaseURL.String)
+			}
+			if credAccountToken.Valid && strings.TrimSpace(credAccountToken.String) != "" {
+				resolvedAccountToken = strings.TrimSpace(credAccountToken.String)
+			}
+		}
+	}
+
+	inst.ChatwootBaseURL = resolvedBaseURL
 	inst.ChatwootAccountID = strings.TrimSpace(accountID)
 	inst.ChatwootInboxID = strings.TrimSpace(inboxID)
 	inst.ChatwootInboxIdentifier = strings.TrimSpace(inboxIdentifier)
-	inst.ChatwootAccountToken = strings.TrimSpace(accountToken)
+	inst.ChatwootAccountToken = resolvedAccountToken
 	inst.ChatwootBotToken = strings.TrimSpace(botToken)
+	inst.ChatwootEnabled = enabled
+	inst.ChatwootCredentialID = credTrim
 
 	service.instancesByToken[instToken] = inst
 	service.persistInstance(inst)
@@ -228,6 +313,11 @@ func (service *instanceService) Create(_ context.Context, request domainInstance
 		ChatwootAccountID:         "",
 		ChatwootInboxID:           "",
 		ChatwootInboxIdentifier:   "",
+		ChatwootCredentialID:      "",
+		GeminiEnabled:             false,
+		GeminiAPIKey:              "",
+		GeminiModel:               "",
+		GeminiSystemPrompt:        "",
 	}
 
 	service.mu.Lock()
@@ -346,7 +436,20 @@ func initInstanceStorageDB() (*sql.DB, error) {
 			chatwoot_account_token TEXT,
 			chatwoot_bot_token TEXT,
 			chatwoot_account_id TEXT,
-			chatwoot_inbox_id TEXT
+			chatwoot_inbox_id TEXT,
+			chatwoot_inbox_identifier TEXT,
+			chatwoot_enabled INTEGER NOT NULL DEFAULT 1,
+			chatwoot_credential_id TEXT,
+			bot_id TEXT,
+			gemini_enabled INTEGER NOT NULL DEFAULT 0,
+			gemini_api_key TEXT,
+			gemini_model TEXT,
+			gemini_system_prompt TEXT,
+			gemini_knowledge_base TEXT,
+			gemini_timezone TEXT,
+			gemini_audio_enabled INTEGER NOT NULL DEFAULT 0,
+			gemini_image_enabled INTEGER NOT NULL DEFAULT 0,
+			gemini_memory_enabled INTEGER NOT NULL DEFAULT 0
 		);
 	`
 	if _, err := db.Exec(createTable); err != nil {
@@ -369,7 +472,7 @@ func (service *instanceService) loadFromDB() error {
 		return nil
 	}
 
-	rows, err := service.db.Query(`SELECT id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier FROM instances`)
+	rows, err := service.db.Query(`SELECT id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id FROM instances`)
 	if err != nil {
 		return err
 	}
@@ -385,7 +488,10 @@ func (service *instanceService) loadFromDB() error {
 		var insecureVal sql.NullInt64
 		var baseURLStr, accountTokenStr, botTokenStr sql.NullString
 		var accountIDStr, inboxIDStr, inboxIdentifierStr sql.NullString
-		if err := rows.Scan(&inst.ID, &inst.Name, &inst.Token, &statusStr, &urlsStr, &secretStr, &insecureVal, &baseURLStr, &accountTokenStr, &botTokenStr, &accountIDStr, &inboxIDStr, &inboxIdentifierStr); err != nil {
+		var chatwootEnabledVal, geminiEnabledVal, geminiAudioEnabledVal, geminiImageEnabledVal, geminiMemoryEnabledVal sql.NullInt64
+		var geminiAPIKeyStr, geminiModelStr, geminiSystemPromptStr, geminiKnowledgeBaseStr, geminiTimezoneStr sql.NullString
+		var botIDStr, chatwootCredIDStr sql.NullString
+		if err := rows.Scan(&inst.ID, &inst.Name, &inst.Token, &statusStr, &urlsStr, &secretStr, &insecureVal, &baseURLStr, &accountTokenStr, &botTokenStr, &accountIDStr, &inboxIDStr, &inboxIdentifierStr, &chatwootEnabledVal, &geminiEnabledVal, &geminiAPIKeyStr, &geminiModelStr, &geminiSystemPromptStr, &geminiKnowledgeBaseStr, &geminiTimezoneStr, &geminiAudioEnabledVal, &geminiImageEnabledVal, &geminiMemoryEnabledVal, &botIDStr, &chatwootCredIDStr); err != nil {
 			return err
 		}
 		inst.Status = domainInstance.Status(statusStr)
@@ -445,6 +551,66 @@ func (service *instanceService) loadFromDB() error {
 		} else {
 			inst.ChatwootInboxIdentifier = ""
 		}
+		if chatwootEnabledVal.Valid {
+			inst.ChatwootEnabled = chatwootEnabledVal.Int64 != 0
+		} else {
+			inst.ChatwootEnabled = true
+		}
+		if geminiEnabledVal.Valid {
+			inst.GeminiEnabled = geminiEnabledVal.Int64 != 0
+		} else {
+			inst.GeminiEnabled = false
+		}
+		if geminiAPIKeyStr.Valid && strings.TrimSpace(geminiAPIKeyStr.String) != "" {
+			inst.GeminiAPIKey = strings.TrimSpace(geminiAPIKeyStr.String)
+		} else {
+			inst.GeminiAPIKey = ""
+		}
+		if geminiModelStr.Valid && strings.TrimSpace(geminiModelStr.String) != "" {
+			inst.GeminiModel = strings.TrimSpace(geminiModelStr.String)
+		} else {
+			inst.GeminiModel = ""
+		}
+		if geminiSystemPromptStr.Valid && strings.TrimSpace(geminiSystemPromptStr.String) != "" {
+			inst.GeminiSystemPrompt = strings.TrimSpace(geminiSystemPromptStr.String)
+		} else {
+			inst.GeminiSystemPrompt = ""
+		}
+		if geminiKnowledgeBaseStr.Valid && strings.TrimSpace(geminiKnowledgeBaseStr.String) != "" {
+			inst.GeminiKnowledgeBase = strings.TrimSpace(geminiKnowledgeBaseStr.String)
+		} else {
+			inst.GeminiKnowledgeBase = ""
+		}
+		if geminiTimezoneStr.Valid && strings.TrimSpace(geminiTimezoneStr.String) != "" {
+			inst.GeminiTimezone = strings.TrimSpace(geminiTimezoneStr.String)
+		} else {
+			inst.GeminiTimezone = ""
+		}
+		if geminiAudioEnabledVal.Valid {
+			inst.GeminiAudioEnabled = geminiAudioEnabledVal.Int64 != 0
+		} else {
+			inst.GeminiAudioEnabled = false
+		}
+		if geminiImageEnabledVal.Valid {
+			inst.GeminiImageEnabled = geminiImageEnabledVal.Int64 != 0
+		} else {
+			inst.GeminiImageEnabled = false
+		}
+		if geminiMemoryEnabledVal.Valid {
+			inst.GeminiMemoryEnabled = geminiMemoryEnabledVal.Int64 != 0
+		} else {
+			inst.GeminiMemoryEnabled = false
+		}
+		if botIDStr.Valid && strings.TrimSpace(botIDStr.String) != "" {
+			inst.BotID = strings.TrimSpace(botIDStr.String)
+		} else {
+			inst.BotID = ""
+		}
+		if chatwootCredIDStr.Valid && strings.TrimSpace(chatwootCredIDStr.String) != "" {
+			inst.ChatwootCredentialID = strings.TrimSpace(chatwootCredIDStr.String)
+		} else {
+			inst.ChatwootCredentialID = ""
+		}
 
 		service.instancesByToken[inst.Token] = inst
 
@@ -474,10 +640,30 @@ func (service *instanceService) persistInstance(inst domainInstance.Instance) {
 	if inst.WebhookInsecureSkipVerify {
 		insecureInt = 1
 	}
+	geminiEnabledInt := 0
+	if inst.GeminiEnabled {
+		geminiEnabledInt = 1
+	}
+	geminiAudioEnabledInt := 0
+	if inst.GeminiAudioEnabled {
+		geminiAudioEnabledInt = 1
+	}
+	geminiImageEnabledInt := 0
+	if inst.GeminiImageEnabled {
+		geminiImageEnabledInt = 1
+	}
+	geminiMemoryEnabledInt := 0
+	if inst.GeminiMemoryEnabled {
+		geminiMemoryEnabledInt = 1
+	}
+	chatwootEnabledInt := 0
+	if inst.ChatwootEnabled {
+		chatwootEnabledInt = 1
+	}
 
 	query := `
-		INSERT INTO instances (id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO instances (id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			token = excluded.token,
@@ -491,10 +677,95 @@ func (service *instanceService) persistInstance(inst domainInstance.Instance) {
 			chatwoot_account_id = excluded.chatwoot_account_id,
 			chatwoot_inbox_id = excluded.chatwoot_inbox_id,
 			chatwoot_inbox_identifier = excluded.chatwoot_inbox_identifier,
+			chatwoot_enabled = excluded.chatwoot_enabled,
+			gemini_enabled = excluded.gemini_enabled,
+			gemini_api_key = excluded.gemini_api_key,
+			gemini_model = excluded.gemini_model,
+			gemini_system_prompt = excluded.gemini_system_prompt,
+			gemini_knowledge_base = excluded.gemini_knowledge_base,
+			gemini_timezone = excluded.gemini_timezone,
+			gemini_audio_enabled = excluded.gemini_audio_enabled,
+			gemini_image_enabled = excluded.gemini_image_enabled,
+			gemini_memory_enabled = excluded.gemini_memory_enabled,
+			bot_id = excluded.bot_id,
+			chatwoot_credential_id = excluded.chatwoot_credential_id,
 			updated_at = CURRENT_TIMESTAMP;
 	`
 
-	if _, err := service.db.Exec(query, inst.ID, inst.Name, inst.Token, string(inst.Status), urlsStr, inst.WebhookSecret, insecureInt, inst.ChatwootBaseURL, inst.ChatwootAccountToken, inst.ChatwootBotToken, inst.ChatwootAccountID, inst.ChatwootInboxID, inst.ChatwootInboxIdentifier); err != nil {
+	if _, err := service.db.Exec(query, inst.ID, inst.Name, inst.Token, string(inst.Status), urlsStr, inst.WebhookSecret, insecureInt, inst.ChatwootBaseURL, inst.ChatwootAccountToken, inst.ChatwootBotToken, inst.ChatwootAccountID, inst.ChatwootInboxID, inst.ChatwootInboxIdentifier, chatwootEnabledInt, geminiEnabledInt, inst.GeminiAPIKey, inst.GeminiModel, inst.GeminiSystemPrompt, inst.GeminiKnowledgeBase, inst.GeminiTimezone, geminiAudioEnabledInt, geminiImageEnabledInt, geminiMemoryEnabledInt, strings.TrimSpace(inst.BotID), strings.TrimSpace(inst.ChatwootCredentialID)); err != nil {
 		logrus.WithError(err).Error("[INSTANCE] failed to persist instance")
 	}
+}
+
+func (service *instanceService) UpdateBotConfig(_ context.Context, id string, botID string) (domainInstance.Instance, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: cannot be blank.")
+	}
+
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	var (
+		instToken string
+		inst      domainInstance.Instance
+	)
+	for token, candidate := range service.instancesByToken {
+		if candidate.ID == trimmedID {
+			instToken = token
+			inst = candidate
+			break
+		}
+	}
+
+	if instToken == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
+	}
+
+	inst.BotID = strings.TrimSpace(botID)
+	service.instancesByToken[instToken] = inst
+	service.persistInstance(inst)
+
+	return inst, nil
+}
+
+func (service *instanceService) UpdateGeminiConfig(_ context.Context, id string, enabled bool, apiKey, model, systemPrompt, knowledgeBase, timezone string, audioEnabled, imageEnabled, memoryEnabled bool) (domainInstance.Instance, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: cannot be blank.")
+	}
+
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	var (
+		instToken string
+		inst      domainInstance.Instance
+	)
+	for token, candidate := range service.instancesByToken {
+		if candidate.ID == trimmedID {
+			instToken = token
+			inst = candidate
+			break
+		}
+	}
+
+	if instToken == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
+	}
+
+	inst.GeminiEnabled = enabled
+	inst.GeminiAPIKey = strings.TrimSpace(apiKey)
+	inst.GeminiModel = strings.TrimSpace(model)
+	inst.GeminiSystemPrompt = strings.TrimSpace(systemPrompt)
+	inst.GeminiKnowledgeBase = strings.TrimSpace(knowledgeBase)
+	inst.GeminiTimezone = strings.TrimSpace(timezone)
+	inst.GeminiAudioEnabled = audioEnabled
+	inst.GeminiImageEnabled = imageEnabled
+	inst.GeminiMemoryEnabled = memoryEnabled
+
+	service.instancesByToken[instToken] = inst
+	service.persistInstance(inst)
+
+	return inst, nil
 }

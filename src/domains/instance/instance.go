@@ -26,6 +26,20 @@ type Instance struct {
 	ChatwootAccountID       string `json:"chatwoot_account_id,omitempty"`
 	ChatwootInboxID         string `json:"chatwoot_inbox_id,omitempty"`
 	ChatwootInboxIdentifier string `json:"chatwoot_inbox_identifier,omitempty"`
+	ChatwootEnabled         bool   `json:"chatwoot_enabled,omitempty"`
+	ChatwootCredentialID    string `json:"chatwoot_credential_id,omitempty"`
+
+	BotID string `json:"bot_id,omitempty"`
+
+	GeminiEnabled       bool   `json:"gemini_enabled,omitempty"`
+	GeminiAPIKey        string `json:"gemini_api_key,omitempty"`
+	GeminiModel         string `json:"gemini_model,omitempty"`
+	GeminiSystemPrompt  string `json:"gemini_system_prompt,omitempty"`
+	GeminiKnowledgeBase string `json:"gemini_knowledge_base,omitempty"`
+	GeminiTimezone      string `json:"gemini_timezone,omitempty"`
+	GeminiAudioEnabled  bool   `json:"gemini_audio_enabled,omitempty"`
+	GeminiImageEnabled  bool   `json:"gemini_image_enabled,omitempty"`
+	GeminiMemoryEnabled bool   `json:"gemini_memory_enabled,omitempty"`
 }
 
 type CreateInstanceRequest struct {
@@ -38,5 +52,7 @@ type IInstanceUsecase interface {
 	GetByToken(ctx context.Context, token string) (Instance, error)
 	Delete(ctx context.Context, id string) error
 	UpdateWebhookConfig(ctx context.Context, id string, urls []string, secret string, insecure bool) (Instance, error)
-	UpdateChatwootConfig(ctx context.Context, id string, baseURL, accountID, inboxID, inboxIdentifier, accountToken, botToken string) (Instance, error)
+	UpdateChatwootConfig(ctx context.Context, id string, baseURL, accountID, inboxID, inboxIdentifier, accountToken, botToken, credentialID string, enabled bool) (Instance, error)
+	UpdateBotConfig(ctx context.Context, id string, botID string) (Instance, error)
+	UpdateGeminiConfig(ctx context.Context, id string, enabled bool, apiKey, model, systemPrompt, knowledgeBase, timezone string, audioEnabled, imageEnabled, memoryEnabled bool) (Instance, error)
 }

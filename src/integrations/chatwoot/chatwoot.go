@@ -32,12 +32,15 @@ import (
 const (
 	httpTimeout     = 15 * time.Second
 	contactCacheTTL = 5 * time.Minute
+	convCacheTTL    = 10 * time.Minute
 )
 
 var (
-	httpClient     = &http.Client{Timeout: httpTimeout}
-	contactCacheMu sync.RWMutex
-	contactCache   = make(map[string]cachedContact)
+	httpClient          = &http.Client{Timeout: httpTimeout}
+	contactCacheMu      sync.RWMutex
+	contactCache        = make(map[string]cachedContact)
+	conversationCacheMu sync.RWMutex
+	conversationCache   = make(map[string]cachedConversation)
 )
 
 type instanceChatwootConfig struct {
@@ -48,6 +51,7 @@ type instanceChatwootConfig struct {
 	InboxIdentifier string
 	AccountToken    string
 	BotToken        string
+	Enabled         bool
 }
 
 type cachedContact struct {
@@ -56,9 +60,14 @@ type cachedContact struct {
 	ExpiresAt time.Time
 }
 
+type cachedConversation struct {
+	ConversationID int64
+	ExpiresAt      time.Time
+}
+
 // --- MAIN FUNCTION ---
 
-// ForwardWhatsAppMessage envía mensajes de WhatsApp a Chatwoot preservando la lógica original.
+// ForwardWhatsAppMessage envía mensajes de WhatsApp (del cliente) a Chatwoot.
 func ForwardWhatsAppMessage(ctx context.Context, instanceID, phone string, evt *events.Message) {
 	if evt == nil || evt.Info.IsFromMe || evt.Info.IsIncomingBroadcast() || utils.IsGroupJID(evt.Info.Chat.String()) {
 		return
@@ -83,8 +92,8 @@ func ForwardWhatsAppMessage(ctx context.Context, instanceID, phone string, evt *
 		logrus.WithError(err).Errorf("[CHATWOOT] failed to load config for %s", instanceID)
 		return
 	}
-	if cfg == nil {
-		return // Instancia no configurada
+	if cfg == nil || !cfg.Enabled {
+		return // Instancia no configurada o Chatwoot deshabilitado
 	}
 
 	// Procesar Texto
@@ -121,9 +130,91 @@ func ForwardWhatsAppMessage(ctx context.Context, instanceID, phone string, evt *
 		return
 	}
 
-	if err := createConversationWithMessage(ctx, cfg, contactID, sourceID, text, mediaItems); err != nil {
+	convID, err := createConversationWithMessage(ctx, cfg, contactID, sourceID, text, mediaItems, 0)
+	if err != nil {
 		logrus.WithError(err).Errorf("[CHATWOOT] failed to create conversation for %s", phone)
+		return
 	}
+	setCachedConversation(cfg.InstanceID, phone, convID)
+}
+
+// ForwardBotReplyFromEvent envía la respuesta de un Bot IA a Chatwoot usando el teléfono
+// ya normalizado (por ejemplo, vía NormalizePhoneForChatwoot en el manejador de WhatsApp).
+func ForwardBotReplyFromEvent(ctx context.Context, instanceID, phone, reply string) {
+	reply = strings.TrimSpace(reply)
+	instanceID = strings.TrimSpace(instanceID)
+	phone = strings.TrimSpace(phone)
+	if reply == "" || instanceID == "" || phone == "" {
+		return
+	}
+	if err := forwardBotTextMessage(ctx, instanceID, phone, reply); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"instance_id": instanceID,
+			"phone":       phone,
+		}).Error("[CHATWOOT] failed to forward bot reply to Chatwoot")
+	}
+}
+
+// sendTextToConversation envía solo texto a una conversación ya conocida.
+func sendTextToConversation(ctx context.Context, cfg *instanceChatwootConfig, convID int64, text string, messageType string, contentAttrs map[string]interface{}) error {
+	if convID == 0 || text == "" {
+		return fmt.Errorf("missing conversation or text")
+	}
+	mt := strings.TrimSpace(messageType)
+	if mt == "" {
+		mt = "incoming"
+	}
+	if contentAttrs == nil {
+		contentAttrs = map[string]interface{}{}
+	}
+
+	// Elegimos qué token usar:
+	// - Si el mensaje es de bot (from_bot=true) y hay BotToken, usamos BotToken.
+	// - Si message_type=outgoing y hay BotToken, usamos BotToken y marcamos from_bot=true.
+	// - En cualquier otro caso, AccountToken.
+	token := cfg.AccountToken
+	tokenKind := "account"
+	botToken := strings.TrimSpace(cfg.BotToken)
+
+	// Detectar flag from_bot si viene en content_attrs
+	isBot := false
+	if v, ok := contentAttrs["from_bot"]; ok {
+		if vb, ok2 := v.(bool); ok2 && vb {
+			isBot = true
+		}
+	}
+
+	if isBot && botToken != "" {
+		token = botToken
+		tokenKind = "bot"
+	} else if strings.EqualFold(mt, "outgoing") && botToken != "" {
+		token = botToken
+		tokenKind = "bot"
+		if _, exists := contentAttrs["from_bot"]; !exists {
+			contentAttrs["from_bot"] = true
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"message_type": mt,
+		"is_bot":       isBot,
+		"token_kind":   tokenKind,
+		"has_bot":      botToken != "",
+		"conv_id":      convID,
+	}).Info("[CHATWOOT] sending text to conversation")
+
+	req := map[string]interface{}{
+		"content":            text,
+		"message_type":       mt,
+		"private":            false,
+		"content_type":       "text",
+		"content_attributes": contentAttrs,
+	}
+	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages", cfg.BaseURL, cfg.AccountID, convID)
+	if err := jsonRequest(ctx, http.MethodPost, url, token, req, nil); err != nil {
+		return fmt.Errorf("send text failed: %w", err)
+	}
+	return nil
 }
 
 // --- LOGIC: CONFIG LOADING ---
@@ -136,9 +227,10 @@ func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceChatwo
 	}
 	defer db.Close()
 
-	var baseUrl, accId, inboxId, inboxIdent, accToken, botToken sql.NullString
-	query := `SELECT chatwoot_base_url, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_account_token, chatwoot_bot_token FROM instances WHERE id = ?`
-	if err := db.QueryRowContext(ctx, query, instanceID).Scan(&baseUrl, &accId, &inboxId, &inboxIdent, &accToken, &botToken); err != nil {
+	var baseUrl, accId, inboxId, inboxIdent, accToken, botToken, botID sql.NullString
+	var enabled sql.NullInt64
+	query := `SELECT chatwoot_base_url, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_account_token, chatwoot_bot_token, chatwoot_enabled, bot_id FROM instances WHERE id = ?`
+	if err := db.QueryRowContext(ctx, query, instanceID).Scan(&baseUrl, &accId, &inboxId, &inboxIdent, &accToken, &botToken, &enabled, &botID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -149,6 +241,7 @@ func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceChatwo
 		InstanceID:   instanceID,
 		BaseURL:      strings.TrimRight(strings.TrimSpace(baseUrl.String), "/"),
 		AccountToken: strings.TrimSpace(accToken.String),
+		Enabled:      !enabled.Valid || enabled.Int64 != 0,
 	}
 
 	if cfg.BaseURL == "" || cfg.AccountToken == "" {
@@ -164,6 +257,26 @@ func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceChatwo
 	}
 
 	cfg.BotToken = strings.TrimSpace(botToken.String)
+	// Si la instancia tiene un bot asignado, damos prioridad al bot.chatwoot_bot_token o al de su credencial.
+	if botID.Valid && strings.TrimSpace(botID.String) != "" {
+		var botTok, botCred sql.NullString
+		if err := db.QueryRowContext(ctx, `SELECT chatwoot_bot_token, chatwoot_credential_id FROM bots WHERE id = ?`, strings.TrimSpace(botID.String)).
+			Scan(&botTok, &botCred); err == nil {
+			if strings.TrimSpace(botTok.String) != "" {
+				cfg.BotToken = strings.TrimSpace(botTok.String)
+			}
+			if botCred.Valid && strings.TrimSpace(botCred.String) != "" {
+				var credBotTok sql.NullString
+				if err := db.QueryRowContext(ctx, `SELECT chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, strings.TrimSpace(botCred.String)).
+					Scan(&credBotTok); err == nil && strings.TrimSpace(credBotTok.String) != "" {
+					cfg.BotToken = strings.TrimSpace(credBotTok.String)
+				}
+			}
+		} else if err != sql.ErrNoRows {
+			logrus.WithError(err).Warnf("[CHATWOOT] failed to resolve bot Chatwoot token")
+		}
+	}
+
 	if inboxIdent.Valid && strings.TrimSpace(inboxIdent.String) != "" {
 		cfg.InboxIdentifier = strings.TrimSpace(inboxIdent.String)
 	} else {
@@ -192,6 +305,20 @@ func resolveInboxIdentifier(ctx context.Context, cfg *instanceChatwootConfig) st
 		return resp.Identifier
 	}
 	return resp.Channel.Identifier
+}
+
+// IsInstanceEnabled devuelve true si la integración de Chatwoot está habilitada y correctamente
+// configurada para la instancia indicada.
+func IsInstanceEnabled(ctx context.Context, instanceID string) bool {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return false
+	}
+	cfg, err := loadInstanceConfig(ctx, instanceID)
+	if err != nil || cfg == nil {
+		return false
+	}
+	return cfg.Enabled
 }
 
 // --- LOGIC: CONTACT MANAGEMENT ---
@@ -295,7 +422,9 @@ func findContactByPhone(ctx context.Context, cfg *instanceChatwootConfig, phone 
 
 // --- LOGIC: CONVERSATION & MESSAGES ---
 
-func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootConfig, contactID int64, sourceID, text string, mediaItems []chatmedia.Item) error {
+// createConversationWithMessage garantiza que exista una conversación para el contacto
+// y envía el mensaje con el messageType indicado (0: incoming, 1: outgoing).
+func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootConfig, contactID int64, sourceID, text string, mediaItems []chatmedia.Item, messageType int) (int64, error) {
 	// A. Find or Create Conversation
 	convID, _ := findExistingConversation(ctx, cfg, contactID) // Ignoramos error, fallback a crear
 	if convID == 0 {
@@ -305,7 +434,7 @@ func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootCon
 		}
 		url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations", cfg.BaseURL, cfg.AccountID)
 		if err := jsonRequest(ctx, http.MethodPost, url, cfg.AccountToken, req, &resp); err != nil {
-			return fmt.Errorf("create conversation failed: %w", err)
+			return 0, fmt.Errorf("create conversation failed: %w", err)
 		}
 		convID = resp.ID
 		logrus.Infof("[CHATWOOT] created conversation %d", convID)
@@ -313,10 +442,17 @@ func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootCon
 
 	// B. Send Text
 	if text != "" {
-		req := map[string]interface{}{"content": text, "message_type": 0, "private": false}
-		url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages", cfg.BaseURL, cfg.AccountID, convID)
-		if err := jsonRequest(ctx, http.MethodPost, url, cfg.AccountToken, req, nil); err != nil {
-			return fmt.Errorf("send text failed: %w", err)
+		// Según la API de Chatwoot, message_type debe ser "incoming" o "outgoing".
+		mt := "incoming"
+		if messageType == 1 {
+			mt = "outgoing"
+		}
+		var attrs map[string]interface{}
+		if messageType == 1 {
+			attrs = map[string]interface{}{"from_bot": true}
+		}
+		if err := sendTextToConversation(ctx, cfg, convID, text, mt, attrs); err != nil {
+			return 0, err
 		}
 	}
 
@@ -326,6 +462,46 @@ func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootCon
 			logrus.WithError(err).Error("[CHATWOOT] failed to send media")
 		}
 	}
+	return convID, nil
+}
+
+// forwardBotTextMessage envía un mensaje de texto generado por un Bot IA a Chatwoot
+// como mensaje "agent/outgoing" (message_type = 1).
+func forwardBotTextMessage(ctx context.Context, instanceID, phone, text string) error {
+	instanceID = strings.TrimSpace(instanceID)
+	phone = strings.TrimSpace(phone)
+	text = strings.TrimSpace(text)
+	if instanceID == "" || phone == "" || text == "" {
+		return nil
+	}
+
+	cfg, err := loadInstanceConfig(ctx, instanceID)
+	if err != nil {
+		return err
+	}
+	if cfg == nil || !cfg.Enabled {
+		return nil
+	}
+
+	contactID, sourceID, err := ensureContact(ctx, cfg, phone, "")
+	if err != nil {
+		return err
+	}
+
+	// 1) Intentar usar conversación cacheada para este phone
+	if convID, ok := getCachedConversation(cfg.InstanceID, phone); ok && convID != 0 {
+		if err := sendTextToConversation(ctx, cfg, convID, text, "outgoing", map[string]interface{}{"from_bot": true}); err == nil {
+			return nil
+		}
+		// Si falla, continuamos a búsqueda/creación normal
+	}
+
+	// 2) Buscar o crear conversación y cachear
+	convID, err := createConversationWithMessage(ctx, cfg, contactID, sourceID, text, nil, 1)
+	if err != nil {
+		return err
+	}
+	setCachedConversation(cfg.InstanceID, phone, convID)
 	return nil
 }
 
@@ -559,4 +735,40 @@ func setCachedContact(instance, phone string, id int64, src string) {
 	contactCacheMu.Lock()
 	contactCache[key] = cachedContact{ContactID: id, SourceID: strings.TrimSpace(src), ExpiresAt: time.Now().Add(contactCacheTTL)}
 	contactCacheMu.Unlock()
+}
+
+func makeConversationCacheKey(instance, phone string) string {
+	if instance == "" || phone == "" {
+		return ""
+	}
+	return instance + "|" + phone
+}
+
+func getCachedConversation(instance, phone string) (int64, bool) {
+	key := makeConversationCacheKey(instance, phone)
+	if key == "" {
+		return 0, false
+	}
+	conversationCacheMu.RLock()
+	defer conversationCacheMu.RUnlock()
+	entry, ok := conversationCache[key]
+	if ok && time.Now().After(entry.ExpiresAt) {
+		go func(k string) {
+			conversationCacheMu.Lock()
+			delete(conversationCache, k)
+			conversationCacheMu.Unlock()
+		}(key)
+		return 0, false
+	}
+	return entry.ConversationID, ok
+}
+
+func setCachedConversation(instance, phone string, convID int64) {
+	key := makeConversationCacheKey(instance, phone)
+	if key == "" || convID == 0 {
+		return
+	}
+	conversationCacheMu.Lock()
+	conversationCache[key] = cachedConversation{ConversationID: convID, ExpiresAt: time.Now().Add(convCacheTTL)}
+	conversationCacheMu.Unlock()
 }
