@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	AppVersion             = "v1.0.4"
+	AppVersion             = "v1.0.5"
 	AppPort                = "3000"
 	AppDebug               = false
 	AppOs                  = "AzielCf"
