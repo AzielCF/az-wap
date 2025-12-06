@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type Instance struct {
@@ -601,13 +603,27 @@ func (handler *Instance) ReceiveChatwootWebhook(c *fiber.Ctx) error {
 			Results: nil,
 		})
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"instance_id": id,
-		"path":        c.Path(),
-		"method":      c.Method(),
-		"payload":     payload,
-	}).Info("[CHATWOOT] webhook received")
+	flag := viper.GetString("capture_chatwoot_webhooks")
+	if flag == "" {
+		flag = viper.GetString("capture_chatwoot_payloads")
+	}
+	if flag == "1" {
+		if data, err := json.MarshalIndent(payload, "", "  "); err == nil {
+			logrus.WithFields(logrus.Fields{
+				"instance_id": id,
+				"path":        c.Path(),
+				"method":      c.Method(),
+			}).Info("[CHATWOOT_WEBHOOK_CAPTURE] payload")
+			logrus.Info(string(data))
+		}
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"instance_id": id,
+			"path":        c.Path(),
+			"method":      c.Method(),
+			"payload":     payload,
+		}).Info("[CHATWOOT] webhook received")
+	}
 
 	eventVal, ok := payload["event"]
 	event, _ := eventVal.(string)
@@ -845,19 +861,33 @@ func (handler *Instance) ReceiveChatwootWebhook(c *fiber.Ctx) error {
 			msgType = int(f)
 		}
 	}
+	fromBot := false
+	if rawAttrs, ok := lastMsgVal["content_attributes"]; ok {
+		if attrs, ok2 := rawAttrs.(map[string]any); ok2 {
+			if v, ok3 := attrs["from_bot"].(bool); ok3 && v {
+				fromBot = true
+			}
+		}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"instance_id":  id,
 		"sender_type":  senderTypeVal,
 		"message_type": msgType,
 		"has_msg_type": hasMsgType,
+		"from_bot":     fromBot,
 	}).Debug("[CHATWOOT] Message validation check")
 
-	if senderTypeVal != "User" || msgType != 1 {
+	allowedSender := senderTypeVal == "User"
+	if fromBot {
+		allowedSender = false
+	}
+	if !allowedSender || msgType != 1 {
 		logrus.WithFields(logrus.Fields{
 			"instance_id":  id,
 			"sender_type":  senderTypeVal,
 			"message_type": msgType,
+			"from_bot":     fromBot,
 		}).Info("[CHATWOOT] webhook ignored: not an agent outbound message")
 		return c.JSON(utils.ResponseData{
 			Status:  200,

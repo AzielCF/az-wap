@@ -111,7 +111,15 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	if evt == nil || client == nil {
 		return
 	}
-	if evt.Info.IsFromMe || evt.Info.IsIncomingBroadcast() || utils.IsGroupJID(evt.Info.Chat.String()) {
+	chatStr := evt.Info.Chat.String()
+	if evt.Info.IsFromMe || evt.Info.IsIncomingBroadcast() || utils.IsGroupJID(chatStr) {
+		return
+	}
+	src := strings.ToLower(strings.TrimSpace(evt.Info.SourceString()))
+	if strings.HasPrefix(chatStr, "status@") ||
+		strings.HasSuffix(chatStr, "@broadcast") ||
+		strings.Contains(src, "status@broadcast") ||
+		strings.EqualFold(strings.TrimSpace(evt.Info.Category), "status") {
 		return
 	}
 	instanceID = strings.TrimSpace(instanceID)
@@ -119,7 +127,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		return
 	}
 	// Usamos siempre el JID del chat (conversación) como destinatario para evitar device parts.
-	recipientJID := utils.FormatJID(evt.Info.Chat.String())
+	recipientJID := utils.FormatJID(chatStr)
 	if recipientJID.String() == "" {
 		return
 	}

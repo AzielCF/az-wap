@@ -24,6 +24,7 @@ import (
 	"github.com/AzielCF/az-wap/pkg/chatmedia"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -211,6 +212,19 @@ func sendTextToConversation(ctx context.Context, cfg *instanceChatwootConfig, co
 		"content_attributes": contentAttrs,
 	}
 	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/messages", cfg.BaseURL, cfg.AccountID, convID)
+	flag := viper.GetString("capture_chatwoot_payloads")
+	if flag == "" {
+		flag = viper.GetString("CAPTURE_CHATWOOT_PAYLOADS")
+	}
+	if flag == "1" {
+		if data, err := json.MarshalIndent(req, "", "  "); err == nil {
+			logrus.WithFields(logrus.Fields{
+				"url":        url,
+				"token_kind": tokenKind,
+			}).Info("[CHATWOOT_CAPTURE] payload")
+			logrus.Info(string(data))
+		}
+	}
 	if err := jsonRequest(ctx, http.MethodPost, url, token, req, nil); err != nil {
 		return fmt.Errorf("send text failed: %w", err)
 	}
@@ -338,11 +352,26 @@ func ensureContact(ctx context.Context, cfg *instanceChatwootConfig, phone, name
 
 	// 3. Create API
 	logrus.Infof("[CHATWOOT] creating contact: %s", phone)
+	flag := viper.GetString("capture_chatwoot_contacts")
+	if flag == "" {
+		flag = viper.GetString("capture_chatwoot_payloads")
+	}
 	req := map[string]interface{}{
 		"inbox_id":     cfg.InboxID,
 		"name":         name,
 		"phone_number": phone,
 		"identifier":   phone,
+	}
+	contactURL := fmt.Sprintf("%s/api/v1/accounts/%d/contacts", cfg.BaseURL, cfg.AccountID)
+	if flag == "1" {
+		if data, err := json.MarshalIndent(req, "", "  "); err == nil {
+			logrus.WithFields(logrus.Fields{
+				"instance_id": cfg.InstanceID,
+				"phone":       phone,
+				"url":         contactURL,
+			}).Info("[CHATWOOT_CONTACT_CAPTURE] request")
+			logrus.Info(string(data))
+		}
 	}
 
 	var resp struct {
@@ -359,7 +388,7 @@ func ensureContact(ctx context.Context, cfg *instanceChatwootConfig, phone, name
 		} `json:"payload"`
 	}
 
-	err := jsonRequest(ctx, http.MethodPost, fmt.Sprintf("%s/api/v1/accounts/%d/contacts", cfg.BaseURL, cfg.AccountID), cfg.AccountToken, req, &resp)
+	err := jsonRequest(ctx, http.MethodPost, contactURL, cfg.AccountToken, req, &resp)
 	if err != nil {
 		// Retry if taken (race condition or soft deletion logic)
 		if strings.Contains(err.Error(), "already been taken") {
@@ -381,6 +410,20 @@ func ensureContact(ctx context.Context, cfg *instanceChatwootConfig, phone, name
 		srcID = s
 	} else if len(contact.ContactInboxes) > 0 && contact.ContactInboxes[0].SourceID != "" {
 		srcID = contact.ContactInboxes[0].SourceID
+	}
+
+	if flag == "1" {
+		out := map[string]interface{}{
+			"contact_id": contact.ID,
+			"source_id":  srcID,
+		}
+		if data, err := json.MarshalIndent(out, "", "  "); err == nil {
+			logrus.WithFields(logrus.Fields{
+				"instance_id": cfg.InstanceID,
+				"phone":       phone,
+			}).Info("[CHATWOOT_CONTACT_CAPTURE] response")
+			logrus.Info(string(data))
+		}
 	}
 
 	setCachedContact(cfg.InstanceID, phone, contact.ID, srcID)
@@ -509,6 +552,10 @@ func findExistingConversation(ctx context.Context, cfg *instanceChatwootConfig, 
 	if contactID <= 0 {
 		return 0, nil
 	}
+	flag := viper.GetString("capture_chatwoot_conversations")
+	if flag == "" {
+		flag = viper.GetString("capture_chatwoot_payloads")
+	}
 	url := fmt.Sprintf("%s/api/v1/accounts/%d/contacts/%d/conversations", cfg.BaseURL, cfg.AccountID, contactID)
 	var resp struct {
 		Payload []struct {
@@ -520,6 +567,17 @@ func findExistingConversation(ctx context.Context, cfg *instanceChatwootConfig, 
 
 	if err := jsonRequest(ctx, http.MethodGet, url, cfg.AccountToken, nil, &resp); err != nil {
 		return 0, err
+	}
+
+	if flag == "1" {
+		if data, err := json.MarshalIndent(resp, "", "  "); err == nil {
+			logrus.WithFields(logrus.Fields{
+				"instance_id": cfg.InstanceID,
+				"contact_id":  contactID,
+				"url":         url,
+			}).Info("[CHATWOOT_CONVERSATIONS_CAPTURE] response")
+			logrus.Info(string(data))
+		}
 	}
 
 	var fallback int64

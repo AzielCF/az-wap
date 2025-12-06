@@ -19,6 +19,7 @@ import (
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/websocket"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -239,8 +240,26 @@ func GetInstanceDB(instanceID string) *sqlstore.Container {
 
 func SetInstanceClient(instanceID string, client *whatsmeow.Client, instDB *sqlstore.Container) {
 	instanceClientsMu.Lock()
+	defer instanceClientsMu.Unlock()
+
+	if existing, ok := instanceClients[instanceID]; ok && existing != nil && existing.Client != nil && existing.Client != client {
+		oldDev := ""
+		newDev := ""
+		if existing.Client.Store != nil && existing.Client.Store.ID != nil {
+			oldDev = existing.Client.Store.ID.String()
+		}
+		if client != nil && client.Store != nil && client.Store.ID != nil {
+			newDev = client.Store.ID.String()
+		}
+		logrus.WithFields(logrus.Fields{
+			"instance_id": instanceID,
+			"old_device":  oldDev,
+			"new_device":  newDev,
+		}).Warn("[INSTANCE] Replacing existing WhatsApp client for instance; disconnecting previous client")
+		existing.Client.Disconnect()
+	}
+
 	instanceClients[instanceID] = &InstanceClient{Client: client, DB: instDB}
-	instanceClientsMu.Unlock()
 }
 
 func GetActiveInstanceID() string {
@@ -281,6 +300,7 @@ func getClientForContext(ctx context.Context) *whatsmeow.Client {
 		if c := GetInstanceClient(id); c != nil {
 			return c
 		}
+		logrus.WithField("instance_id", id).Warn("[INSTANCE] No client found for context instance; falling back to global client")
 	}
 	// 2. Fallback to Global Client
 	return GetClient()
@@ -540,6 +560,30 @@ func handleDeleteForMe(ctx context.Context, evt *events.DeleteForMe, repo domain
 
 func handleMessage(ctx context.Context, evt *events.Message, repo domainChatStorage.IChatStorageRepository) {
 	log.Infof("Msg %s from %s: type=%s", evt.Info.ID, evt.Info.SourceString(), evt.Info.Type)
+
+	// Captura opcional del evento de mensaje para debugging/tests.
+	flag := viper.GetString("capture_whatsapp_events")
+	if flag == "" {
+		flag = viper.GetString("CAPTURE_WHATSAPP_EVENTS")
+	}
+	if flag == "1" {
+		payload := map[string]interface{}{
+			"id":             evt.Info.ID,
+			"from":           evt.Info.Sender.String(),
+			"chat":           evt.Info.Chat.String(),
+			"type":           evt.Info.Type,
+			"push_name":      evt.Info.PushName,
+			"source":         evt.Info.SourceString(),
+			"is_from_me":     evt.Info.IsFromMe,
+			"is_broadcast":   evt.Info.IsIncomingBroadcast(),
+			"normalized_jid": utils.FormatJID(evt.Info.Sender.String()).String(),
+			"text":           utils.ExtractMessageTextFromProto(evt.Message),
+		}
+		if data, err := json.MarshalIndent(payload, "", "  "); err == nil {
+			logrus.Info("[WHATSAPP_CAPTURE] message event")
+			logrus.Info(string(data))
+		}
+	}
 
 	if err := repo.CreateMessage(ctx, evt); err != nil {
 		log.Errorf("Failed to store message %s: %v", evt.Info.ID, err)

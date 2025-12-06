@@ -9,6 +9,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+var (
+	generateBotTextReplyFunc = integrationGemini.GenerateBotTextReply
+	clearBotMemoryFunc       = integrationGemini.ClearBotMemory
+)
+
 type Bot struct {
 	Service domainBot.IBotUsecase
 }
@@ -148,7 +153,7 @@ func (h *Bot) ClearMemory(c *fiber.Ctx) error {
 		})
 	}
 
-	integrationGemini.ClearBotMemory(id)
+	clearBotMemoryFunc(id)
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -189,7 +194,7 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 		})
 	}
 
-	reply, err := integrationGemini.GenerateBotTextReply(c.UserContext(), id, req.MemoryID, text)
+	reply, err := generateBotTextReplyFunc(c.UserContext(), id, req.MemoryID, text)
 	if err != nil {
 		return c.Status(400).JSON(utils.ResponseData{
 			Status:  400,

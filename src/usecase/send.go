@@ -540,6 +540,14 @@ func resolveDocumentMIME(filename string, fileBytes []byte) string {
 		}
 
 		if mimeType := mime.TypeByExtension(extension); mimeType != "" {
+			// Normalizamos algunos MIME comunes a valores esperados por los tests
+			if extension == ".zip" {
+				// En Windows suele devolverse "application/x-zip-compressed",
+				// pero queremos tratarlo siempre como "application/zip".
+				if strings.HasPrefix(mimeType, "application/x-zip-") {
+					return "application/zip"
+				}
+			}
 			return mimeType
 		}
 	}
