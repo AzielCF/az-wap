@@ -401,7 +401,7 @@ or with env file (GitHub Container Registry):
 ```yml
 services:
   whatsapp:
-    image: ghcr.io/AzielCF/az-wap
+    image: ghcr.io/azielcf/az-wap
     container_name: whatsapp
     restart: always
     ports:
