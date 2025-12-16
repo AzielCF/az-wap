@@ -231,7 +231,7 @@ Note: Command-line flags will override any values set in environment variables o
 This application can also run as an MCP server, allowing AI agents and tools to interact with WhatsApp through a
 standardized protocol.
 
-1. Clone this repo `git clone https://github.com/aldinokemal/go-whatsapp-web-multidevice`
+1. Clone this repo `git clone https://github.com/AzielCF/az-wap`
 2. Open the folder that was cloned via cmd/terminal.
 3. run `cd src`
 4. run `go run . mcp` or build the binary and run `./whatsapp mcp`
@@ -312,13 +312,13 @@ For AI tools that support MCP with SSE (like Cursor), add this configuration:
 Using Docker Hub:
 
 ```bash
-docker run --detach --publish=3000:3000 --name=whatsapp --restart=always --volume=$(docker volume create --name=whatsapp):/app/storages aldinokemal2104/go-whatsapp-web-multidevice rest --autoreply="Dont't reply this message please"
+docker run --detach --publish=3000:3000 --name=whatsapp --restart=always --volume=$(docker volume create --name=whatsapp):/app/storages azielcf/az-wap rest --autoreply="Dont't reply this message please"
 ```
 
 Using GitHub Container Registry:
 
 ```bash
-docker run --detach --publish=3000:3000 --name=whatsapp --restart=always --volume=$(docker volume create --name=whatsapp):/app/storages ghcr.io/aldinokemal/go-whatsapp-web-multidevice rest --autoreply="Dont't reply this message please"
+docker run --detach --publish=3000:3000 --name=whatsapp --restart=always --volume=$(docker volume create --name=whatsapp):/app/storages ghcr.io/azielcf/az-wap rest --autoreply="Dont't reply this message please"
 ```
 
 ### Production Mode REST (docker compose)
@@ -330,7 +330,7 @@ Using Docker Hub:
 ```yml
 services:
   whatsapp:
-    image: aldinokemal2104/go-whatsapp-web-multidevice
+    image: azielcf/az-wap
     container_name: whatsapp
     restart: always
     ports:
@@ -354,7 +354,7 @@ Using GitHub Container Registry:
 ```yml
 services:
   whatsapp:
-    image: ghcr.io/aldinokemal/go-whatsapp-web-multidevice
+    image: ghcr.io/azielcf/az-wap
     container_name: whatsapp
     restart: always
     ports:
@@ -378,7 +378,7 @@ or with env file (Docker Hub):
 ```yml
 services:
   whatsapp:
-    image: aldinokemal2104/go-whatsapp-web-multidevice
+    image: azielcf/az-wap
     container_name: whatsapp
     restart: always
     ports:
@@ -401,7 +401,7 @@ or with env file (GitHub Container Registry):
 ```yml
 services:
   whatsapp:
-    image: ghcr.io/aldinokemal/go-whatsapp-web-multidevice
+    image: ghcr.io/AzielCF/az-wap
     container_name: whatsapp
     restart: always
     ports:
@@ -421,7 +421,7 @@ volumes:
 
 ### Production Mode (binary)
 
-- download binary from [release](https://github.com/aldinokemal/go-whatsapp-web-multidevice/releases)
+- download binary from [release](https://github.com/AzielCF/az-wap/releases)
 
 You can fork or edit this source code !
 
@@ -436,7 +436,7 @@ You can fork or edit this source code !
 
 ### HTTP REST API
 
-- [API Specification Document](https://bump.sh/aldinokemal/doc/go-whatsapp-web-multidevice).
+- [API Specification Document](https://bump.sh/AzielCF/doc/az-wap).
 - Check [docs/openapi.yml](./docs/openapi.yaml) for detailed API specifications.
 - Use [SwaggerEditor](https://editor.swagger.io) to visualize the API.
 - Generate HTTP clients using [openapi-generator](https://openapi-generator.tech/#try).
