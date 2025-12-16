@@ -22,6 +22,14 @@ Download:
 - [Release](https://github.com/AzielCF/az-wap/releases/latest)
 - [GitHub Container Registry](https://github.com/AzielCF/az-wap/pkgs/container/az-wap)
 
+## Wiki / Documentation
+
+- [GitHub Wiki](https://github.com/AzielCF/az-wap/wiki)
+- Key pages:
+  - [Multi-Instance Configuration](https://github.com/AzielCF/az-wap/wiki/Multi-Instance-Configuration)
+  - [Chatwoot Integration](https://github.com/AzielCF/az-wap/wiki/Chatwoot-Integration)
+  - [Bot System](https://github.com/AzielCF/az-wap/wiki/Bot-System)
+
 ## Support n8n package (n8n.io)
 
 - [n8n package](https://www.npmjs.com/package/@aldinokemal2104/n8n-nodes-gowa)
