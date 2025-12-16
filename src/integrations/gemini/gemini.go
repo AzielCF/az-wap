@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -156,7 +157,8 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		if err != nil || len(imageBytes) == 0 {
 			return
 		}
-		reply, err := generateReplyFromImage(ctx, cfg, imageBytes, media.MimeType)
+		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
+		reply, err := generateReplyFromImage(ctx, cfg, key, imageBytes, media.MimeType)
 		if err != nil {
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from image")
 			return
@@ -164,6 +166,11 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		reply = strings.TrimSpace(reply)
 		if reply == "" {
 			return
+		}
+		if chatwoot.IsInstanceEnabled(ctx, instanceID) {
+			if strings.TrimSpace(phone) != "" {
+				go chatwoot.ForwardBotReplyFromEvent(ctx, instanceID, phone, reply)
+			}
 		}
 		msg := &waE2E.Message{Conversation: proto.String(reply)}
 		if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
@@ -182,7 +189,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		}
 		maxAudio := config.GeminiMaxAudioBytes
 		if maxAudio > 0 && info.Size() > maxAudio {
-			msg := &waE2E.Message{Conversation: proto.String("El audio es muy largo. Por favor envía un mensaje de voz más corto.")}
+			msg := &waE2E.Message{Conversation: proto.String("The audio is too long. Please send a shorter voice message.")}
 			if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
 				logrus.WithError(err).Error("[GEMINI] failed to send too-long-audio warning")
 			}
@@ -426,7 +433,7 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Hora actual del sistema (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
 	if systemText != "" {
 		systemText = currentTimeText + "\n\n" + systemText
 	} else {
@@ -475,12 +482,16 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
 		closeChatFunc := &genai.FunctionDeclaration{
 			Name:        "close_chat",
-			Description: "Signals that the current WhatsApp conversation is finished and memory for this chat should be cleared.",
+			Description: "Call this function when the conversation is finished (user says goodbye, thanks, or explicitly ends the chat). You MUST provide a farewell_message in the same language the user is speaking.",
 			Parameters: &genai.Schema{
 				Type: "object",
 				Properties: map[string]*genai.Schema{
-					"reason": {Type: "string"},
+					"farewell_message": {
+						Type:        "string",
+						Description: "A friendly farewell message to the user in their language. Do NOT mention memory, data deletion, or technical details. Just say goodbye naturally.",
+					},
 				},
+				Required: []string{"farewell_message"},
 			},
 		}
 		if genConfig == nil {
@@ -501,10 +512,18 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		return "", nil
 	}
 	closed := false
+	var farewellMsg string
 	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
 		if len(result.Candidates) > 0 && result.Candidates[0].Content != nil {
 			for _, p := range result.Candidates[0].Content.Parts {
 				if p.FunctionCall != nil && p.FunctionCall.Name == "close_chat" {
+					if args := p.FunctionCall.Args; args != nil {
+						if fw, ok := args["farewell_message"]; ok {
+							if fwStr, ok := fw.(string); ok {
+								farewellMsg = strings.TrimSpace(fwStr)
+							}
+						}
+					}
 					chatMemoryMu.Lock()
 					delete(chatMemory, memoryKey)
 					chatMemoryMu.Unlock()
@@ -515,6 +534,9 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		}
 	}
 	text := strings.TrimSpace(result.Text())
+	if closed && farewellMsg != "" {
+		text = farewellMsg
+	}
 	if text != "" && cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && !closed {
 		chatMemoryMu.Lock()
 		history := chatMemory[memoryKey]
@@ -528,48 +550,12 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 	return text, nil
 }
 
-func transcribeAudio(ctx context.Context, cfg *instanceGeminiConfig, audioBytes []byte, mimeType string) (string, error) {
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  cfg.APIKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-	if err != nil {
-		return "", err
-	}
-	prompt := "Transcribe este audio de voz a texto de forma literal y precisa. Solo devuelve la transcripción del audio, sin añadir comentarios ni respuestas."
-	contents := []*genai.Content{
-		{
-			Role: genai.RoleUser,
-			Parts: []*genai.Part{
-				{Text: prompt},
-				{InlineData: &genai.Blob{MIMEType: mimeType, Data: audioBytes}},
-			},
-		},
-	}
-	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, nil)
-	if err != nil {
-		return "", err
-	}
-	if result == nil {
-		return "", nil
-	}
-	return strings.TrimSpace(result.Text()), nil
+type audioResponse struct {
+	Transcription string `json:"transcription"`
+	Response      string `json:"response"`
 }
 
 func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string) (string, error) {
-	transcription, err := transcribeAudio(ctx, cfg, audioBytes, mimeType)
-	if err != nil {
-		return "", fmt.Errorf("failed to transcribe audio: %w", err)
-	}
-	transcription = strings.TrimSpace(transcription)
-	if transcription == "" {
-		return "", nil
-	}
-	logrus.Infof("[GEMINI] Audio transcription: %s", transcription)
-	return generateReply(ctx, cfg, memoryKey, transcription)
-}
-
-func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, imageBytes []byte, mimeType string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -577,7 +563,8 @@ func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, imag
 	if err != nil {
 		return "", err
 	}
-	var genConfig *genai.GenerateContentConfig
+
+	// Build system prompt
 	systemText := strings.TrimSpace(config.GeminiGlobalSystemPrompt)
 	if strings.TrimSpace(cfg.SystemPrompt) != "" {
 		if systemText != "" {
@@ -605,27 +592,71 @@ func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, imag
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Hora actual del sistema (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
 	if systemText != "" {
 		systemText = currentTimeText + "\n\n" + systemText
 	} else {
 		systemText = currentTimeText
 	}
-	if systemText != "" {
-		genConfig = &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(systemText, genai.RoleUser),
+
+	// Build contents with history if memory is enabled
+	var contents []*genai.Content
+	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
+		chatMemoryMu.Lock()
+		history := chatMemory[memoryKey]
+		chatMemoryMu.Unlock()
+		for _, t := range history {
+			role := genai.RoleUser
+			if t.Role == "assistant" {
+				role = genai.RoleModel
+			}
+			contents = append(contents, &genai.Content{
+				Role:  role,
+				Parts: []*genai.Part{{Text: t.Text}},
+			})
 		}
 	}
-	prompt := "Analiza y describe brevemente esta imagen y responde al usuario en texto, en español. Si la imagen contiene texto relevante, transcríbelo de forma resumida."
-	contents := []*genai.Content{
-		{
-			Role: genai.RoleUser,
-			Parts: []*genai.Part{
-				{Text: prompt},
-				{InlineData: &genai.Blob{MIMEType: mimeType, Data: imageBytes}},
+
+	// Add the audio message with structured output prompt
+	prompt := `Listen to this voice message and do the following:
+1. Transcribe literally what the user says in the audio.
+2. Reply to the user as if they had typed that message.
+
+Return a JSON object with fields "transcription" and "response".
+
+Important: The "response" MUST be written in the same language the user is speaking.`
+
+	contents = append(contents, &genai.Content{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{
+			{Text: prompt},
+			{InlineData: &genai.Blob{MIMEType: mimeType, Data: audioBytes}},
+		},
+	})
+
+	// Configure structured output
+	genConfig := &genai.GenerateContentConfig{
+		ResponseMIMEType: "application/json",
+		ResponseJsonSchema: &genai.Schema{
+			Type: "object",
+			Properties: map[string]*genai.Schema{
+				"transcription": {
+					Type:        "string",
+					Description: "A literal transcription of what the user says in the audio",
+				},
+				"response": {
+					Type:        "string",
+					Description: "A helpful reply to the user based on what they said in the audio (must be in the user's language)",
+				},
 			},
+			Required:         []string{"transcription", "response"},
+			PropertyOrdering: []string{"transcription", "response"},
 		},
 	}
+	if systemText != "" {
+		genConfig.SystemInstruction = genai.NewContentFromText(systemText, genai.RoleUser)
+	}
+
 	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
 	if err != nil {
 		return "", err
@@ -633,5 +664,178 @@ func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, imag
 	if result == nil {
 		return "", nil
 	}
-	return strings.TrimSpace(result.Text()), nil
+
+	// Parse structured response
+	var audioResp audioResponse
+	if err := json.Unmarshal([]byte(result.Text()), &audioResp); err != nil {
+		logrus.WithError(err).Warn("[GEMINI] Failed to parse audio structured response, using raw text")
+		return strings.TrimSpace(result.Text()), nil
+	}
+
+	transcription := strings.TrimSpace(audioResp.Transcription)
+	response := strings.TrimSpace(audioResp.Response)
+
+	logrus.Infof("[GEMINI] Audio transcription: %s", transcription)
+
+	// Store both transcription and response in memory
+	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && transcription != "" {
+		chatMemoryMu.Lock()
+		history := chatMemory[memoryKey]
+		history = append(history, chatTurn{Role: "user", Text: transcription})
+		if response != "" {
+			history = append(history, chatTurn{Role: "assistant", Text: response})
+		}
+		if len(history) > 10 {
+			history = history[len(history)-10:]
+		}
+		chatMemory[memoryKey] = history
+		chatMemoryMu.Unlock()
+	}
+
+	return response, nil
+}
+
+type imageResponse struct {
+	Description string `json:"description"`
+	Response    string `json:"response"`
+}
+
+func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, imageBytes []byte, mimeType string) (string, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  cfg.APIKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Build system prompt
+	systemText := strings.TrimSpace(config.GeminiGlobalSystemPrompt)
+	if strings.TrimSpace(cfg.SystemPrompt) != "" {
+		if systemText != "" {
+			systemText = systemText + "\n\n" + cfg.SystemPrompt
+		} else {
+			systemText = cfg.SystemPrompt
+		}
+	}
+	if strings.TrimSpace(cfg.KnowledgeBase) != "" {
+		if systemText != "" {
+			systemText = systemText + "\n\n" + cfg.KnowledgeBase
+		} else {
+			systemText = cfg.KnowledgeBase
+		}
+	}
+	tz := strings.TrimSpace(cfg.Timezone)
+	if tz == "" {
+		tz = strings.TrimSpace(config.GeminiTimezone)
+	}
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	if systemText != "" {
+		systemText = currentTimeText + "\n\n" + systemText
+	} else {
+		systemText = currentTimeText
+	}
+
+	// Build contents with history if memory is enabled
+	var contents []*genai.Content
+	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
+		chatMemoryMu.Lock()
+		history := chatMemory[memoryKey]
+		chatMemoryMu.Unlock()
+		for _, t := range history {
+			role := genai.RoleUser
+			if t.Role == "assistant" {
+				role = genai.RoleModel
+			}
+			contents = append(contents, &genai.Content{
+				Role:  role,
+				Parts: []*genai.Part{{Text: t.Text}},
+			})
+		}
+	}
+
+	// Add the image message with structured output prompt
+	prompt := `Look at this image and do the following:
+1. Describe exactly what you see in the image (objects, text, people, context, etc.)
+2. Reply to the user based on the image content.
+
+Return a JSON object with fields "description" and "response".
+
+Important: The "response" MUST be written in the same language the user is speaking.`
+
+	contents = append(contents, &genai.Content{
+		Role: genai.RoleUser,
+		Parts: []*genai.Part{
+			{Text: prompt},
+			{InlineData: &genai.Blob{MIMEType: mimeType, Data: imageBytes}},
+		},
+	})
+
+	// Configure structured output
+	genConfig := &genai.GenerateContentConfig{
+		ResponseMIMEType: "application/json",
+		ResponseJsonSchema: &genai.Schema{
+			Type: "object",
+			Properties: map[string]*genai.Schema{
+				"description": {
+					Type:        "string",
+					Description: "A detailed description of what is visible in the image (objects, text, people, context, etc.)",
+				},
+				"response": {
+					Type:        "string",
+					Description: "A helpful reply to the user based on the image content (must be in the user's language)",
+				},
+			},
+			Required:         []string{"description", "response"},
+			PropertyOrdering: []string{"description", "response"},
+		},
+	}
+	if systemText != "" {
+		genConfig.SystemInstruction = genai.NewContentFromText(systemText, genai.RoleUser)
+	}
+
+	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return "", nil
+	}
+
+	// Parse structured response
+	var imgResp imageResponse
+	if err := json.Unmarshal([]byte(result.Text()), &imgResp); err != nil {
+		logrus.WithError(err).Warn("[GEMINI] Failed to parse image structured response, using raw text")
+		return strings.TrimSpace(result.Text()), nil
+	}
+
+	description := strings.TrimSpace(imgResp.Description)
+	response := strings.TrimSpace(imgResp.Response)
+
+	logrus.Infof("[GEMINI] Image description: %s", description)
+
+	// Store both description and response in memory
+	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && description != "" {
+		chatMemoryMu.Lock()
+		history := chatMemory[memoryKey]
+		history = append(history, chatTurn{Role: "user", Text: "[Image] " + description})
+		if response != "" {
+			history = append(history, chatTurn{Role: "assistant", Text: response})
+		}
+		if len(history) > 10 {
+			history = history[len(history)-10:]
+		}
+		chatMemory[memoryKey] = history
+		chatMemoryMu.Unlock()
+	}
+
+	return response, nil
 }
