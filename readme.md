@@ -557,3 +557,13 @@ You can fork or edit this source code !
 - Please use official WhatsApp API to avoid any issues.
 - We only able to run MCP or REST API, this is limitation from whatsmeow library. independent MCP will be available in
   the future.
+
+## License Notes
+
+- This fork is licensed under **LGPLv3** (see `LICENSE`).
+- Older AzWap versions (and the original upstream) were under **MIT**.
+- The predecessor project (`gowa`) remains under its own license in its original repository.
+- External libraries used by AzWap keep their original licenses.
+- This change is intended to apply to **modifications to this fork** (AzWap). If you only integrate with AzWap as a standalone service (e.g., via HTTP/webhooks), your project is not re-licensed.
+
+See `THIRD_PARTY_NOTICES.md` for preserved upstream notices.

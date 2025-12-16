@@ -1,3 +1,15 @@
+# Third-Party Notices
+
+This project (AzWap) is a fork that includes upstream code and other third-party components.
+
+## Upstream project (MIT License)
+
+The upstream/predecessor project (commonly referenced as `gowa`) remains under its own license terms in its original repository.
+
+AzWap includes upstream code originally licensed under the MIT License. The MIT License text is preserved below as required.
+
+---
+
 MIT License
 
 Copyright (c) 2022 Aldino Kemal
