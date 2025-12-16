@@ -192,7 +192,8 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		if err != nil || len(audioBytes) == 0 {
 			return
 		}
-		reply, err := generateReplyFromAudio(ctx, cfg, audioBytes, media.MimeType)
+		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
+		reply, err := generateReplyFromAudio(ctx, cfg, key, audioBytes, media.MimeType)
 		if err != nil {
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from audio")
 			return
@@ -200,6 +201,11 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		reply = strings.TrimSpace(reply)
 		if reply == "" {
 			return
+		}
+		if chatwoot.IsInstanceEnabled(ctx, instanceID) {
+			if strings.TrimSpace(phone) != "" {
+				go chatwoot.ForwardBotReplyFromEvent(ctx, instanceID, phone, reply)
+			}
 		}
 		msg := &waE2E.Message{Conversation: proto.String(reply)}
 		if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
@@ -522,7 +528,7 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 	return text, nil
 }
 
-func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, audioBytes []byte, mimeType string) (string, error) {
+func transcribeAudio(ctx context.Context, cfg *instanceGeminiConfig, audioBytes []byte, mimeType string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -530,46 +536,7 @@ func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, audi
 	if err != nil {
 		return "", err
 	}
-	var genConfig *genai.GenerateContentConfig
-	systemText := strings.TrimSpace(config.GeminiGlobalSystemPrompt)
-	if strings.TrimSpace(cfg.SystemPrompt) != "" {
-		if systemText != "" {
-			systemText = systemText + "\n\n" + cfg.SystemPrompt
-		} else {
-			systemText = cfg.SystemPrompt
-		}
-	}
-	if strings.TrimSpace(cfg.KnowledgeBase) != "" {
-		if systemText != "" {
-			systemText = systemText + "\n\n" + cfg.KnowledgeBase
-		} else {
-			systemText = cfg.KnowledgeBase
-		}
-	}
-	tz := strings.TrimSpace(cfg.Timezone)
-	if tz == "" {
-		tz = strings.TrimSpace(config.GeminiTimezone)
-	}
-	if tz == "" {
-		tz = "UTC"
-	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		loc = time.UTC
-	}
-	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Hora actual del sistema (%s): %s", tz, now.Format("2006-01-02 15:04"))
-	if systemText != "" {
-		systemText = currentTimeText + "\n\n" + systemText
-	} else {
-		systemText = currentTimeText
-	}
-	if systemText != "" {
-		genConfig = &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(systemText, genai.RoleUser),
-		}
-	}
-	prompt := "Transcribe brevemente este audio y responde al usuario en texto, en español, como si hubiera escrito ese mensaje."
+	prompt := "Transcribe este audio de voz a texto de forma literal y precisa. Solo devuelve la transcripción del audio, sin añadir comentarios ni respuestas."
 	contents := []*genai.Content{
 		{
 			Role: genai.RoleUser,
@@ -579,7 +546,7 @@ func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, audi
 			},
 		},
 	}
-	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, nil)
 	if err != nil {
 		return "", err
 	}
@@ -587,6 +554,19 @@ func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, audi
 		return "", nil
 	}
 	return strings.TrimSpace(result.Text()), nil
+}
+
+func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string) (string, error) {
+	transcription, err := transcribeAudio(ctx, cfg, audioBytes, mimeType)
+	if err != nil {
+		return "", fmt.Errorf("failed to transcribe audio: %w", err)
+	}
+	transcription = strings.TrimSpace(transcription)
+	if transcription == "" {
+		return "", nil
+	}
+	logrus.Infof("[GEMINI] Audio transcription: %s", transcription)
+	return generateReply(ctx, cfg, memoryKey, transcription)
 }
 
 func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, imageBytes []byte, mimeType string) (string, error) {
