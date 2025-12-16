@@ -2,15 +2,13 @@
 <!-- markdownlint-disable-next-line MD033 -->
 <div align="center">
   <!-- markdownlint-disable-next-line MD033 -->
-  <img src="src/views/assets/gowa.svg" alt="GoWA Logo" width="200" height="200">
+  <img src="src/views/assets/azwap.svg" alt="AzWap Logo" width="200" height="200">
 
-## Golang WhatsApp - Built with Go for efficient memory use
+## AzWap (Gowa Fork) - Multi-instance WhatsApp gateway with native Chatwoot & AI agents support
 
 </div>
 
-[![Patreon](https://img.shields.io/badge/Support%20on-Patreon-orange.svg)](https://www.patreon.com/c/aldinokemal)
-**If you're using this tools to generate income, consider supporting its development by becoming a Patreon member!**
-Your support helps ensure the library stays maintained and receives regular updates!
+
 ___
 
 ![release version](https://img.shields.io/github/v/release/AzielCF/az-wap)
@@ -43,7 +41,10 @@ Download:
 ## Feature
 
 - Send WhatsApp message via http API, [docs/openapi.yml](./docs/openapi.yaml) for more details
+- **Multi-instance Support** - Run multiple WhatsApp sessions/accounts at the same time
 - **MCP (Model Context Protocol) Server Support** - Integrate with AI agents and tools using standardized protocol
+- **AI Agents Support** - Ready to be used by AI agents through the built-in MCP server and native Bot/LLM integrations
+- **Native Chatwoot Integration** - Sync contacts and conversations with Chatwoot for customer support workflows
 - Mention someone
   - `@phoneNumber`
   - example: `Hello @628974812XXXX, @628974812XXXX`
