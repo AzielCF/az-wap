@@ -159,7 +159,7 @@ func GetOrInitInstanceClient(ctx context.Context, instanceID string, repo domain
 	}
 
 	// Initialize new instance
-	dbURI := fmt.Sprintf("file:storages/whatsapp-%s.db?_foreign_keys=on", trimmed)
+	dbURI := fmt.Sprintf("file:%s/whatsapp-%s.db?_foreign_keys=on", config.PathStorages, trimmed)
 	logrus.Infof("[INSTANCE] Creating new WhatsApp client for instance %s", trimmed)
 
 	instDB, err := initDatabase(ctx, waLog.Stdout(fmt.Sprintf("DB-%s", trimmed[:8]), config.WhatsappLogLevel, true), dbURI)
@@ -457,18 +457,39 @@ func CleanupTemporaryFiles() error {
 	return nil
 }
 
-func CleanupInstanceSession(ctx context.Context, instanceID string, repo domainChatStorage.IChatStorageRepository) error {
+func CleanupInstanceSession(_ context.Context, instanceID string, _ domainChatStorage.IChatStorageRepository) error {
 	trimmed := strings.TrimSpace(instanceID)
 	if trimmed == "" {
 		return nil
 	}
-	_, _, err := PerformCleanupAndUpdateGlobals(ctx, fmt.Sprintf("INSTANCE_%s", trimmed), repo)
+
+	instanceClientsMu.Lock()
+	ic := instanceClients[trimmed]
+	delete(instanceClients, trimmed)
+	instanceClientsMu.Unlock()
+
+	if ic != nil && ic.Client != nil {
+		ic.Client.Disconnect()
+	}
+	if ic != nil && ic.DB != nil {
+		ic.DB.Close()
+	}
+
+	instanceWebhookMu.Lock()
+	delete(instanceWebhookByID, trimmed)
+	instanceWebhookMu.Unlock()
+
+	dbURI := fmt.Sprintf("file:%s/whatsapp-%s.db", config.PathStorages, trimmed)
+	removeFileIfExists(dbURI)
+	removeFileIfExists(dbURI + "-wal")
+	removeFileIfExists(dbURI + "-shm")
+
 	activeInstanceMu.Lock()
 	if activeInstanceID == trimmed {
 		activeInstanceID = ""
 	}
 	activeInstanceMu.Unlock()
-	return err
+	return nil
 }
 
 func PerformCleanupAndUpdateGlobals(ctx context.Context, logPrefix string, repo domainChatStorage.IChatStorageRepository) (*sqlstore.Container, *whatsmeow.Client, error) {
@@ -519,7 +540,11 @@ func handler(ctx context.Context, rawEvt any, repo domainChatStorage.IChatStorag
 		globalStateMu.RUnlock()
 		syncKeysDevice(ctx, gDB, gKDB)
 	case *events.LoggedOut:
-		handleRemoteLogout(ctx, repo)
+		if instID := strings.TrimSpace(GetInstanceIDFromContext(ctx)); instID != "" {
+			CleanupInstanceSession(ctx, instID, repo)
+		} else {
+			handleRemoteLogout(ctx, repo)
+		}
 		websocket.Broadcast <- websocket.BroadcastMessage{Code: "LOGOUT_COMPLETE", Message: "Remote logout cleanup completed"}
 	case *events.Connected, *events.PushNameSetting:
 		if cli := getClientForContext(ctx); cli != nil && len(cli.Store.PushName) > 0 {

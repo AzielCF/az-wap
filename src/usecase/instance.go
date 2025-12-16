@@ -335,37 +335,62 @@ func (service *instanceService) Delete(ctx context.Context, id string) error {
 		return pkgError.ValidationError("id: cannot be blank.")
 	}
 
-	service.mu.Lock()
-	var tokenToDelete string
+	// First, resolve the instance and attempt a proper WhatsApp logout BEFORE deleting it.
+	// If logout fails, we block deletion so the caller can explicitly logout first.
+	service.mu.RLock()
 	var inst domainInstance.Instance
-	for token, candidate := range service.instancesByToken {
+	for _, candidate := range service.instancesByToken {
 		if candidate.ID == trimmed {
-			tokenToDelete = token
 			inst = candidate
 			break
 		}
 	}
+	service.mu.RUnlock()
 
-	if tokenToDelete == "" {
-		service.mu.Unlock()
+	if strings.TrimSpace(inst.ID) == "" {
 		return pkgError.ValidationError("id: instance not found.")
 	}
 
-	delete(service.instancesByToken, tokenToDelete)
+	cli, _, err := whatsapp.GetOrInitInstanceClient(ctx, inst.ID, nil)
+	if err != nil {
+		return pkgError.InternalServerError(fmt.Sprintf("failed to init instance client: %v", err))
+	}
+
+	if cli != nil && cli.IsLoggedIn() {
+		if !cli.IsConnected() {
+			if err := cli.Connect(); err != nil {
+				return pkgError.ValidationError("instance is not connected; please logout before deleting.")
+			}
+		}
+		if err := cli.Logout(ctx); err != nil {
+			return pkgError.ValidationError("failed to logout instance; please logout before deleting.")
+		}
+	}
+
+	if err := whatsapp.CleanupInstanceSession(ctx, inst.ID, nil); err != nil {
+		return pkgError.InternalServerError(fmt.Sprintf("failed to cleanup instance session: %v", err))
+	}
+	if err := infraChatStorage.CleanupInstanceRepository(inst.ID); err != nil {
+		logrus.WithError(err).Error("[INSTANCE] failed to cleanup chatstorage for instance")
+	}
+
+	// Now safely remove instance from memory and storage
+	service.mu.Lock()
+	var tokenToDelete string
+	for token, candidate := range service.instancesByToken {
+		if candidate.ID == trimmed {
+			tokenToDelete = token
+			break
+		}
+	}
+	if tokenToDelete != "" {
+		delete(service.instancesByToken, tokenToDelete)
+	}
 	service.mu.Unlock()
 
 	if service.db != nil {
 		if _, err := service.db.Exec(`DELETE FROM instances WHERE id = ?`, trimmed); err != nil {
 			logrus.WithError(err).Error("[INSTANCE] failed to delete instance from storage")
-		}
-	}
-
-	if strings.TrimSpace(inst.ID) != "" {
-		if err := whatsapp.CleanupInstanceSession(ctx, inst.ID, nil); err != nil {
-			logrus.WithError(err).Error("[INSTANCE] failed to cleanup WhatsApp session for instance")
-		}
-		if err := infraChatStorage.CleanupInstanceRepository(inst.ID); err != nil {
-			logrus.WithError(err).Error("[INSTANCE] failed to cleanup chatstorage for instance")
 		}
 	}
 
