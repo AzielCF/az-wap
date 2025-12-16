@@ -75,6 +75,19 @@ Download:
   - `--webhook="http://yourwebhook.site/handler"`, or you can simplify
   - `-w="http://yourwebhook.site/handler"`
   - for more detail, see [Webhook Payload Documentation](./docs/webhook-payload.md)
+- **Chatwoot Webhook (Inbound)**
+  Configure Chatwoot to send webhooks to AzWap:
+
+  - `POST http://localhost:3000/instances/{instance_id}/chatwoot/webhook`
+
+  Supported events:
+
+  - `message_created` (agent outbound messages forwarded to WhatsApp)
+  - `conversation_typing_on` / `conversation_typing_off` (typing indicators forwarded to WhatsApp)
+
+  Loop prevention:
+
+  - Bot messages synced by AzWap to Chatwoot are marked with `content_attributes.from_bot=true` and are ignored by the webhook handler.
 - Webhook Secret
   Our webhook will be sent to you with an HMAC header and a sha256 default key `secret`.
 

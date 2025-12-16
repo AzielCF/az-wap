@@ -577,6 +577,102 @@ When a message is edited, the webhook includes the original message ID to track 
 }
 ```
 
+## Chatwoot Integration (Inbound Webhook)
+
+AzWap includes a native Chatwoot integration that allows you to:
+
+- Receive agent replies from Chatwoot and forward them to WhatsApp
+- Receive typing events from Chatwoot and forward them to WhatsApp
+- Sync bot replies (AI) back to Chatwoot (as outgoing messages marked as bot)
+
+### Endpoint
+
+Chatwoot should be configured to send webhooks to:
+
+```text
+POST http://localhost:3000/instances/{instance_id}/chatwoot/webhook
+```
+
+Example:
+
+```text
+POST http://localhost:3000/instances/af7346ba-23e1-4fbb-8aec-635773b87e55/chatwoot/webhook
+```
+
+### Supported Events
+
+The webhook handler processes:
+
+- `message_created` (agent messages to be forwarded to WhatsApp)
+- `conversation_typing_on` and `conversation_typing_off` (typing indicator forwarded to WhatsApp)
+
+Other events are acknowledged with HTTP 200 and ignored.
+
+### Message Rules (to prevent loops)
+
+For `message_created`, the handler will only forward messages when:
+
+- `sender_type` is `User`
+- `message_type` is `1` (outgoing / agent message)
+- `content_attributes.from_bot` is NOT `true`
+
+This prevents a loop where:
+
+- AzWap sends a bot reply to Chatwoot
+- Chatwoot emits a webhook for that outgoing message
+- AzWap forwards it back to WhatsApp again
+
+### Attachments
+
+If Chatwoot sends a message with attachments, AzWap supports forwarding the first attachment when:
+
+- `file_type` is `image`, `audio`, or `video`
+- `data_url` is present
+
+If `data_url` is missing or attachment type is not supported, AzWap falls back to text (if any).
+
+### Minimal Example Payload (message_created)
+
+This is a simplified example of what AzWap expects (Chatwoot may send additional fields):
+
+```json
+{
+  "event": "message_created",
+  "conversation": {
+    "meta": {
+      "sender": {
+        "phone_number": "+51999999999",
+        "identifier": "+51999999999"
+      }
+    },
+    "messages": [
+      {
+        "content": "Hello from Chatwoot agent",
+        "message_type": 1,
+        "sender_type": "User",
+        "content_attributes": {
+          "from_bot": false
+        },
+        "attachments": []
+      }
+    ]
+  }
+}
+```
+
+### Bot / AI Flow (WhatsApp  AzWap  Gemini  Chatwoot)
+
+When Gemini is enabled for an instance:
+
+1. A user sends a message on WhatsApp (text / voice note / image)
+2. AzWap processes it and (if enabled) calls Gemini
+3. Gemini generates a reply
+4. AzWap sends the reply to WhatsApp
+5. If Chatwoot is enabled, AzWap also sends the reply to Chatwoot as an outgoing message with:
+   - `content_attributes.from_bot = true`
+
+This keeps Chatwoot in sync while ensuring Chatwoot webhooks do not resend bot messages to WhatsApp.
+
 ## Integration Guide
 
 ### Setting Up Webhook Endpoint
