@@ -502,7 +502,7 @@ You can fork or edit this source code !
 
 | Description          | Image                                                         |
 |----------------------|---------------------------------------------------------------|
-| Homepage             | ![Homepage](./gallery/homepage.png)                           |
+| Homepage             | ![Homepage](./gallery/homepage.jpeg)                           |
 | Login                | ![Login](./gallery/login.png)                                 |
 | Login With Code      | ![Login With Code](./gallery/login-with-code.png)             |
 | Send Message         | ![Send Message](./gallery/send-message.png)                   |
