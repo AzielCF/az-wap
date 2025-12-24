@@ -88,6 +88,18 @@ Download:
 
   - `POST http://localhost:3000/instances/{instance_id}/chatwoot/webhook`
 
+  **Security (recommended):**
+
+  This endpoint is intentionally public (Chatwoot usually doesn't send custom auth headers by default). To avoid random
+  callers forging events, you can protect it per-instance using the instance `webhook_secret`.
+
+  If `webhook_secret` is set for the instance, AzWap will require one of:
+
+  - `POST /instances/{instance_id}/chatwoot/webhook?token=<webhook_secret>`
+  - Header `X-Webhook-Token: <webhook_secret>`
+
+  If `webhook_secret` is empty, the endpoint remains public (backward compatible).
+
   Supported events:
 
   - `message_created` (agent outbound messages forwarded to WhatsApp)
@@ -140,8 +152,6 @@ priority):
 2. Environment variables
 3. `.env` file (lowest priority)
 
-To use environment variables:
-
 1. Copy `.env.example` to `.env` in your project root (`cp src/.env.example src/.env`)
 2. Modify the values in `.env` according to your needs
 3. Or set the same variables as system environment variables
@@ -157,15 +167,77 @@ To use environment variables:
 | `APP_BASE_PATH`               | Base path for subpath deployment            | -                                            | `APP_BASE_PATH=/gowa`                       |
 | `APP_TRUSTED_PROXIES`         | Trusted proxy IP ranges for reverse proxy   | -                                            | `APP_TRUSTED_PROXIES=0.0.0.0/0`             |
 | `DB_URI`                      | Database connection URI                     | `file:storages/whatsapp.db?_foreign_keys=on` | `DB_URI=postgres://user:pass@host/db`       |
-| `WHATSAPP_AUTO_REPLY`         | Auto-reply message                          | -                                            | `WHATSAPP_AUTO_REPLY="Auto reply message"`  |
+| `WHATSAPP_AUTO_REPLY`         | Auto-reply message (leave empty to disable) | -                                            | `WHATSAPP_AUTO_REPLY="Thanks, we'll reply soon"`  |
 | `WHATSAPP_AUTO_MARK_READ`     | Auto-mark incoming messages as read         | `false`                                      | `WHATSAPP_AUTO_MARK_READ=true`              |
 | `WHATSAPP_AUTO_DOWNLOAD_MEDIA`| Auto-download media from incoming messages  | `true`                                       | `WHATSAPP_AUTO_DOWNLOAD_MEDIA=false`        |
 | `WHATSAPP_WEBHOOK`            | Webhook URL(s) for events (comma-separated) | -                                            | `WHATSAPP_WEBHOOK=https://webhook.site/xxx` |
 | `WHATSAPP_WEBHOOK_SECRET`     | Webhook secret for validation               | `secret`                                     | `WHATSAPP_WEBHOOK_SECRET=super-secret-key`  |
 | `WHATSAPP_WEBHOOK_INSECURE_SKIP_VERIFY` | Skip TLS verification for webhooks (insecure) | `false` | `WHATSAPP_WEBHOOK_INSECURE_SKIP_VERIFY=true` |
 | `WHATSAPP_ACCOUNT_VALIDATION` | Enable account validation                   | `true`                                       | `WHATSAPP_ACCOUNT_VALIDATION=false`         |
+| `MESSAGE_WORKER_POOL_SIZE`        | Number of concurrent message workers            | `20`                                         | `MESSAGE_WORKER_POOL_SIZE=30`                   |
+| `MESSAGE_WORKER_QUEUE_SIZE`       | Queue size per message worker                   | `1000`                                       | `MESSAGE_WORKER_QUEUE_SIZE=1500`                |
+| `BOT_WEBHOOK_POOL_SIZE`       | Bot webhook worker pool size                | `6`                                          | `BOT_WEBHOOK_POOL_SIZE=12`                  |
+| `BOT_WEBHOOK_QUEUE_SIZE`      | Bot webhook queue size per worker           | `250`                                        | `BOT_WEBHOOK_QUEUE_SIZE=500`                |
+| `BOT_MONITOR_BUFFER`          | Bot monitor ring buffer size (events)       | `200`                                        | `BOT_MONITOR_BUFFER=500`                    |
+| `BOT_MONITOR_TTL`             | Bot monitor TTL for recent events           | `0` (disabled)                               | `BOT_MONITOR_TTL=10m`                       |
 
 Note: Command-line flags will override any values set in environment variables or `.env` file.
+
+### Message Worker Pool Configuration
+
+The Message Worker Pool manages WhatsApp inbound message processing (bot AI over WhatsApp, auto-reply, webhook forwarding, Chatwoot forwarding) with controlled concurrency and guaranteed sequential processing per conversation.
+
+**CLI Flags:**
+- `--message-workers <number>` - Number of concurrent workers (default: 20)
+- `--message-queue-size <number>` - Queue size per worker (default: 1000)
+
+**Environment Variables:**
+- `MESSAGE_WORKER_POOL_SIZE` - Number of workers (backward compatible with `BOT_WORKER_POOL_SIZE`)
+- `MESSAGE_WORKER_QUEUE_SIZE` - Queue size per worker (backward compatible with `BOT_WORKER_QUEUE_SIZE`)
+
+**Examples:**
+
+```bash
+# For 50-200 instances
+./whatsapp rest --message-workers=30 --message-queue-size=1500
+
+# For 200-400 instances
+./whatsapp rest --message-workers=50 --message-queue-size=2000
+
+# For 400-500 instances
+./whatsapp rest --message-workers=80 --message-queue-size=2500
+```
+
+**Key Features:**
+- Controlled concurrency (no memory/CPU explosions)
+- Sequential processing per conversation (messages in order)
+- Parallel processing across different chats
+- Processes full message flow (bot AI + auto-reply + webhooks + Chatwoot)
+- Real-time monitoring via `/api/worker-pool/stats` endpoint
+- Backpressure with buffered queues
+- Graceful shutdown (completes in-flight jobs)
+- Horizontal scaling ready (future: Redis Streams)
+
+**Monitoring Dashboard:**
+Access the real-time worker pool monitor in the UI to view:
+- Active workers and queue depths
+- Message throughput and error rates
+- Active chats and their assigned workers
+- Per-worker statistics
+
+**Monitoring endpoints:**
+- `/api/worker-pool/stats`
+
+### Bot Webhook Worker Pool (separate pool)
+
+The bot webhook endpoint (`POST /bots/:id/webhook`) uses a dedicated worker pool to avoid blocking WhatsApp processing.
+
+**Key properties:**
+- Sharding: per `botID|memoryID` (sequential processing for the same memory)
+- Backpressure: returns HTTP `429` when the queue is full
+- Monitoring endpoint: `/api/bot-webhook-pool/stats`
+
+See [docs/scaling-architecture-plan.md](./docs/scaling-architecture-plan.md) for detailed architecture and scaling guide.
 
 - For more command `./whatsapp --help`
 

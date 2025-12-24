@@ -52,6 +52,52 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	app := fiber.New(fiberConfig)
 
+	app.Use(middleware.Recovery())
+	app.Use(middleware.BasicAuth())
+	if config.AppDebug {
+		app.Use(logger.New())
+	}
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept",
+	}))
+
+	if len(config.AppBasicAuthCredential) == 0 {
+		logrus.Fatalln("APP_BASIC_AUTH is required. Nothing should be public; please set APP_BASIC_AUTH=<user>:<secret>[,<user2>:<secret2>] and restart.")
+	}
+
+	account := make(map[string]string)
+	for _, basicAuth := range config.AppBasicAuthCredential {
+		ba := strings.Split(basicAuth, ":")
+		if len(ba) != 2 {
+			logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
+		}
+		account[ba[0]] = ba[1]
+	}
+
+	app.Use(basicauth.New(basicauth.Config{
+		Users: account,
+		Next: func(c *fiber.Ctx) bool {
+			// Allow CORS preflight without credentials.
+			if c.Method() == fiber.MethodOptions {
+				return true
+			}
+			// Allow Chatwoot webhooks without BasicAuth. They are authenticated at handler-level.
+			path := c.Path()
+			basePath := config.AppBasePath
+			if basePath != "" && !strings.HasPrefix(basePath, "/") {
+				basePath = "/" + basePath
+			}
+			prefix := basePath + "/instances/"
+			suffix := "/chatwoot/webhook"
+			if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, suffix) {
+				return true
+			}
+			return false
+		},
+	}))
+
+	// Static assets should also be protected by auth. Register them AFTER auth middleware.
 	app.Static(config.AppBasePath+"/statics", "./statics")
 	app.Use(config.AppBasePath+"/components", filesystem.New(filesystem.Config{
 		Root:       http.FS(EmbedViews),
@@ -63,44 +109,6 @@ func restServer(_ *cobra.Command, _ []string) {
 		PathPrefix: "views/assets",
 		Browse:     true,
 	}))
-
-	app.Use(middleware.Recovery())
-	app.Use(middleware.BasicAuth())
-	if config.AppDebug {
-		app.Use(logger.New())
-	}
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept",
-	}))
-
-	if len(config.AppBasicAuthCredential) > 0 {
-		account := make(map[string]string)
-		for _, basicAuth := range config.AppBasicAuthCredential {
-			ba := strings.Split(basicAuth, ":")
-			if len(ba) != 2 {
-				logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
-			}
-			account[ba[0]] = ba[1]
-		}
-
-		app.Use(basicauth.New(basicauth.Config{
-			Users: account,
-			Next: func(c *fiber.Ctx) bool {
-				path := c.Path()
-				basePath := config.AppBasePath
-				if basePath != "" && !strings.HasPrefix(basePath, "/") {
-					basePath = "/" + basePath
-				}
-				prefix := basePath + "/instances/"
-				suffix := "/chatwoot/webhook"
-				if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, suffix) {
-					return true
-				}
-				return false
-			},
-		}))
-	}
 
 	// Create base path group or use app directly
 	var apiGroup fiber.Router = app
@@ -119,6 +127,13 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestBot(apiGroup, botUsecase)
 	rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
+
+	// Worker Pool monitoring endpoint
+	apiGroup.Get("/api/worker-pool/stats", rest.GetWorkerPoolStats)
+	apiGroup.Get("/api/bot-webhook-pool/stats", rest.GetBotWebhookPoolStats)
+
+	// Bot monitor endpoint
+	apiGroup.Get("/api/bot-monitor/stats", rest.GetBotMonitorStats)
 
 	apiGroup.Get("/", func(c *fiber.Ctx) error {
 		return c.Render("views/index", fiber.Map{

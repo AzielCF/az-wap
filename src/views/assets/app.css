@@ -218,6 +218,80 @@ body {
     border-radius: 12px !important;
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
     /* background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%) !important; */
+}
+
+.ui.modal > .scrolling.content {
+    max-height: 75vh !important;
+    overflow-y: auto !important;
+}
+
+@keyframes workerFlash {
+    0% {
+        box-shadow: 0 0 0 rgba(51, 204, 117, 0);
+        transform: scale(1);
+    }
+    25% {
+        box-shadow: 0 0 0.8rem rgba(51, 204, 117, 0.35);
+        transform: scale(1.01);
+    }
+    100% {
+        box-shadow: 0 0 0 rgba(51, 204, 117, 0);
+        transform: scale(1);
+    }
+}
+
+.worker-flash {
+    animation: workerFlash 0.9s ease-in-out;
+}
+
+@keyframes workerBusyPulse {
+    0% {
+        box-shadow: 0 0 0 rgba(51, 204, 117, 0);
+    }
+    50% {
+        box-shadow: 0 0 1.1rem rgba(51, 204, 117, 0.22);
+    }
+    100% {
+        box-shadow: 0 0 0 rgba(51, 204, 117, 0);
+    }
+}
+
+@keyframes workerBusyOverlayPulse {
+    0% {
+        opacity: 0.15;
+    }
+    50% {
+        opacity: 0.45;
+    }
+    100% {
+        opacity: 0.15;
+    }
+}
+
+.ui.cards > .card.worker-busy {
+    border: 1px solid rgba(51, 204, 117, 0.28) !important;
+    position: relative;
+    overflow: hidden;
+    animation: workerBusyPulse 1.6s ease-in-out infinite;
+}
+
+.ui.cards > .card.worker-busy::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(51, 204, 117, 0.22);
+    opacity: 0.15;
+    pointer-events: none;
+    animation: workerBusyOverlayPulse 1.6s ease-in-out infinite;
+}
+
+.ui.cards > .card.worker-busy > .content,
+.ui.cards > .card.worker-busy > .extra.content {
+    position: relative;
+    z-index: 1;
+}
+
+.ui.button {
     /* background: var(--primary-color) !important; */
     font-weight: 600 !important;
     letter-spacing: 0.5px;

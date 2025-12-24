@@ -6,6 +6,9 @@ export default {
         return {
             globalGeminiPrompt: '',
             globalGeminiTimezone: '',
+            aiDebounceMs: 3000,
+            aiWaitContactIdleMs: 10000,
+            aiTypingEnabled: true,
             loadingGlobalGeminiPrompt: false,
             savingGlobalGeminiPrompt: false,
             showGlobalIASettings: false,
@@ -18,10 +21,13 @@ export default {
         async loadGlobalGeminiPrompt() {
             try {
                 this.loadingGlobalGeminiPrompt = true;
-                const { data } = await window.http.get('/settings/gemini');
+                const { data } = await window.http.get('/settings/ai');
                 const results = data?.results || {};
                 this.globalGeminiPrompt = results.global_system_prompt || '';
                 this.globalGeminiTimezone = results.timezone || '';
+                this.aiDebounceMs = typeof results.debounce_ms === 'number' ? results.debounce_ms : 0;
+                this.aiWaitContactIdleMs = typeof results.wait_contact_idle_ms === 'number' ? results.wait_contact_idle_ms : 0;
+                this.aiTypingEnabled = typeof results.typing_enabled === 'boolean' ? results.typing_enabled : true;
             } catch (err) {
                 handleApiError(err, 'Failed to load global IA prompt');
             } finally {
@@ -31,15 +37,21 @@ export default {
         async saveGlobalGeminiPrompt() {
             try {
                 this.savingGlobalGeminiPrompt = true;
-                await window.http.put('/settings/gemini', {
+                await window.http.put('/settings/ai', {
                     global_system_prompt: this.globalGeminiPrompt || '',
                     timezone: this.globalGeminiTimezone || '',
+                    debounce_ms: Number.isFinite(this.aiDebounceMs) ? this.aiDebounceMs : 0,
+                    wait_contact_idle_ms: Number.isFinite(this.aiWaitContactIdleMs) ? this.aiWaitContactIdleMs : 0,
+                    typing_enabled: !!this.aiTypingEnabled,
                 });
                 showSuccessInfo('Global IA prompt updated.');
-                const { data } = await window.http.get('/settings/gemini');
+                const { data } = await window.http.get('/settings/ai');
                 const results = data?.results || {};
                 this.globalGeminiPrompt = results.global_system_prompt || '';
                 this.globalGeminiTimezone = results.timezone || '';
+                this.aiDebounceMs = typeof results.debounce_ms === 'number' ? results.debounce_ms : 0;
+                this.aiWaitContactIdleMs = typeof results.wait_contact_idle_ms === 'number' ? results.wait_contact_idle_ms : 0;
+                this.aiTypingEnabled = typeof results.typing_enabled === 'boolean' ? results.typing_enabled : true;
             } catch (err) {
                 handleApiError(err, 'Failed to update global IA prompt');
             } finally {
@@ -61,7 +73,7 @@ export default {
                 </div>
                 <div v-if="showGlobalIASettings" style="margin-top: 0.75rem;">
                     <label>Global IA system prompt</label>
-                    <textarea rows="4" v-model="globalGeminiPrompt" placeholder="Global rules for all Gemini assistants"></textarea>
+                    <textarea rows="4" v-model="globalGeminiPrompt" placeholder="Global rules for all IA assistants"></textarea>
                     <div class="field" style="margin-top: 0.5rem;">
                         <label>IA timezone (IANA)</label>
                         <select class="ui dropdown" v-model="globalGeminiTimezone">
@@ -78,6 +90,20 @@ export default {
                             <option value="Europe/Madrid">Europe/Madrid</option>
                             <option value="Europe/London">Europe/London</option>
                         </select>
+                    </div>
+                    <div class="field" style="margin-top: 0.5rem;">
+                        <label>AI reply debounce (ms)</label>
+                        <input type="number" min="0" step="100" v-model.number="aiDebounceMs" placeholder="0" />
+                    </div>
+                    <div class="field" style="margin-top: 0.5rem;">
+                        <label>Wait contact idle before AI reply (ms)</label>
+                        <input type="number" min="0" step="250" v-model.number="aiWaitContactIdleMs" placeholder="0" />
+                    </div>
+                    <div class="field" style="margin-top: 0.5rem;">
+                        <div class="ui checkbox">
+                            <input type="checkbox" v-model="aiTypingEnabled" />
+                            <label>Simulate human typing before AI reply</label>
+                        </div>
                     </div>
                     <button type="button" class="ui button" :class="{ loading: savingGlobalGeminiPrompt }" @click="saveGlobalGeminiPrompt" :disabled="savingGlobalGeminiPrompt">
                         Save global settings

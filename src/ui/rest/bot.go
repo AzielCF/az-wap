@@ -1,10 +1,16 @@
 package rest
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 
 	domainBot "github.com/AzielCF/az-wap/domains/bot"
 	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
+	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
@@ -12,7 +18,35 @@ import (
 var (
 	generateBotTextReplyFunc = integrationGemini.GenerateBotTextReply
 	clearBotMemoryFunc       = integrationGemini.ClearBotMemory
+
+	botWebhookPoolOnce   sync.Once
+	botWebhookPool       *msgworker.MessageWorkerPool
+	botWebhookPoolCtx    context.Context
+	botWebhookPoolCancel context.CancelFunc
 )
+
+func initBotWebhookPool() {
+	botWebhookPoolOnce.Do(func() {
+		botWebhookPoolCtx, botWebhookPoolCancel = context.WithCancel(context.Background())
+
+		size := 6
+		if v := strings.TrimSpace(os.Getenv("BOT_WEBHOOK_POOL_SIZE")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				size = n
+			}
+		}
+
+		queue := 250
+		if v := strings.TrimSpace(os.Getenv("BOT_WEBHOOK_QUEUE_SIZE")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				queue = n
+			}
+		}
+
+		botWebhookPool = msgworker.NewMessageWorkerPool(size, queue)
+		botWebhookPool.Start(botWebhookPoolCtx)
+	})
+}
 
 type Bot struct {
 	Service domainBot.IBotUsecase
@@ -194,26 +228,82 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 		})
 	}
 
-	reply, err := generateBotTextReplyFunc(c.UserContext(), id, req.MemoryID, text)
-	if err != nil {
-		return c.Status(400).JSON(utils.ResponseData{
-			Status:  400,
-			Code:    "BAD_REQUEST",
-			Message: err.Error(),
+	initBotWebhookPool()
+	if botWebhookPool == nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: "bot webhook worker pool not initialized",
 		})
 	}
 
-	response := map[string]any{
-		"bot_id":    id,
-		"memory_id": req.MemoryID,
-		"input":     text,
-		"reply":     reply,
+	monitorChatID := strings.TrimSpace(req.MemoryID)
+	if monitorChatID == "" {
+		monitorChatID = "(no-memory-id)"
 	}
 
-	return c.JSON(utils.ResponseData{
-		Status:  200,
-		Code:    "SUCCESS",
-		Message: "Bot reply generated",
-		Results: response,
+	type res struct {
+		reply string
+		err   error
+	}
+	resCh := make(chan res, 1)
+
+	ok := botWebhookPool.TryDispatch(msgworker.MessageJob{
+		InstanceID: "bot:" + id,
+		ChatJID:    monitorChatID,
+		Handler: func(ctx context.Context) error {
+			defer func() {
+				if r := recover(); r != nil {
+					select {
+					case resCh <- res{reply: "", err: fmt.Errorf("bot webhook handler panic: %v", r)}:
+					default:
+					}
+				}
+			}()
+			reply, err := generateBotTextReplyFunc(ctx, id, req.MemoryID, text)
+			select {
+			case resCh <- res{reply: reply, err: err}:
+			default:
+			}
+			return err
+		},
 	})
+	if !ok {
+		return c.Status(429).JSON(utils.ResponseData{
+			Status:  429,
+			Code:    "TOO_MANY_REQUESTS",
+			Message: "bot webhook queue is full",
+		})
+	}
+
+	select {
+	case r := <-resCh:
+		if r.err != nil {
+			return c.Status(400).JSON(utils.ResponseData{
+				Status:  400,
+				Code:    "BAD_REQUEST",
+				Message: r.err.Error(),
+			})
+		}
+		reply := r.reply
+		response := map[string]any{
+			"bot_id":    id,
+			"memory_id": req.MemoryID,
+			"input":     text,
+			"reply":     reply,
+		}
+
+		return c.JSON(utils.ResponseData{
+			Status:  200,
+			Code:    "SUCCESS",
+			Message: "Bot reply generated",
+			Results: response,
+		})
+	case <-c.UserContext().Done():
+		return c.Status(499).JSON(utils.ResponseData{
+			Status:  499,
+			Code:    "CLIENT_CLOSED_REQUEST",
+			Message: "request cancelled",
+		})
+	}
 }

@@ -14,8 +14,9 @@ import (
 	"github.com/AzielCF/az-wap/config"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	chatwoot "github.com/AzielCF/az-wap/integrations/chatwoot"
-	"github.com/AzielCF/az-wap/integrations/gemini"
+	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/websocket"
 	"github.com/sirupsen/logrus"
@@ -76,6 +77,12 @@ var (
 
 	instanceClientsMu sync.RWMutex
 	instanceClients   = make(map[string]*InstanceClient)
+
+	// Message worker pool
+	msgWorkerPool *msgworker.MessageWorkerPool
+	poolInitOnce  sync.Once
+	poolCtx       context.Context
+	poolCancel    context.CancelFunc
 )
 
 // --- Context Helpers ---
@@ -87,6 +94,26 @@ func ContextWithInstanceID(ctx context.Context, instanceID string) context.Conte
 func GetInstanceIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(instanceIDKey).(string); ok {
 		return v
+	}
+	return ""
+}
+
+func resolveInstanceIDForAI(ctx context.Context) string {
+	id := strings.TrimSpace(GetInstanceIDFromContext(ctx))
+	if id != "" && id != "global" {
+		return id
+	}
+	if active := strings.TrimSpace(GetActiveInstanceID()); active != "" {
+		return active
+	}
+	instanceClientsMu.RLock()
+	defer instanceClientsMu.RUnlock()
+	if len(instanceClients) == 1 {
+		for k, c := range instanceClients {
+			if strings.TrimSpace(k) != "" && c != nil && c.Client != nil {
+				return k
+			}
+		}
 	}
 	return ""
 }
@@ -133,6 +160,9 @@ func InitWaCLI(ctx context.Context, storeContainer, keysStoreContainer *sqlstore
 		device.PrivacyTokens = innerStore
 	}
 
+	// Initialize message worker pool once
+	initMessageWorkerPool()
+
 	client := whatsmeow.NewClient(device, newFilteredLogger(waLog.Stdout("Client", config.WhatsappLogLevel, true)))
 	client.EnableAutoReconnect = true
 	client.AutoTrustIdentity = true
@@ -145,6 +175,35 @@ func InitWaCLI(ctx context.Context, storeContainer, keysStoreContainer *sqlstore
 	globalStateMu.Unlock()
 
 	return client
+}
+
+// initMessageWorkerPool initializes the message worker pool once
+func initMessageWorkerPool() {
+	poolInitOnce.Do(func() {
+		poolCtx, poolCancel = context.WithCancel(context.Background())
+		msgWorkerPool = msgworker.NewMessageWorkerPool(config.MessageWorkerPoolSize, config.MessageWorkerQueueSize)
+		msgWorkerPool.Start(poolCtx)
+		logrus.Infof("[MSG_WORKER_POOL] Initialized with %d workers, queue size: %d", config.MessageWorkerPoolSize, config.MessageWorkerQueueSize)
+	})
+}
+
+// StopMessageWorkerPool stops the message worker pool gracefully
+func StopMessageWorkerPool() {
+	if poolCancel != nil {
+		poolCancel()
+	}
+	if msgWorkerPool != nil {
+		msgWorkerPool.Stop()
+	}
+}
+
+// GetMessageWorkerPoolStats returns real-time statistics from the worker pool
+func GetMessageWorkerPoolStats() *msgworker.PoolStats {
+	if msgWorkerPool == nil {
+		return nil
+	}
+	stats := msgWorkerPool.GetStats()
+	return &stats
 }
 
 func GetOrInitInstanceClient(ctx context.Context, instanceID string, repo domainChatStorage.IChatStorageRepository) (*whatsmeow.Client, *sqlstore.Container, error) {
@@ -367,7 +426,10 @@ func syncKeysDevice(ctx context.Context, db, keysDB *sqlstore.Container) {
 		return
 	}
 	dev, err := db.GetFirstDevice(ctx)
-	if err != nil || dev == nil {
+	if err != nil {
+		return
+	}
+	if dev == nil {
 		return
 	}
 
@@ -529,6 +591,22 @@ func handler(ctx context.Context, rawEvt any, repo domainChatStorage.IChatStorag
 	switch evt := rawEvt.(type) {
 	case *events.DeleteForMe:
 		handleDeleteForMe(ctx, evt, repo)
+	case *events.ChatPresence:
+		instanceID := strings.TrimSpace(GetInstanceIDFromContext(ctx))
+		if (instanceID == "" || instanceID == "global") && evt != nil {
+			instanceID = resolveInstanceIDForAI(ctx)
+		}
+		if instanceID == "" || instanceID == "global" || evt == nil {
+			return
+		}
+		if evt.IsFromMe {
+			return
+		}
+		chatJID := strings.TrimSpace(evt.Chat.String())
+		if chatJID == "" || utils.IsGroupJID(chatJID) || strings.HasPrefix(chatJID, "status@") || strings.HasSuffix(chatJID, "@broadcast") {
+			return
+		}
+		chatpresence.Update(instanceID, chatJID, evt.State, evt.Media)
 	case *events.AppStateSyncComplete:
 		if cli := getClientForContext(ctx); cli != nil && len(cli.Store.PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
 			cli.SendPresence(context.Background(), types.PresenceAvailable)
@@ -632,21 +710,53 @@ func handleMessage(ctx context.Context, evt *events.Message, repo domainChatStor
 		}
 	}
 
-	client := getClientForContext(ctx)
-	if client != nil {
-		if instanceID := GetInstanceIDFromContext(ctx); instanceID != "" {
-			// Usamos exactamente el mismo mecanismo de normalización que para el inbound a Chatwoot
-			phone := NormalizePhoneForChatwoot(ctx, evt)
-			go gemini.HandleIncomingMessage(ctx, client, instanceID, phone, evt)
+	// Dispatch ALL message processing to worker pool for controlled concurrency
+	if msgWorkerPool != nil {
+		chatJID := evt.Info.Chat.String()
+		instanceID := resolveInstanceIDForAI(ctx)
+		if instanceID == "" {
+			instanceID = "global"
 		}
-	}
 
-	handleAutoReply(ctx, evt, repo)
-	handleWebhookForward(ctx, evt)
+		capturedInstanceID := instanceID
+		msgWorkerPool.Dispatch(msgworker.MessageJob{
+			InstanceID: capturedInstanceID,
+			ChatJID:    chatJID,
+			Handler: func(workerCtx context.Context) error {
+				jobCtx := ContextWithInstanceID(workerCtx, capturedInstanceID)
+				aiInstanceID := capturedInstanceID
+				if aiInstanceID != "" && aiInstanceID != "global" {
+					phone := NormalizePhoneForChatwoot(jobCtx, evt)
+					enqueueAIReplyDebounced(workerCtx, aiInstanceID, phone, evt)
+				}
+
+				// 2. AutoReply
+				handleAutoReply(jobCtx, evt, repo)
+
+				// 3. Webhook forwarding (includes Chatwoot)
+				handleWebhookForward(jobCtx, evt)
+
+				return nil
+			},
+		})
+	} else {
+		// Fallback to old behavior if pool not initialized
+		client := getClientForContext(ctx)
+		if client != nil {
+			if instanceID := resolveInstanceIDForAI(ctx); instanceID != "" && instanceID != "global" {
+				phone := NormalizePhoneForChatwoot(ctx, evt)
+				enqueueAIReplyDebounced(ctx, instanceID, phone, evt)
+			}
+		}
+		handleAutoReply(ctx, evt, repo)
+		handleWebhookForward(ctx, evt)
+	}
 }
 
 func handleAutoReply(ctx context.Context, evt *events.Message, repo domainChatStorage.IChatStorageRepository) {
-	if config.WhatsappAutoReplyMessage == "" || utils.IsGroupJID(evt.Info.Chat.String()) || evt.Info.IsIncomingBroadcast() || evt.Info.IsFromMe || evt.Info.Chat.Server != types.DefaultUserServer {
+	autoReply := strings.TrimSpace(config.WhatsappAutoReplyMessage)
+	autoReply = strings.Trim(autoReply, "\"'")
+	if autoReply == "" || strings.EqualFold(autoReply, "Auto reply message") || utils.IsGroupJID(evt.Info.Chat.String()) || evt.Info.IsIncomingBroadcast() || evt.Info.IsFromMe || evt.Info.Chat.Server != types.DefaultUserServer {
 		return
 	}
 	// Filters
@@ -695,14 +805,14 @@ func handleAutoReply(ctx context.Context, evt *events.Message, repo domainChatSt
 		return
 	}
 	recipientJID := utils.FormatJID(evt.Info.Sender.String())
-	resp, err := client.SendMessage(ctx, recipientJID, &waE2E.Message{Conversation: proto.String(config.WhatsappAutoReplyMessage)})
+	resp, err := client.SendMessage(ctx, recipientJID, &waE2E.Message{Conversation: proto.String(autoReply)})
 	if err != nil {
 		log.Errorf("Auto-reply fail: %v", err)
 		return
 	}
 
 	if repo != nil && client.Store.ID != nil {
-		repo.StoreSentMessageWithContext(ctx, resp.ID, client.Store.ID.String(), recipientJID.String(), config.WhatsappAutoReplyMessage, resp.Timestamp)
+		repo.StoreSentMessageWithContext(ctx, resp.ID, client.Store.ID.String(), recipientJID.String(), autoReply, resp.Timestamp)
 	}
 }
 

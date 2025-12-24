@@ -120,7 +120,11 @@ func initEnvConfig() {
 
 	// WhatsApp settings
 	if envAutoReply := viper.GetString("whatsapp_auto_reply"); envAutoReply != "" {
-		config.WhatsappAutoReplyMessage = envAutoReply
+		trimmed := strings.TrimSpace(envAutoReply)
+		trimmed = strings.Trim(trimmed, "\"'")
+		if trimmed != "" && !strings.EqualFold(trimmed, "Auto reply message") {
+			config.WhatsappAutoReplyMessage = envAutoReply
+		}
 	}
 	if viper.IsSet("whatsapp_auto_mark_read") {
 		config.WhatsappAutoMarkRead = viper.GetBool("whatsapp_auto_mark_read")
@@ -239,6 +243,20 @@ func initFlags() {
 		"account-validation", "",
 		config.WhatsappAccountValidation,
 		`enable or disable account validation --account-validation <true/false> | example: --account-validation=true`,
+	)
+
+	// Message Worker Pool flags
+	rootCmd.PersistentFlags().IntVarP(
+		&config.MessageWorkerPoolSize,
+		"message-workers", "",
+		config.MessageWorkerPoolSize,
+		`number of concurrent message workers --message-workers <number> | example: --message-workers=30 (default: 20)`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.MessageWorkerQueueSize,
+		"message-queue-size", "",
+		config.MessageWorkerQueueSize,
+		`queue size per message worker --message-queue-size <number> | example: --message-queue-size=1500 (default: 1000)`,
 	)
 }
 
