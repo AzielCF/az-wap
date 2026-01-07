@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	domainBot "github.com/AzielCF/az-wap/domains/bot"
+	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
@@ -49,11 +50,12 @@ func initBotWebhookPool() {
 }
 
 type Bot struct {
-	Service domainBot.IBotUsecase
+	Service    domainBot.IBotUsecase
+	MCPService domainMCP.IMCPUsecase
 }
 
-func InitRestBot(app fiber.Router, service domainBot.IBotUsecase) Bot {
-	rest := Bot{Service: service}
+func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService domainMCP.IMCPUsecase) Bot {
+	rest := Bot{Service: service, MCPService: mcpService}
 	app.Get("/bots", rest.ListBots)
 	app.Post("/bots", rest.CreateBot)
 	app.Get("/bots/:id", rest.GetBot)
@@ -61,6 +63,12 @@ func InitRestBot(app fiber.Router, service domainBot.IBotUsecase) Bot {
 	app.Delete("/bots/:id", rest.DeleteBot)
 	app.Post("/bots/:id/webhook", rest.HandleWebhook)
 	app.Post("/bots/:id/memory/clear", rest.ClearMemory)
+
+	// Bot-MCP relations
+	app.Get("/bots/:id/mcp", rest.ListBotMCPs)
+	app.Post("/bots/:id/mcp", rest.AddBotMCP)
+	app.Delete("/bots/:id/mcp/:server_id", rest.RemoveBotMCP)
+
 	return rest
 }
 
@@ -306,4 +314,37 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 			Message: "request cancelled",
 		})
 	}
+}
+
+func (h *Bot) ListBotMCPs(c *fiber.Ctx) error {
+	id := c.Params("id")
+	servers, err := h.MCPService.ListServersForBot(c.UserContext(), id)
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Results: servers,
+	})
+}
+
+func (h *Bot) AddBotMCP(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var req struct {
+		ServerID string `json:"server_id"`
+		Enabled  bool   `json:"enabled"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
+	err := h.MCPService.ToggleServerForBot(c.UserContext(), id, req.ServerID, req.Enabled)
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP toggled"})
+}
+
+func (h *Bot) RemoveBotMCP(c *fiber.Ctx) error {
+	id := c.Params("id")
+	serverID := c.Params("server_id")
+	err := h.MCPService.ToggleServerForBot(c.UserContext(), id, serverID, false)
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP removed"})
 }

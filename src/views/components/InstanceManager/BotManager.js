@@ -30,6 +30,8 @@ export default {
             botChatwootCredentialIdInput: '',
             botChatwootBotTokenInput: '',
             savingBot: false,
+            botMCPServers: [],
+            loadingBotMCPs: false,
         };
     },
     created() {
@@ -127,6 +129,31 @@ export default {
                 $('#bot-chatwoot-credential-dropdown').dropdown('set selected', this.botChatwootCredentialIdInput);
                 $('#bot-timezone-dropdown').dropdown('set selected', this.botTimezoneInput);
             });
+
+            this.loadBotMCPs(bot.id);
+        },
+        async loadBotMCPs(botId) {
+            this.loadingBotMCPs = true;
+            try {
+                const { data } = await window.http.get(`/bots/${botId}/mcp`);
+                this.botMCPServers = data?.results || [];
+            } catch (err) {
+                console.error('Failed to load bot MCPs:', err);
+            } finally {
+                this.loadingBotMCPs = false;
+            }
+        },
+        async toggleMCPForBot(server) {
+            if (!this.editingBotId) return;
+            try {
+                await window.http.post(`/bots/${this.editingBotId}/mcp`, {
+                    server_id: server.id,
+                    enabled: !server.enabled
+                });
+                this.loadBotMCPs(this.editingBotId);
+            } catch (err) {
+                handleApiError(err, 'Failed to toggle MCP server');
+            }
         },
         cancelBotEditor() {
             this.showBotModal = false;
@@ -380,7 +407,35 @@ export default {
                                     <label for="bot-memory-enabled-toggle">Memory</label>
                                 </div>
                             </div>
+                            </div>
                         </div>
+
+                        <!-- MCP Tools for this bot -->
+                        <div v-if="editingBotId" class="ui segment">
+                            <h5 class="ui header">
+                                <i class="tools icon"></i>
+                                Available MCP Tools
+                            </h5>
+                            <div v-if="loadingBotMCPs" class="ui centered inline loader active"></div>
+                            <div v-else-if="botMCPServers.length === 0" class="ui message small">
+                                No MCP servers available. Configure them in the Instance Manager first.
+                            </div>
+                            <div v-else class="ui middle aligned divided list">
+                                <div v-for="srv in botMCPServers" :key="srv.id" class="item">
+                                    <div class="right floated content">
+                                        <div class="ui toggle checkbox">
+                                            <input type="checkbox" :checked="srv.enabled" @change="toggleMCPForBot(srv)">
+                                            <label></label>
+                                        </div>
+                                    </div>
+                                    <div class="content">
+                                        <div class="header" style="font-size: 0.95em;">{{ srv.name }}</div>
+                                        <div class="description" style="font-size: 0.85em;">{{ srv.description || srv.url }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="ui buttons">
                             <button type="button" class="ui primary button" :class="{ loading: savingBot }" @click="saveBot" :disabled="savingBot || !botNameInput">
                                 Save Bot AI

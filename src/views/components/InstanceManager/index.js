@@ -6,6 +6,7 @@ import InstanceList from './InstanceList.js';
 import WebhookEditor from './WebhookEditor.js';
 import ChatwootEditor from './ChatwootEditor.js';
 import GeminiEditor from './GeminiEditor.js';
+import MCPManager from './MCPManager.js';
 
 export default {
     name: 'InstanceManager',
@@ -18,6 +19,7 @@ export default {
         WebhookEditor,
         ChatwootEditor,
         GeminiEditor,
+        MCPManager,
     },
     props: {
         instances: {
@@ -134,6 +136,9 @@ export default {
                             :credentials="credentials"
                             @bots-loaded="handleBotsLoaded"
                         />
+
+                        <!-- Gestión de MCP -->
+                        <MCPManager />
                     </div>
 
                     <!-- Lista de instancias existentes -->

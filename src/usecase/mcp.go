@@ -285,3 +285,40 @@ func (s *mcpService) GetBotTools(ctx context.Context, botID string) ([]domainMCP
 	}
 	return allTools, nil
 }
+
+func (s *mcpService) ListServersForBot(ctx context.Context, botID string) ([]domainMCP.MCPServer, error) {
+	servers, err := s.ListServers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// For each server, check if it's enabled for this bot
+	for i := range servers {
+		var enabled int
+		query := `SELECT enabled FROM bot_mcp_configs WHERE bot_id = ? AND server_id = ?`
+		err := s.db.QueryRowContext(ctx, query, botID, servers[i].ID).Scan(&enabled)
+		if err == nil {
+			servers[i].Enabled = enabled != 0
+		} else {
+			servers[i].Enabled = false
+		}
+	}
+
+	return servers, nil
+}
+
+func (s *mcpService) ToggleServerForBot(ctx context.Context, botID string, serverID string, enabled bool) error {
+	if err := s.ensureDB(); err != nil {
+		return err
+	}
+
+	status := 0
+	if enabled {
+		status = 1
+	}
+
+	query := `INSERT INTO bot_mcp_configs (bot_id, server_id, enabled) VALUES (?, ?, ?)
+			  ON CONFLICT(bot_id, server_id) DO UPDATE SET enabled = ?`
+	_, err := s.db.ExecContext(ctx, query, botID, serverID, status, status)
+	return err
+}

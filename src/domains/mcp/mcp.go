@@ -57,4 +57,6 @@ type IMCPUsecase interface {
 
 	// Bot specific
 	GetBotTools(ctx context.Context, botID string) ([]Tool, error)
+	ListServersForBot(ctx context.Context, botID string) ([]MCPServer, error)
+	ToggleServerForBot(ctx context.Context, botID string, serverID string, enabled bool) error
 }
