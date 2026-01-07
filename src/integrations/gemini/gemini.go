@@ -5,17 +5,21 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
+	"github.com/AzielCF/az-wap/pkg/botmonitor"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/genai"
 	"google.golang.org/protobuf/proto"
@@ -140,9 +144,18 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	if cfg == nil || !cfg.Enabled || cfg.APIKey == "" {
 		return
 	}
+
+	provider := "gemini"
+	chatJID := recipientJID.String()
+	traceID := string(evt.Info.ID)
+
 	if img := evt.Message.GetImageMessage(); img != nil && cfg.ImageEnabled {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "image", Status: "ok"})
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "image", Status: "ok"})
+		start := time.Now()
 		media, err := utils.ExtractMedia(ctx, client, config.PathMedia, img)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "error", Error: "extract_media_failed", DurationMs: time.Since(start).Milliseconds()})
 			return
 		}
 		info, err := os.Stat(media.MediaPath)
@@ -160,27 +173,44 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
 		reply, err := generateReplyFromImage(ctx, cfg, key, imageBytes, media.MimeType)
 		if err != nil {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from image")
 			return
 		}
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "ok", DurationMs: time.Since(start).Milliseconds()})
 		reply = strings.TrimSpace(reply)
 		if reply == "" {
 			return
 		}
+		if ok := simulateHumanTyping(jobCtxOrCtx(ctx), client, recipientJID, reply); !ok {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
 		if chatwoot.IsInstanceEnabled(ctx, instanceID) {
 			if strings.TrimSpace(phone) != "" {
+				botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "chatwoot", Status: "ok"})
 				go chatwoot.ForwardBotReplyFromEvent(ctx, instanceID, phone, reply)
 			}
 		}
 		msg := &waE2E.Message{Conversation: proto.String(reply)}
+		sendStart := time.Now()
 		if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "error", Error: err.Error(), DurationMs: time.Since(sendStart).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to send reply")
+		} else {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "ok", DurationMs: time.Since(sendStart).Milliseconds()})
 		}
 		return
 	}
 	if audio := evt.Message.GetAudioMessage(); audio != nil && audio.GetPTT() && cfg.AudioEnabled {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "audio", Status: "ok"})
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "audio", Status: "ok"})
+		start := time.Now()
 		media, err := utils.ExtractMedia(ctx, client, config.PathMedia, audio)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "error", Error: "extract_media_failed", DurationMs: time.Since(start).Milliseconds()})
 			return
 		}
 		info, err := os.Stat(media.MediaPath)
@@ -190,8 +220,13 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		maxAudio := config.GeminiMaxAudioBytes
 		if maxAudio > 0 && info.Size() > maxAudio {
 			msg := &waE2E.Message{Conversation: proto.String("The audio is too long. Please send a shorter voice message.")}
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "audio", Status: "skipped"})
+			sendStart := time.Now()
 			if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
+				botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "error", Error: err.Error(), DurationMs: time.Since(sendStart).Milliseconds()})
 				logrus.WithError(err).Error("[GEMINI] failed to send too-long-audio warning")
+			} else {
+				botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "ok", DurationMs: time.Since(sendStart).Milliseconds()})
 			}
 			return
 		}
@@ -202,21 +237,34 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
 		reply, err := generateReplyFromAudio(ctx, cfg, key, audioBytes, media.MimeType)
 		if err != nil {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from audio")
 			return
 		}
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "ok", DurationMs: time.Since(start).Milliseconds()})
 		reply = strings.TrimSpace(reply)
 		if reply == "" {
 			return
 		}
+		if ok := simulateHumanTyping(jobCtxOrCtx(ctx), client, recipientJID, reply); !ok {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
 		if chatwoot.IsInstanceEnabled(ctx, instanceID) {
 			if strings.TrimSpace(phone) != "" {
+				botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "chatwoot", Status: "ok"})
 				go chatwoot.ForwardBotReplyFromEvent(ctx, instanceID, phone, reply)
 			}
 		}
 		msg := &waE2E.Message{Conversation: proto.String(reply)}
+		sendStart := time.Now()
 		if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "error", Error: err.Error(), DurationMs: time.Since(sendStart).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to send reply")
+		} else {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "ok", DurationMs: time.Since(sendStart).Milliseconds()})
 		}
 		return
 	}
@@ -224,14 +272,25 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	if text == "" {
 		return
 	}
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "text", Status: "ok"})
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "text", Status: "ok"})
+	start := time.Now()
 	key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
 	reply, err := generateReply(ctx, cfg, key, text)
 	if err != nil {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 		logrus.WithError(err).Error("[GEMINI] failed to generate reply")
 		return
 	}
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "ok", DurationMs: time.Since(start).Milliseconds()})
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
+		return
+	}
+	if ok := simulateHumanTyping(jobCtxOrCtx(ctx), client, recipientJID, reply); !ok {
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	// Si Chatwoot está habilitado para esta instancia, dejamos que Chatwoot sea quien
@@ -239,16 +298,190 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	// directamente en WhatsApp para la conversación activa.
 	if chatwoot.IsInstanceEnabled(ctx, instanceID) {
 		if strings.TrimSpace(phone) != "" {
+			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "chatwoot", Status: "ok"})
 			go chatwoot.ForwardBotReplyFromEvent(ctx, instanceID, phone, reply)
 		}
 	}
 
 	// Sin Chatwoot habilitado: respondemos directamente en WhatsApp como antes.
 	msg := &waE2E.Message{Conversation: proto.String(reply)}
+	sendStart := time.Now()
 	if _, err := client.SendMessage(ctx, recipientJID, msg); err != nil {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "error", Error: err.Error(), DurationMs: time.Since(sendStart).Milliseconds()})
 		logrus.WithError(err).Error("[GEMINI] failed to send reply")
 		return
 	}
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "outbound", Kind: "whatsapp", Status: "ok", DurationMs: time.Since(sendStart).Milliseconds()})
+}
+
+func jobCtxOrCtx(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+func simulateHumanTyping(ctx context.Context, client *whatsmeow.Client, jid types.JID, text string) bool {
+	if client == nil {
+		return true
+	}
+	if !config.GeminiTypingEnabled {
+		return true
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return true
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	initialDelay := time.Duration(50+rng.Intn(80)) * time.Millisecond
+	if !sleepWithContext(ctx, initialDelay) {
+		stopTypingPresence(client, jid)
+		return false
+	}
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	defer stopTypingPresence(client, jid)
+
+	perCharBase := time.Duration(12+rng.Intn(10)) * time.Millisecond
+	maxChars := utf8.RuneCountInString(text)
+	if maxChars <= 0 {
+		maxChars = len(text)
+	}
+	if maxChars < 20 {
+		perCharBase = time.Duration(8+rng.Intn(8)) * time.Millisecond
+	}
+
+	segmentChars := 0
+	segmentWords := 0
+	lastWasSpace := true
+	lastCharWasNewline := false
+
+	nextBreakWords := 18 + rng.Intn(15)
+
+	flushSegment := func(perChar time.Duration) bool {
+		if segmentChars <= 0 {
+			return true
+		}
+		d := time.Duration(segmentChars) * perChar
+		segmentChars = 0
+		segmentWords = 0
+		if d > 3*time.Second {
+			d = 3 * time.Second
+		}
+		return sleepWithContext(ctx, d)
+	}
+
+	pause := func(minMs, maxMs int) bool {
+		ms := minMs
+		if maxMs > minMs {
+			ms = minMs + rng.Intn(maxMs-minMs+1)
+		}
+		if ms >= 200 {
+			_ = client.SendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
+		}
+		if !sleepWithContext(ctx, time.Duration(ms)*time.Millisecond) {
+			return false
+		}
+		if ms >= 200 {
+			_ = client.SendChatPresence(ctx, jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+		}
+		return true
+	}
+
+	perChar := perCharBase
+	for _, r := range text {
+		segmentChars++
+		isSpace := r == ' ' || r == '\t' || r == '\r' || r == '\n'
+		if isSpace {
+			if !lastWasSpace {
+				segmentWords++
+			}
+			lastWasSpace = true
+		} else {
+			lastWasSpace = false
+		}
+
+		if segmentWords >= nextBreakWords {
+			perChar = perCharBase + time.Duration(rng.Intn(8))*time.Millisecond
+			if !flushSegment(perChar) {
+				return false
+			}
+			if rng.Intn(100) < 30 {
+				if !pause(120, 280) {
+					return false
+				}
+			}
+			segmentWords = 0
+			nextBreakWords = 18 + rng.Intn(15)
+			continue
+		}
+
+		switch r {
+		case '.', '!', '?':
+			if rng.Intn(100) < 40 {
+				perChar = perCharBase + time.Duration(rng.Intn(10))*time.Millisecond
+				if !flushSegment(perChar) {
+					return false
+				}
+				if !pause(150, 320) {
+					return false
+				}
+			}
+		case '\n':
+			perChar = perCharBase + time.Duration(rng.Intn(8))*time.Millisecond
+			if !flushSegment(perChar) {
+				return false
+			}
+			if lastCharWasNewline {
+				if !pause(280, 600) {
+					return false
+				}
+			} else {
+				if !pause(180, 400) {
+					return false
+				}
+			}
+			lastCharWasNewline = true
+			continue
+		default:
+			lastCharWasNewline = false
+		}
+	}
+
+	perChar = perCharBase + time.Duration(rng.Intn(10))*time.Millisecond
+	if !flushSegment(perChar) {
+		return false
+	}
+
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	finalPause := time.Duration(80+rng.Intn(150)) * time.Millisecond
+	if !sleepWithContext(ctx, finalPause) {
+		return false
+	}
+	return true
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func stopTypingPresence(client *whatsmeow.Client, jid types.JID) {
+	if client == nil {
+		return
+	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = client.SendChatPresence(stopCtx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
 func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceGeminiConfig, error) {
@@ -372,6 +605,17 @@ func GenerateBotTextReply(ctx context.Context, botID string, memoryID string, in
 		return "", fmt.Errorf("botID: cannot be blank")
 	}
 
+	provider := "gemini"
+	traceID := fmt.Sprintf("webhook:%s:%d", botID, time.Now().UnixNano())
+	monitorInstanceID := "bot:" + botID
+	monitorChatID := strings.TrimSpace(memoryID)
+	if monitorChatID == "" {
+		monitorChatID = "(no-memory-id)"
+	}
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "inbound", Kind: "webhook", Status: "ok"})
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_request", Kind: "text", Status: "ok"})
+	start := time.Now()
+
 	dbPath := fmt.Sprintf("%s/instances.db", config.PathStorages)
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=on", dbPath))
 	if err != nil {
@@ -381,10 +625,15 @@ func GenerateBotTextReply(ctx context.Context, botID string, memoryID string, in
 
 	cfg, err := loadBotConfig(ctx, db, botID)
 	if err != nil {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "outbound", Kind: "webhook", Status: "error", Error: err.Error()})
 		return "", err
 	}
 	if cfg == nil || !cfg.Enabled || strings.TrimSpace(cfg.APIKey) == "" {
-		return "", fmt.Errorf("bot AI is disabled or misconfigured")
+		err := fmt.Errorf("bot AI is disabled or misconfigured")
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "outbound", Kind: "webhook", Status: "error", Error: err.Error()})
+		return "", err
 	}
 
 	memoryID = strings.TrimSpace(memoryID)
@@ -393,7 +642,15 @@ func GenerateBotTextReply(ctx context.Context, botID string, memoryID string, in
 		memoryKey = fmt.Sprintf("bot|%s|%s", botID, memoryID)
 	}
 
-	return generateReply(ctx, cfg, memoryKey, input)
+	reply, err := generateReply(ctx, cfg, memoryKey, input)
+	if err != nil {
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
+		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "outbound", Kind: "webhook", Status: "error", Error: err.Error()})
+		return "", err
+	}
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "ok", DurationMs: time.Since(start).Milliseconds()})
+	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "outbound", Kind: "webhook", Status: "ok"})
+	return reply, nil
 }
 
 func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, input string) (string, error) {
@@ -433,7 +690,15 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	weekday := now.Format("Monday")
+	currentTimeText := fmt.Sprintf("IMPORTANT - Current date and time (%s timezone): %s, %s %d, %d at %s (Day of week: %s)",
+		tz,
+		weekday,
+		now.Format("January"),
+		now.Day(),
+		now.Year(),
+		now.Format("15:04"),
+		weekday)
 	if systemText != "" {
 		systemText = currentTimeText + "\n\n" + systemText
 	} else {
@@ -592,7 +857,15 @@ func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memo
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	weekday := now.Format("Monday")
+	currentTimeText := fmt.Sprintf("IMPORTANT - Current date and time (%s timezone): %s, %s %d, %d at %s (Day of week: %s)",
+		tz,
+		weekday,
+		now.Format("January"),
+		now.Day(),
+		now.Year(),
+		now.Format("15:04"),
+		weekday)
 	if systemText != "" {
 		systemText = currentTimeText + "\n\n" + systemText
 	} else {
@@ -737,7 +1010,15 @@ func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memo
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)
-	currentTimeText := fmt.Sprintf("Current system time (%s): %s", tz, now.Format("2006-01-02 15:04"))
+	weekday := now.Format("Monday")
+	currentTimeText := fmt.Sprintf("IMPORTANT - Current date and time (%s timezone): %s, %s %d, %d at %s (Day of week: %s)",
+		tz,
+		weekday,
+		now.Format("January"),
+		now.Day(),
+		now.Year(),
+		now.Format("15:04"),
+		weekday)
 	if systemText != "" {
 		systemText = currentTimeText + "\n\n" + systemText
 	} else {

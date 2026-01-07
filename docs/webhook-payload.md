@@ -593,10 +593,30 @@ Chatwoot should be configured to send webhooks to:
 POST http://localhost:3000/instances/{instance_id}/chatwoot/webhook
 ```
 
+### Security (recommended)
+
+This endpoint is intentionally reachable without BasicAuth, because Chatwoot webhooks typically send a plain POST to
+the configured URL.
+
+To protect the endpoint from unauthorized callers forging events, AzWap supports a per-instance token.
+
+If the instance has `webhook_secret` configured, AzWap will require one of:
+
+- Query parameter: `?token=<webhook_secret>`
+- Header: `X-Webhook-Token: <webhook_secret>`
+
+If `webhook_secret` is empty, the endpoint remains public (backward compatible).
+
 Example:
 
 ```text
 POST http://localhost:3000/instances/af7346ba-23e1-4fbb-8aec-635773b87e55/chatwoot/webhook
+```
+
+Example with token:
+
+```text
+POST http://localhost:3000/instances/af7346ba-23e1-4fbb-8aec-635773b87e55/chatwoot/webhook?token=super-secret
 ```
 
 ### Supported Events

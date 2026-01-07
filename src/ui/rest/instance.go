@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -216,6 +217,8 @@ func InitRestInstance(app fiber.Router, service domainInstance.IInstanceUsecase,
 	app.Post("/instances/:id/gemini/memory/clear", rest.ClearInstanceGeminiMemory)
 	app.Get("/settings/gemini", rest.GetGeminiSettings)
 	app.Put("/settings/gemini", rest.UpdateGeminiSettings)
+	app.Get("/settings/ai", rest.GetGeminiSettings)
+	app.Put("/settings/ai", rest.UpdateGeminiSettings)
 	return rest
 }
 
@@ -592,6 +595,24 @@ func (handler *Instance) ReceiveChatwootWebhook(c *fiber.Ctx) error {
 			Message: "Instance not found",
 			Results: nil,
 		})
+	}
+
+	// Public endpoint (no BasicAuth) but can be protected via per-instance secret.
+	// Chatwoot can include query params in webhook URL, so we support ?token=...
+	secret := strings.TrimSpace(targetInst.WebhookSecret)
+	if secret != "" {
+		token := strings.TrimSpace(c.Query("token"))
+		if token == "" {
+			token = strings.TrimSpace(c.Get("X-Webhook-Token"))
+		}
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
+			return c.Status(401).JSON(utils.ResponseData{
+				Status:  401,
+				Code:    "UNAUTHORIZED",
+				Message: "invalid webhook token",
+				Results: nil,
+			})
+		}
 	}
 
 	var payload map[string]any
@@ -1153,6 +1174,9 @@ func (handler *Instance) GetGeminiSettings(c *fiber.Ctx) error {
 	response := map[string]any{
 		"global_system_prompt": config.GeminiGlobalSystemPrompt,
 		"timezone":             config.GeminiTimezone,
+		"debounce_ms":          config.GeminiDebounceMs,
+		"wait_contact_idle_ms": config.GeminiWaitContactIdleMs,
+		"typing_enabled":       config.GeminiTypingEnabled,
 	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -1167,6 +1191,9 @@ func (handler *Instance) UpdateGeminiSettings(c *fiber.Ctx) error {
 	var request struct {
 		GlobalSystemPrompt string `json:"global_system_prompt"`
 		Timezone           string `json:"timezone"`
+		DebounceMs         *int   `json:"debounce_ms"`
+		WaitContactIdleMs  *int   `json:"wait_contact_idle_ms"`
+		TypingEnabled      *bool  `json:"typing_enabled"`
 	}
 	if err := c.BodyParser(&request); err != nil {
 		return c.Status(400).JSON(utils.ResponseData{
@@ -1192,9 +1219,42 @@ func (handler *Instance) UpdateGeminiSettings(c *fiber.Ctx) error {
 			Results: nil,
 		})
 	}
+	if request.DebounceMs != nil {
+		if err := config.SaveGeminiDebounceMs(*request.DebounceMs); err != nil {
+			return c.Status(500).JSON(utils.ResponseData{
+				Status:  500,
+				Code:    "INTERNAL_ERROR",
+				Message: err.Error(),
+				Results: nil,
+			})
+		}
+	}
+	if request.WaitContactIdleMs != nil {
+		if err := config.SaveGeminiWaitContactIdleMs(*request.WaitContactIdleMs); err != nil {
+			return c.Status(500).JSON(utils.ResponseData{
+				Status:  500,
+				Code:    "INTERNAL_ERROR",
+				Message: err.Error(),
+				Results: nil,
+			})
+		}
+	}
+	if request.TypingEnabled != nil {
+		if err := config.SaveGeminiTypingEnabled(*request.TypingEnabled); err != nil {
+			return c.Status(500).JSON(utils.ResponseData{
+				Status:  500,
+				Code:    "INTERNAL_ERROR",
+				Message: err.Error(),
+				Results: nil,
+			})
+		}
+	}
 	response := map[string]any{
 		"global_system_prompt": config.GeminiGlobalSystemPrompt,
 		"timezone":             config.GeminiTimezone,
+		"debounce_ms":          config.GeminiDebounceMs,
+		"wait_contact_idle_ms": config.GeminiWaitContactIdleMs,
+		"typing_enabled":       config.GeminiTypingEnabled,
 	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,

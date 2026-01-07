@@ -95,57 +95,76 @@ func (service serviceUser) Info(ctx context.Context, request domainUser.InfoRequ
 	return response, nil
 }
 
-func (service serviceUser) Avatar(ctx context.Context, request domainUser.AvatarRequest) (response domainUser.AvatarResponse, err error) {
-
-	chanResp := make(chan domainUser.AvatarResponse)
-	chanErr := make(chan error)
-	waktu := time.Now()
+func (service serviceUser) Avatar(ctx context.Context, request domainUser.AvatarRequest) (domainUser.AvatarResponse, error) {
+	var response domainUser.AvatarResponse
 	client := service.getClientForToken(ctx, request.Token)
 
+	// Context with timeout is better than manual time checking
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	type result struct {
+		resp domainUser.AvatarResponse
+		err  error
+	}
+
+	resultChan := make(chan result, 1)
+
 	go func() {
-		err = validations.ValidateUserAvatar(ctx, request)
-		if err != nil {
-			chanErr <- err
+		// Recover from any unexpected panics in the goroutine
+		defer func() {
+			if r := recover(); r != nil {
+				resultChan <- result{err: fmt.Errorf("recovered from panic in Avatar: %v", r)}
+			}
+		}()
+
+		if err := validations.ValidateUserAvatar(ctx, request); err != nil {
+			resultChan <- result{err: err}
+			return
 		}
+
 		dataWaRecipient, err := utils.ValidateJidWithLogin(client, request.Phone)
 		if err != nil {
-			chanErr <- err
+			resultChan <- result{err: err}
+			return
 		}
+
 		pic, err := client.GetProfilePictureInfo(ctx, dataWaRecipient, &whatsmeow.GetProfilePictureParams{
 			Preview:     request.IsPreview,
 			IsCommunity: request.IsCommunity,
 		})
 		if err != nil {
-			chanErr <- err
-		} else if pic == nil {
-			chanErr <- errors.New("no avatar found")
-		} else {
-			response.URL = pic.URL
-			response.ID = pic.ID
-			response.Type = pic.Type
+			resultChan <- result{err: err}
+			return
+		}
 
-			chanResp <- response
+		if pic == nil {
+			resultChan <- result{err: errors.New("no avatar found")}
+			return
+		}
+
+		resultChan <- result{
+			resp: domainUser.AvatarResponse{
+				URL:  pic.URL,
+				ID:   pic.ID,
+				Type: pic.Type,
+			},
 		}
 	}()
 
-	for {
-		select {
-		case err := <-chanErr:
-			return response, err
-		case response := <-chanResp:
-			return response, nil
-		default:
-			if waktu.Add(2 * time.Second).Before(time.Now()) {
-				return response, pkgError.ContextError("Error timeout get avatar !")
-			}
-		}
+	select {
+	case res := <-resultChan:
+		return res.resp, res.err
+	case <-ctx.Done():
+		return response, pkgError.ContextError("Error timeout get avatar !")
 	}
-
 }
 
 func (service serviceUser) MyListGroups(ctx context.Context, token string) (response domainUser.MyListGroupsResponse, err error) {
 	client := service.getClientForToken(ctx, token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return response, err
+	}
 
 	groups, err := client.GetJoinedGroups(ctx)
 	if err != nil {
@@ -160,7 +179,9 @@ func (service serviceUser) MyListGroups(ctx context.Context, token string) (resp
 
 func (service serviceUser) MyListNewsletter(ctx context.Context, token string) (response domainUser.MyListNewsletterResponse, err error) {
 	client := service.getClientForToken(ctx, token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return response, err
+	}
 
 	datas, err := client.GetSubscribedNewsletters(ctx)
 	if err != nil {
@@ -175,7 +196,9 @@ func (service serviceUser) MyListNewsletter(ctx context.Context, token string) (
 
 func (service serviceUser) MyPrivacySetting(ctx context.Context, token string) (response domainUser.MyPrivacySettingResponse, err error) {
 	client := service.getClientForToken(ctx, token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return response, err
+	}
 
 	resp, err := client.TryFetchPrivacySettings(ctx, true)
 	if err != nil {
@@ -191,7 +214,9 @@ func (service serviceUser) MyPrivacySetting(ctx context.Context, token string) (
 
 func (service serviceUser) MyListContacts(ctx context.Context, token string) (response domainUser.MyListContactsResponse, err error) {
 	client := service.getClientForToken(ctx, token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return response, err
+	}
 
 	contacts, err := client.Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
@@ -210,7 +235,9 @@ func (service serviceUser) MyListContacts(ctx context.Context, token string) (re
 
 func (service serviceUser) ChangeAvatar(ctx context.Context, request domainUser.ChangeAvatarRequest) (err error) {
 	client := service.getClientForToken(ctx, request.Token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return err
+	}
 
 	file, err := request.Avatar.Open()
 	if err != nil {
@@ -265,7 +292,9 @@ func (service serviceUser) ChangeAvatar(ctx context.Context, request domainUser.
 
 func (service serviceUser) ChangePushName(ctx context.Context, request domainUser.ChangePushNameRequest) (err error) {
 	client := service.getClientForToken(ctx, request.Token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return err
+	}
 
 	err = client.SendAppState(ctx, appstate.BuildSettingPushName(request.PushName))
 	if err != nil {
@@ -276,7 +305,9 @@ func (service serviceUser) ChangePushName(ctx context.Context, request domainUse
 
 func (service serviceUser) IsOnWhatsApp(ctx context.Context, request domainUser.CheckRequest) (response domainUser.CheckResponse, err error) {
 	client := service.getClientForToken(ctx, request.Token)
-	utils.MustLogin(client)
+	if err := utils.CheckLogin(client); err != nil {
+		return response, err
+	}
 
 	utils.SanitizePhone(&request.Phone)
 
