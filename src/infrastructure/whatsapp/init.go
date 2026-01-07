@@ -696,7 +696,13 @@ func handleMessage(ctx context.Context, evt *events.Message, repo domainChatStor
 	if config.WhatsappAutoDownloadMedia {
 		if img := evt.Message.GetImageMessage(); img != nil {
 			if client := getClientForContext(ctx); client != nil {
-				if path, err := utils.ExtractMedia(ctx, client, config.PathStorages, img); err == nil {
+				instanceID := resolveInstanceIDForAI(ctx)
+				if instanceID == "" {
+					instanceID = "global"
+				}
+				storagePath := filepath.Join(config.PathMedia, instanceID)
+				utils.CreateFolder(storagePath)
+				if path, err := utils.ExtractMedia(ctx, client, storagePath, img); err == nil {
 					log.Infof("Image downloaded to %s", path)
 				}
 			}

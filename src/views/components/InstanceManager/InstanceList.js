@@ -15,6 +15,7 @@ export default {
     data() {
         return {
             tokenInput: '',
+            cacheSizes: {},
         };
     },
     watch: {
@@ -24,8 +25,40 @@ export default {
                 this.tokenInput = val || '';
             },
         },
+        instances: {
+            immediate: true,
+            handler(newInstances) {
+                if (newInstances && newInstances.length > 0) {
+                    newInstances.forEach(inst => {
+                        this.fetchCacheSize(inst.id);
+                    });
+                }
+            }
+        }
     },
     methods: {
+        async fetchCacheSize(id) {
+            try {
+                const { data } = await window.http.get(`/api/instances/${id}/cache/stats`);
+                if (data.results) {
+                    this.cacheSizes[id] = data.results.human_size;
+                }
+            } catch (err) {
+                console.error('Failed to fetch cache size for instance ' + id, err);
+            }
+        },
+        async clearInstanceCache(inst) {
+            if (!confirm(`Clear cache for instance "${inst.name}"? This will delete its downloaded media and history logs.`)) {
+                return;
+            }
+            try {
+                await window.http.post(`/api/instances/${inst.id}/cache/clear`);
+                showSuccessInfo(`Cache cleared for ${inst.name}`);
+                this.fetchCacheSize(inst.id);
+            } catch (err) {
+                handleApiError(err, 'Failed to clear instance cache');
+            }
+        },
         applyToken() {
             const token = (this.tokenInput || '').trim();
             if (!token) {
@@ -83,6 +116,7 @@ export default {
                         <th>ID</th>
                         <th>Name</th>
                         <th>Status</th>
+                        <th>Cache</th>
                         <th>Actions</th>
                     </tr>
                     </thead>
@@ -100,6 +134,16 @@ export default {
                                 }"
                             >
                                 {{ inst.status === 'ONLINE' ? 'Online' : inst.status === 'OFFLINE' ? 'Offline' : inst.status }}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="ui transparent input" style="font-size: 0.9em;">
+                                <span>{{ cacheSizes[inst.id] || '0 B' }}</span>
+                                <i v-if="cacheSizes[inst.id] && cacheSizes[inst.id] !== '0 B' && cacheSizes[inst.id] !== '...'" 
+                                   class="trash alternate outline red icon" 
+                                   style="cursor: pointer; margin-left: 8px;"
+                                   title="Clear Instance Cache"
+                                   @click="clearInstanceCache(inst)"></i>
                             </div>
                         </td>
                         <td>

@@ -14,6 +14,7 @@ import (
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainBot "github.com/AzielCF/az-wap/domains/bot"
+	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
@@ -57,6 +58,7 @@ var (
 	botUsecase        domainBot.IBotUsecase
 	credentialUsecase domainCredential.ICredentialUsecase
 	instanceUsecase   domainInstance.IInstanceUsecase
+	cacheUsecase      domainCache.ICacheUsecase
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -371,6 +373,8 @@ func initApp() {
 	newsletterUsecase = usecase.NewNewsletterService(instanceUsecase)
 	botUsecase = usecase.NewBotService()
 	credentialUsecase = usecase.NewCredentialService()
+	cacheUsecase = usecase.NewCacheService()
+	cacheUsecase.StartBackgroundCleanup(ctx)
 
 	go autoConnectAllInstances(ctx)
 }

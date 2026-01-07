@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -153,7 +154,9 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "image", Status: "ok"})
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "image", Status: "ok"})
 		start := time.Now()
-		media, err := utils.ExtractMedia(ctx, client, config.PathMedia, img)
+		storagePath := filepath.Join(config.PathMedia, instanceID)
+		utils.CreateFolder(storagePath)
+		media, err := utils.ExtractMedia(ctx, client, storagePath, img)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "error", Error: "extract_media_failed", DurationMs: time.Since(start).Milliseconds()})
 			return
@@ -208,7 +211,9 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "audio", Status: "ok"})
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "audio", Status: "ok"})
 		start := time.Now()
-		media, err := utils.ExtractMedia(ctx, client, config.PathMedia, audio)
+		storagePath := filepath.Join(config.PathMedia, instanceID)
+		utils.CreateFolder(storagePath)
+		media, err := utils.ExtractMedia(ctx, client, storagePath, audio)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "error", Error: "extract_media_failed", DurationMs: time.Since(start).Milliseconds()})
 			return
