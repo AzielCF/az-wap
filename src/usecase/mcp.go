@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -91,11 +92,7 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 		server.ID = uuid.NewString()
 	}
 
-	// Strict security check: Stdio is disabled by default
-	if server.Type == domainMCP.ConnTypeStdio {
-		return server, fmt.Errorf("system command execution (stdio) is strictly disabled for security reasons")
-	}
-
+	// Stdio is now allowed as per user request
 	if server.Type == domainMCP.ConnTypeSSE {
 		allowInsecure := os.Getenv("MCP_ALLOW_INSECURE_HTTP") == "true"
 		if !allowInsecure && !strings.HasPrefix(server.URL, "https://") {
@@ -103,11 +100,17 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 		}
 	}
 
-	argsJSON := "[]" // simplified for now
-	envJSON := "{}"
+	argsJSON, _ := json.Marshal(server.Args)
+	if len(server.Args) == 0 {
+		argsJSON = []byte("[]")
+	}
+	envJSON, _ := json.Marshal(server.Env)
+	if server.Env == nil {
+		envJSON = []byte("{}")
+	}
 
 	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, argsJSON, envJSON, 1)
+	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), 1)
 	return server, err
 }
 
@@ -116,7 +119,7 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, description, type, url, command, enabled FROM mcp_servers")
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, description, type, url, command, args, env, enabled FROM mcp_servers")
 	if err != nil {
 		return nil, err
 	}
@@ -127,11 +130,18 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		var srv domainMCP.MCPServer
 		var enabledVal int
 		var typeStr string
-		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &enabledVal); err != nil {
+		var argsStr, envStr sql.NullString
+		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsStr, &envStr, &enabledVal); err != nil {
 			return nil, err
 		}
 		srv.Type = domainMCP.ConnectionType(typeStr)
 		srv.Enabled = enabledVal != 0
+		if argsStr.Valid && argsStr.String != "" {
+			_ = json.Unmarshal([]byte(argsStr.String), &srv.Args)
+		}
+		if envStr.Valid && envStr.String != "" {
+			_ = json.Unmarshal([]byte(envStr.String), &srv.Env)
+		}
 		servers = append(servers, srv)
 	}
 	return servers, nil
@@ -144,11 +154,21 @@ func (s *mcpService) GetServer(ctx context.Context, id string) (domainMCP.MCPSer
 	var srv domainMCP.MCPServer
 	var enabledVal int
 	var typeStr string
-	query := "SELECT id, name, description, type, url, command, enabled FROM mcp_servers WHERE id = ?"
-	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &enabledVal)
+	var argsStr, envStr sql.NullString
+	query := "SELECT id, name, description, type, url, command, args, env, enabled FROM mcp_servers WHERE id = ?"
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsStr, &envStr, &enabledVal)
+	if err != nil {
+		return srv, err
+	}
 	srv.Type = domainMCP.ConnectionType(typeStr)
 	srv.Enabled = enabledVal != 0
-	return srv, err
+	if argsStr.Valid && argsStr.String != "" {
+		_ = json.Unmarshal([]byte(argsStr.String), &srv.Args)
+	}
+	if envStr.Valid && envStr.String != "" {
+		_ = json.Unmarshal([]byte(envStr.String), &srv.Env)
+	}
+	return srv, nil
 }
 
 func (s *mcpService) DeleteServer(ctx context.Context, id string) error {
@@ -163,8 +183,17 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	if err := s.ensureDB(); err != nil {
 		return server, err
 	}
-	query := `UPDATE mcp_servers SET name = ?, description = ?, url = ?, enabled = ? WHERE id = ?`
-	_, err := s.db.ExecContext(ctx, query, server.Name, server.Description, server.URL, 1, id)
+	argsJSON, _ := json.Marshal(server.Args)
+	if len(server.Args) == 0 {
+		argsJSON = []byte("[]")
+	}
+	envJSON, _ := json.Marshal(server.Env)
+	if server.Env == nil {
+		envJSON = []byte("{}")
+	}
+
+	query := `UPDATE mcp_servers SET name = ?, description = ?, type = ?, url = ?, command = ?, args = ?, env = ?, enabled = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), 1, id)
 	return server, err
 }
 
@@ -174,12 +203,18 @@ func (s *mcpService) ListTools(ctx context.Context, serverID string) ([]domainMC
 		return nil, err
 	}
 
-	if server.Type != domainMCP.ConnTypeSSE {
-		return nil, fmt.Errorf("only SSE servers are currently supported for tool listing")
+	// Create MCP Client
+	var mcpClient *client.Client
+	if server.Type == domainMCP.ConnTypeSSE {
+		mcpClient, err = client.NewSSEMCPClient(server.URL)
+	} else if server.Type == domainMCP.ConnTypeStdio {
+		// client.NewStdioMCPClient takes (command, args, options...)
+		// We'll pass env as an option if supported, or just use command/args
+		mcpClient, err = client.NewStdioMCPClient(server.Command, server.Args)
+	} else {
+		return nil, fmt.Errorf("unsupported connection type: %s", server.Type)
 	}
 
-	// Create MCP Client
-	mcpClient, err := client.NewSSEMCPClient(server.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +257,15 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 		return domainMCP.CallToolResult{}, err
 	}
 
-	mcpClient, err := client.NewSSEMCPClient(server.URL)
+	var mcpClient *client.Client
+	if server.Type == domainMCP.ConnTypeSSE {
+		mcpClient, err = client.NewSSEMCPClient(server.URL)
+	} else if server.Type == domainMCP.ConnTypeStdio {
+		mcpClient, err = client.NewStdioMCPClient(server.Command, server.Args)
+	} else {
+		return domainMCP.CallToolResult{}, fmt.Errorf("unsupported connection type: %s", server.Type)
+	}
+
 	if err != nil {
 		return domainMCP.CallToolResult{}, err
 	}

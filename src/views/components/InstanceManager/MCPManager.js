@@ -10,11 +10,15 @@ export default {
                 description: '',
                 type: 'sse',
                 url: '',
+                command: '',
+                args: [],
             },
             editingServer: null,
             tools: [],
             loadingTools: false,
             selectedServerTools: null,
+            // Helper for UI
+            argsString: '',
         };
     },
     mounted() {
@@ -39,18 +43,28 @@ export default {
             try {
                 const url = this.editingServer ? `/api/mcp/servers/${this.editingServer.id}` : '/api/mcp/servers';
                 const method = this.editingServer ? 'PUT' : 'POST';
-                const body = this.editingServer ? { ...this.editingServer } : { ...this.newServer };
+                const target = this.editingServer || this.newServer;
+                
+                // Parse args from string if in stdio mode
+                if (target.type === 'stdio') {
+                    // Split by newline and filter empty lines
+                    target.args = this.argsString.split('\n').map(s => s.trim()).filter(s => s !== '');
+                    target.url = ''; // reset url for stdio
+                } else {
+                    target.args = [];
+                    target.command = ''; // reset command for sse
+                }
 
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
+                    body: JSON.stringify(target),
                 });
 
                 if (response.ok) {
                     this.showAddModal = false;
                     this.editingServer = null;
-                    this.newServer = { name: '', description: '', type: 'sse', url: '' };
+                    this.resetForm();
                     this.fetchServers();
                     this.$emit('mcp-servers-updated');
                 } else {
@@ -60,6 +74,10 @@ export default {
             } catch (err) {
                 alert(`Error saving server: ${err.message}`);
             }
+        },
+        resetForm() {
+            this.newServer = { name: '', description: '', type: 'sse', url: '', command: '', args: [] };
+            this.argsString = '';
         },
         async deleteServer(id) {
             if (!confirm('Are you sure you want to delete this MCP server?')) return;
@@ -93,6 +111,11 @@ export default {
         },
         editServer(server) {
             this.editingServer = { ...server };
+            if (this.editingServer.args) {
+                this.argsString = this.editingServer.args.join('\n');
+            } else {
+                this.argsString = '';
+            }
             this.showAddModal = true;
         },
     },
@@ -107,7 +130,7 @@ export default {
                     <div class="sub header">External tools for your AI Bots</div>
                 </div>
             </h4>
-            <button class="ui tiny teal button" @click="showAddModal = true; editingServer = null;">
+            <button class="ui tiny teal button" @click="showAddModal = true; editingServer = null; resetForm();">
                 <i class="plus icon"></i> Add Server
             </button>
         </div>
@@ -139,40 +162,55 @@ export default {
                     <span class="header">{{ srv.name }}</span>
                     <div class="description">
                         <div class="ui horizontal label" :class="srv.type === 'sse' ? 'blue' : 'orange'">{{ srv.type.toUpperCase() }}</div>
-                        {{ srv.url || srv.command }}
+                        <code v-if="srv.type === 'stdio'">{{ srv.command }} {{ (srv.args || []).join(' ') }}</code>
+                        <span v-else>{{ srv.url }}</span>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Add/Edit Modal -->
-        <div v-if="showAddModal" class="ui modal active" style="top: 10%; display: block !important;">
+        <div v-if="showAddModal" class="ui modal active" style="top: 5%; display: block !important; max-height: 90vh; overflow-y: auto;">
             <div class="header">{{ editingServer ? 'Edit' : 'Add New' }} MCP Server</div>
             <div class="content">
                 <div class="ui form">
                     <div class="field">
                         <label>Name</label>
-                        <input type="text" v-model="(editingServer || newServer).name" placeholder="E.g. Database Explorer">
+                        <input type="text" v-model="(editingServer || newServer).name" placeholder="E.g. NocoDB Travelmika">
                     </div>
                     <div class="field">
                         <label>Description</label>
                         <textarea rows="2" v-model="(editingServer || newServer).description" placeholder="What this server provides..."></textarea>
                     </div>
-                    <div class="two fields">
-                        <div class="field">
-                            <label>Type</label>
-                            <select v-model="(editingServer || newServer).type" class="ui dropdown" disabled>
-                                <option value="sse">SSE (Remote Server)</option>
-                                <option value="stdio">Stdio (Local Command - DISABLED)</option>
-                            </select>
-                        </div>
-                        <div class="field" v-if="(editingServer || newServer).type === 'sse'">
-                            <label>URL</label>
-                            <input type="text" v-model="(editingServer || newServer).url" placeholder="https://mcp.api.com/events">
+                    <div class="field">
+                        <label>Connection Type</label>
+                        <select v-model="(editingServer || newServer).type" class="ui dropdown">
+                            <option value="sse">SSE (HTTP/HTTPS Remote)</option>
+                            <option value="stdio">Stdio (Local Command / Proxy)</option>
+                        </select>
+                    </div>
+
+                    <div v-if="(editingServer || newServer).type === 'sse'" class="field">
+                        <label>URL</label>
+                        <input type="text" v-model="(editingServer || newServer).url" placeholder="https://mcp.api.com/events">
+                        <div class="ui blue message small" style="margin-top: 5px;">
+                            <i class="info icon"></i> Direct SSE connection is recommended for remote servers.
                         </div>
                     </div>
-                    <div class="ui warning message" style="display: block;">
-                        Only <b>SSE</b> servers are currently supported for security reasons.
+
+                    <div v-if="(editingServer || newServer).type === 'stdio'">
+                        <div class="field">
+                            <label>Command</label>
+                            <input type="text" v-model="(editingServer || newServer).command" placeholder="e.g. npx, node, python">
+                        </div>
+                        <div class="field">
+                            <label>Arguments (One per line)</label>
+                            <textarea rows="4" v-model="argsString" placeholder="e.g.&#10;mcp-remote&#10;https://my-server.com&#10;--header&#10;auth-token: value"></textarea>
+                        </div>
+                        <div class="ui orange message small" style="margin-top: 5px;">
+                            <i class="warning icon"></i> <b>Stdio</b> executes local commands. Use with caution. 
+                            For <code>mcp-remote</code>, ensure <code>npx</code> is installed in the global path.
+                        </div>
                     </div>
                 </div>
             </div>
