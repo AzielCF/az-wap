@@ -139,6 +139,11 @@ func (service serviceSend) wrapSendMessage(ctx context.Context, recipient types.
 	// Store message asynchronously with timeout
 	// Use a goroutine to avoid blocking the send operation
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logrus.Errorf("[SEND] Recovered from panic in asynchronous message storage: %v", r)
+			}
+		}()
 		storeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
@@ -154,6 +159,11 @@ func (service serviceSend) wrapSendMessage(ctx context.Context, recipient types.
 	// Best-effort: cuando enviamos un mensaje asumimos que el chat fue leído,
 	// así que marcamos como leídos los últimos mensajes entrantes de ese chat.
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logrus.Errorf("[SEND] Recovered from panic in asynchronous mark read: %v", r)
+			}
+		}()
 		markClient := service.getClientForToken(context.Background(), token)
 		if markClient == nil || markClient.Store == nil || markClient.Store.ID == nil {
 			return

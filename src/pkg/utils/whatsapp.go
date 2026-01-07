@@ -627,7 +627,9 @@ func IsOnWhatsapp(client *whatsmeow.Client, jid string) bool {
 
 // ValidateJidWithLogin validates JID with login check
 func ValidateJidWithLogin(client *whatsmeow.Client, jid string) (types.JID, error) {
-	MustLogin(client)
+	if err := CheckLogin(client); err != nil {
+		return types.JID{}, err
+	}
 
 	if config.WhatsappAccountValidation && !IsOnWhatsapp(client, jid) {
 		return types.JID{}, pkgError.InvalidJID(fmt.Sprintf("Phone %s is not on whatsapp", jid))
@@ -636,15 +638,24 @@ func ValidateJidWithLogin(client *whatsmeow.Client, jid string) (types.JID, erro
 	return ParseJID(jid)
 }
 
-// MustLogin ensures the WhatsApp client is logged in
-func MustLogin(client *whatsmeow.Client) {
+// CheckLogin ensures the WhatsApp client is logged in and returns an error if not
+func CheckLogin(client *whatsmeow.Client) error {
 	if client == nil {
-		panic(pkgError.InternalServerError("Whatsapp client is not initialized"))
+		return pkgError.InternalServerError("Whatsapp client is not initialized")
 	}
 	if !client.IsConnected() {
-		panic(pkgError.ErrNotConnected)
+		return pkgError.ErrNotConnected
 	} else if !client.IsLoggedIn() {
-		panic(pkgError.ErrNotLoggedIn)
+		return pkgError.ErrNotLoggedIn
+	}
+	return nil
+}
+
+// MustLogin is a wrapper for CheckLogin that maintains backward compatibility but is discouraged.
+// It will still panic to support code that hasn't been migrated, but we should migrate all callers.
+func MustLogin(client *whatsmeow.Client) {
+	if err := CheckLogin(client); err != nil {
+		panic(err)
 	}
 }
 

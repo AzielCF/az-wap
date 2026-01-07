@@ -367,8 +367,8 @@ func initApp() {
 	sendUsecase = usecase.NewSendService(appUsecase, chatStorageRepo, instanceUsecase)
 	userUsecase = usecase.NewUserService(instanceUsecase)
 	messageUsecase = usecase.NewMessageService(appUsecase, chatStorageRepo, instanceUsecase)
-	groupUsecase = usecase.NewGroupService(appUsecase)
-	newsletterUsecase = usecase.NewNewsletterService()
+	groupUsecase = usecase.NewGroupService(appUsecase, instanceUsecase)
+	newsletterUsecase = usecase.NewNewsletterService(instanceUsecase)
 	botUsecase = usecase.NewBotService()
 	credentialUsecase = usecase.NewCredentialService()
 
