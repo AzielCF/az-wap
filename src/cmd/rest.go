@@ -128,6 +128,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
 	rest.InitRestCache(apiGroup, cacheUsecase)
+	rest.InitRestMCP(apiGroup, mcpUsecase)
 
 	// Worker Pool monitoring endpoint
 	apiGroup.Get("/api/worker-pool/stats", rest.GetWorkerPoolStats)

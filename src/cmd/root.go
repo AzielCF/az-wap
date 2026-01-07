@@ -20,12 +20,14 @@ import (
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
+	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/usecase"
 	_ "github.com/lib/pq"
@@ -59,6 +61,7 @@ var (
 	credentialUsecase domainCredential.ICredentialUsecase
 	instanceUsecase   domainInstance.IInstanceUsecase
 	cacheUsecase      domainCache.ICacheUsecase
+	mcpUsecase        domainMCP.IMCPUsecase
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -375,6 +378,8 @@ func initApp() {
 	credentialUsecase = usecase.NewCredentialService()
 	cacheUsecase = usecase.NewCacheService()
 	cacheUsecase.StartBackgroundCleanup(ctx)
+	mcpUsecase = usecase.NewMCPService()
+	gemini.SetMCPUsecase(mcpUsecase)
 
 	go autoConnectAllInstances(ctx)
 }

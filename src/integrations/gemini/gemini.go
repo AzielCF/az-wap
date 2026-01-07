@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/AzielCF/az-wap/config"
+	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
 	"github.com/AzielCF/az-wap/pkg/utils"
@@ -36,6 +37,7 @@ type instanceGeminiConfig struct {
 	AudioEnabled  bool
 	ImageEnabled  bool
 	MemoryEnabled bool
+	BotID         string
 }
 
 type chatTurn struct {
@@ -46,6 +48,7 @@ type chatTurn struct {
 var (
 	chatMemoryMu sync.Mutex
 	chatMemory   = make(map[string][]chatTurn)
+	mcpUsecase   domainMCP.IMCPUsecase
 )
 
 type geminiPart struct {
@@ -69,6 +72,10 @@ type geminiResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
+}
+
+func SetMCPUsecase(service domainMCP.IMCPUsecase) {
+	mcpUsecase = service
 }
 
 func ClearInstanceMemory(instanceID string) {
@@ -535,6 +542,7 @@ func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceGemini
 		AudioEnabled:  audioEnabled.Valid && audioEnabled.Int64 != 0,
 		ImageEnabled:  imageEnabled.Valid && imageEnabled.Int64 != 0,
 		MemoryEnabled: memoryEnabled.Valid && memoryEnabled.Int64 != 0,
+		BotID:         strings.TrimSpace(botID.String),
 	}
 	if !cfg.Enabled || cfg.APIKey == "" {
 		return nil, nil
@@ -574,6 +582,7 @@ func loadBotConfig(ctx context.Context, db *sql.DB, botID string) (*instanceGemi
 		AudioEnabled:  audioEnabled.Valid && audioEnabled.Int64 != 0,
 		ImageEnabled:  imageEnabled.Valid && imageEnabled.Int64 != 0,
 		MemoryEnabled: memoryEnabled.Valid && memoryEnabled.Int64 != 0,
+		BotID:         botID,
 	}
 
 	// Si el bot tiene credential_id, intentamos obtener la API key desde la tabla credentials.
@@ -715,6 +724,56 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		}
 	}
 
+	var mcpTools []domainMCP.Tool
+	serverMap := make(map[string]string)
+	if cfg.BotID != "" && mcpUsecase != nil {
+		if servers, err := mcpUsecase.ListServers(ctx); err == nil {
+			for _, srv := range servers {
+				if srv.Enabled {
+					if tools, err := mcpUsecase.ListTools(ctx, srv.ID); err == nil {
+						for _, t := range tools {
+							mcpTools = append(mcpTools, t)
+							serverMap[t.Name] = srv.ID
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var functionDecls []*genai.FunctionDeclaration
+	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
+		functionDecls = append(functionDecls, &genai.FunctionDeclaration{
+			Name:        "close_chat",
+			Description: "Call this function when the conversation is finished (user says goodbye, thanks, or explicitly ends the chat). You MUST provide a farewell_message in the same language the user is speaking.",
+			Parameters: &genai.Schema{
+				Type: "object",
+				Properties: map[string]*genai.Schema{
+					"farewell_message": {
+						Type:        "string",
+						Description: "A friendly farewell message to the user in their language. Do NOT mention memory, data deletion, or technical details. Just say goodbye naturally.",
+					},
+				},
+				Required: []string{"farewell_message"},
+			},
+		})
+	}
+
+	for _, t := range mcpTools {
+		functionDecls = append(functionDecls, &genai.FunctionDeclaration{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  convertMCPSchemaToGemini(t.InputSchema),
+		})
+	}
+
+	if len(functionDecls) > 0 {
+		if genConfig == nil {
+			genConfig = &genai.GenerateContentConfig{}
+		}
+		genConfig.Tools = []*genai.Tool{{FunctionDeclarations: functionDecls}}
+	}
+
 	var contents []*genai.Content
 	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
 		chatMemoryMu.Lock()
@@ -749,75 +808,108 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		}
 	}
 
-	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
-		closeChatFunc := &genai.FunctionDeclaration{
-			Name:        "close_chat",
-			Description: "Call this function when the conversation is finished (user says goodbye, thanks, or explicitly ends the chat). You MUST provide a farewell_message in the same language the user is speaking.",
-			Parameters: &genai.Schema{
-				Type: "object",
-				Properties: map[string]*genai.Schema{
-					"farewell_message": {
-						Type:        "string",
-						Description: "A friendly farewell message to the user in their language. Do NOT mention memory, data deletion, or technical details. Just say goodbye naturally.",
-					},
-				},
-				Required: []string{"farewell_message"},
-			},
-		}
-		if genConfig == nil {
-			genConfig = &genai.GenerateContentConfig{}
-		}
-		genConfig.Tools = []*genai.Tool{
-			{
-				FunctionDeclarations: []*genai.FunctionDeclaration{closeChatFunc},
-			},
-		}
-	}
-
-	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
-	if err != nil {
-		return "", err
-	}
-	if result == nil {
-		return "", nil
-	}
 	closed := false
 	var farewellMsg string
-	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
-		if len(result.Candidates) > 0 && result.Candidates[0].Content != nil {
-			for _, p := range result.Candidates[0].Content.Parts {
-				if p.FunctionCall != nil && p.FunctionCall.Name == "close_chat" {
-					if args := p.FunctionCall.Args; args != nil {
-						if fw, ok := args["farewell_message"]; ok {
-							if fwStr, ok := fw.(string); ok {
-								farewellMsg = strings.TrimSpace(fwStr)
-							}
+	var finalResponse string
+
+	for i := 0; i < 10; i++ {
+		result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+		if err != nil {
+			return "", err
+		}
+		if result == nil || len(result.Candidates) == 0 {
+			break
+		}
+
+		candidate := result.Candidates[0]
+		contents = append(contents, candidate.Content)
+
+		hasToolCall := false
+		for _, part := range candidate.Content.Parts {
+			if part.FunctionCall != nil {
+				hasToolCall = true
+				toolName := part.FunctionCall.Name
+				args := part.FunctionCall.Args
+
+				var toolResult map[string]any
+				if toolName == "close_chat" {
+					if fw, ok := args["farewell_message"]; ok {
+						if fwStr, ok := fw.(string); ok {
+							farewellMsg = strings.TrimSpace(fwStr)
 						}
 					}
 					chatMemoryMu.Lock()
 					delete(chatMemory, memoryKey)
 					chatMemoryMu.Unlock()
 					closed = true
-					break
+					toolResult = map[string]any{"status": "ok"}
+				} else if serverID, ok := serverMap[toolName]; ok {
+					mcpRes, mErr := mcpUsecase.CallTool(ctx, cfg.BotID, domainMCP.CallToolRequest{
+						ServerID:  serverID,
+						ToolName:  toolName,
+						Arguments: args,
+					})
+					if mErr != nil {
+						toolResult = map[string]any{"error": mErr.Error()}
+					} else {
+						toolResult = map[string]any{
+							"content":  mcpRes.Content,
+							"is_error": mcpRes.IsError,
+						}
+					}
+				} else {
+					toolResult = map[string]any{"error": "tool not found"}
 				}
+
+				contents = append(contents, &genai.Content{
+					Role: "user", // Role should be user for function responses in genai SDK
+					Parts: []*genai.Part{{
+						FunctionResponse: &genai.FunctionResponse{
+							Name:     toolName,
+							Response: toolResult,
+						},
+					}},
+				})
 			}
 		}
+
+		if !hasToolCall {
+			finalResponse = result.Text()
+			break
+		}
 	}
-	text := strings.TrimSpace(result.Text())
+
 	if closed && farewellMsg != "" {
-		text = farewellMsg
+		finalResponse = farewellMsg
 	}
-	if text != "" && cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && !closed {
+
+	if finalResponse != "" && cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && !closed {
 		chatMemoryMu.Lock()
 		history := chatMemory[memoryKey]
-		history = append(history, chatTurn{Role: "assistant", Text: text})
+		history = append(history, chatTurn{Role: "assistant", Text: finalResponse})
 		if len(history) > 10 {
 			history = history[len(history)-10:]
 		}
 		chatMemory[memoryKey] = history
 		chatMemoryMu.Unlock()
 	}
-	return text, nil
+
+	return finalResponse, nil
+}
+
+func convertMCPSchemaToGemini(input interface{}) *genai.Schema {
+	if input == nil {
+		return nil
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		return nil
+	}
+	var schema genai.Schema
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return nil
+	}
+	return &schema
 }
 
 type audioResponse struct {
