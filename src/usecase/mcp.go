@@ -172,6 +172,17 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 		isTemplateInt = 1
 	}
 
+	// PROACTIVE VALIDATION
+	if server.IsTemplate {
+		if err := s.checkAvailability(ctx, server); err != nil {
+			return server, fmt.Errorf("validation failed: %w", err)
+		}
+	} else {
+		if err := s.performFullValidation(ctx, server); err != nil {
+			return server, fmt.Errorf("validation failed: %w", err)
+		}
+	}
+
 	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, headers, tools, enabled, is_template, template_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON)
 	return server, err
@@ -289,6 +300,17 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	isTemplateInt := 0
 	if server.IsTemplate {
 		isTemplateInt = 1
+	}
+
+	// PROACTIVE VALIDATION
+	if server.IsTemplate {
+		if err := s.checkAvailability(ctx, server); err != nil {
+			return server, fmt.Errorf("validation failed: %w", err)
+		}
+	} else {
+		if err := s.performFullValidation(ctx, server); err != nil {
+			return server, fmt.Errorf("validation failed: %w", err)
+		}
 	}
 
 	query := `UPDATE mcp_servers 
@@ -612,7 +634,16 @@ func (s *mcpService) ListServersForBot(ctx context.Context, botID string) ([]dom
 				}
 				json.Unmarshal([]byte(configJSON.String), &cfg)
 				servers[i].DisabledTools = cfg.DisabledTools
-				servers[i].CustomHeaders = cfg.CustomHeaders
+				// Decrypt custom headers for the UI/Validation
+				decryptedHeaders := make(map[string]string)
+				for k, v := range cfg.CustomHeaders {
+					if dec, err := crypto.Decrypt(v); err == nil {
+						decryptedHeaders[k] = dec
+					} else {
+						decryptedHeaders[k] = v // Fallback
+					}
+				}
+				servers[i].CustomHeaders = decryptedHeaders
 			}
 		} else {
 			servers[i].Enabled = false
@@ -643,7 +674,25 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.Bo
 		return err
 	}
 
-	// Encrypt Custom Headers Values
+	// BOT-SPECIFIC VALIDATION
+	// If enabled, we MUST validate that we can connect and load tools using the bot's custom headers
+	if config.Enabled {
+		srv, err := s.GetServer(ctx, config.ServerID)
+		if err == nil {
+			if srv.Headers == nil {
+				srv.Headers = make(map[string]string)
+			}
+			for k, v := range config.CustomHeaders {
+				srv.Headers[k] = v // Use raw headers for validation here
+			}
+
+			if err := s.performFullValidation(ctx, srv); err != nil {
+				return fmt.Errorf("bot validation failed (check your headers): %w", err)
+			}
+		}
+	}
+
+	// Encrypt Custom Headers Values for Storage
 	encryptedHeaders := make(map[string]string)
 	for k, v := range config.CustomHeaders {
 		if enc, err := crypto.Encrypt(v); err == nil {
@@ -670,4 +719,73 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.Bo
 			  ON CONFLICT(bot_id, server_id) DO UPDATE SET enabled = ?, config_json = ?`
 	_, err := s.db.ExecContext(ctx, query, config.BotID, config.ServerID, enabledInt, string(confJSON), enabledInt, string(confJSON))
 	return err
+}
+func (s *mcpService) Validate(ctx context.Context, id string) error {
+	server, err := s.GetServer(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if server.IsTemplate {
+		// Templates only check if URL is reachable (Status 200 or accessible)
+		// We can use a simple HTTP GET/HEAD or just start the client without full initialization
+		return s.checkAvailability(ctx, server)
+	}
+
+	// Normal servers perform full initialization and list tools
+	return s.performFullValidation(ctx, server)
+}
+
+func (s *mcpService) checkAvailability(ctx context.Context, server domainMCP.MCPServer) error {
+	// For SSE/HTTP, we try to start the client.
+	// If it's a template, we just want to know if the endpoint exists.
+	mcpClient, err := s.getClient(ctx, server)
+	if err != nil {
+		return fmt.Errorf("server not reachable: %w", err)
+	}
+	mcpClient.Close()
+	return nil
+}
+
+func (s *mcpService) performFullValidation(ctx context.Context, server domainMCP.MCPServer) error {
+	mcpClient, err := s.getClient(ctx, server)
+	if err != nil {
+		return err
+	}
+	defer mcpClient.Close()
+
+	// Initialize
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "az-wap-health-check", Version: "1.0.0"}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Initialize with retry logic for SSE transient errors
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		_, lastErr = mcpClient.Initialize(timeoutCtx, initReq)
+		if lastErr == nil {
+			break
+		}
+		errStr := lastErr.Error()
+		// If it's a 404 or session error, it might be the SSE session not being ready yet
+		if strings.Contains(errStr, "404") || strings.Contains(strings.ToLower(errStr), "session") {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("initialization failed (possible auth error): %w", lastErr)
+	}
+
+	// Try to list tools as a final verification
+	if _, err := mcpClient.ListTools(timeoutCtx, mcp.ListToolsRequest{}); err != nil {
+		return fmt.Errorf("listing tools failed: %w", err)
+	}
+
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/genai"
 )
 
 type credentialService struct {
@@ -259,4 +261,44 @@ func (s *credentialService) Delete(ctx context.Context, id string) error {
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM credentials WHERE id = ?;`, trimmed)
 	return err
+}
+func (s *credentialService) Validate(ctx context.Context, id string) error {
+	cred, err := s.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if cred.Kind == domainCredential.KindGemini {
+		if cred.GeminiAPIKey == "" {
+			return fmt.Errorf("missing Gemini API key")
+		}
+		// Attempt to list models to verify API Key
+		client, err := genai.NewClient(ctx, &genai.ClientConfig{
+			APIKey:  cred.GeminiAPIKey,
+			Backend: genai.BackendGeminiAPI,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create Gemini client: %w", err)
+		}
+
+		// Use a short timeout for health check
+		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		_, err = client.Models.List(timeoutCtx, nil)
+		if err != nil {
+			return fmt.Errorf("Gemini API key verification failed: %w", err)
+		}
+		return nil
+	}
+
+	if cred.Kind == domainCredential.KindChatwoot {
+		if cred.ChatwootBaseURL == "" || cred.ChatwootAccountToken == "" {
+			return fmt.Errorf("missing Chatwoot configuration")
+		}
+		// Simple HTTP check (placeholder for now, just checking reachable)
+		return nil
+	}
+
+	return fmt.Errorf("unsupported credential kind: %s", cred.Kind)
 }
