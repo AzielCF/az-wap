@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AzielCF/az-wap/config"
+	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	"github.com/AzielCF/az-wap/pkg/crypto"
 	"github.com/google/uuid"
@@ -22,7 +23,8 @@ import (
 )
 
 type mcpService struct {
-	db *sql.DB
+	db     *sql.DB
+	health domainHealth.IHealthUsecase
 }
 
 func initMCPStorageDB() (*sql.DB, error) {
@@ -174,18 +176,27 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 	}
 
 	// PROACTIVE VALIDATION
+	var err error
 	if server.IsTemplate {
-		if err := s.checkAvailability(ctx, server); err != nil {
-			return server, fmt.Errorf("validation failed: %w", err)
-		}
+		err = s.checkAvailability(ctx, server)
 	} else {
-		if err := s.performFullValidation(ctx, server); err != nil {
-			return server, fmt.Errorf("validation failed: %w", err)
+		err = s.performFullValidation(ctx, server)
+	}
+
+	if s.health != nil {
+		if err != nil {
+			s.health.ReportFailure(ctx, domainHealth.EntityMCP, server.ID, err.Error())
+		} else {
+			s.health.ReportSuccess(ctx, domainHealth.EntityMCP, server.ID)
 		}
 	}
 
+	if err != nil {
+		return server, fmt.Errorf("validation failed: %w", err)
+	}
+
 	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, headers, tools, enabled, is_template, template_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON)
+	_, err = s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON)
 	return server, err
 }
 
@@ -304,20 +315,29 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	}
 
 	// PROACTIVE VALIDATION
+	var err error
 	if server.IsTemplate {
-		if err := s.checkAvailability(ctx, server); err != nil {
-			return server, fmt.Errorf("validation failed: %w", err)
-		}
+		err = s.checkAvailability(ctx, server)
 	} else {
-		if err := s.performFullValidation(ctx, server); err != nil {
-			return server, fmt.Errorf("validation failed: %w", err)
+		err = s.performFullValidation(ctx, server)
+	}
+
+	if s.health != nil {
+		if err != nil {
+			s.health.ReportFailure(ctx, domainHealth.EntityMCP, id, err.Error())
+		} else {
+			s.health.ReportSuccess(ctx, domainHealth.EntityMCP, id)
 		}
+	}
+
+	if err != nil {
+		return server, fmt.Errorf("validation failed: %w", err)
 	}
 
 	query := `UPDATE mcp_servers 
 			  SET name=?, description=?, type=?, url=?, command=?, args=?, env=?, headers=?, tools=?, enabled=?, is_template=?, template_config=?
 			  WHERE id = ?`
-	_, err := s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, id)
+	_, err = s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, id)
 	return server, err
 }
 
@@ -496,7 +516,14 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 	res, err := mcpClient.CallTool(ctx, callReq)
 	if err != nil {
 		logrus.WithError(err).Errorf("[MCP] Tool call failed for %s", req.ToolName)
+		if s.health != nil {
+			s.health.ReportFailure(ctx, domainHealth.EntityMCP, req.ServerID, fmt.Sprintf("Tool call failed: %v", err))
+		}
 		return domainMCP.CallToolResult{}, err
+	}
+
+	if s.health != nil {
+		s.health.ReportSuccess(ctx, domainHealth.EntityMCP, req.ServerID)
 	}
 
 	logrus.Infof("[MCP] Tool call %s successful (IsError: %v)", req.ToolName, res.IsError)
@@ -688,7 +715,13 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.Bo
 			}
 
 			if err := s.performFullValidation(ctx, srv); err != nil {
+				if s.health != nil {
+					s.health.ReportFailure(ctx, domainHealth.EntityMCP, config.ServerID, err.Error())
+				}
 				return fmt.Errorf("bot validation failed (check your headers): %w", err)
+			}
+			if s.health != nil {
+				s.health.ReportSuccess(ctx, domainHealth.EntityMCP, config.ServerID)
 			}
 		}
 	}
@@ -734,7 +767,39 @@ func (s *mcpService) Validate(ctx context.Context, id string) error {
 	}
 
 	// Normal servers perform full initialization and list tools
-	return s.performFullValidation(ctx, server)
+	err = s.performFullValidation(ctx, server)
+	if s.health != nil {
+		if err != nil {
+			s.health.ReportFailure(ctx, domainHealth.EntityMCP, id, err.Error())
+		} else {
+			s.health.ReportSuccess(ctx, domainHealth.EntityMCP, id)
+		}
+	}
+	return err
+}
+
+func (s *mcpService) SetHealthUsecase(health domainHealth.IHealthUsecase) {
+	s.health = health
+}
+
+func (s *mcpService) ListBotsUsingServer(ctx context.Context, serverID string) ([]string, error) {
+	if err := s.ensureDB(); err != nil {
+		return nil, err
+	}
+	var bots []string
+	query := `SELECT bot_id FROM bot_mcp_configs WHERE server_id = ? AND enabled = 1`
+	rows, err := s.db.QueryContext(ctx, query, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			bots = append(bots, id)
+		}
+	}
+	return bots, nil
 }
 
 func (s *mcpService) checkAvailability(ctx context.Context, server domainMCP.MCPServer) error {

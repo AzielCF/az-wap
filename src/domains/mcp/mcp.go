@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+
+	domainHealth "github.com/AzielCF/az-wap/domains/health"
 )
 
 type ConnectionType string
@@ -76,4 +78,6 @@ type IMCPUsecase interface {
 	ToggleServerForBot(ctx context.Context, botID string, serverID string, enabled bool) error
 	UpdateBotMCPConfig(ctx context.Context, config BotMCPConfig) error
 	Validate(ctx context.Context, id string) error
+	ListBotsUsingServer(ctx context.Context, serverID string) ([]string, error)
+	SetHealthUsecase(health domainHealth.IHealthUsecase)
 }

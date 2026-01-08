@@ -155,6 +155,44 @@ func (s *healthService) upsertStatus(ctx context.Context, r health.HealthRecord)
 	return err
 }
 
+func (s *healthService) ReportFailure(ctx context.Context, entityType health.EntityType, entityID string, message string) {
+	record := health.HealthRecord{
+		EntityType:  entityType,
+		EntityID:    entityID,
+		Status:      health.StatusError,
+		LastMessage: message,
+	}
+	s.upsertStatus(ctx, record)
+
+	// Dependency propagation: If an MCP fails, check all bots using it
+	if entityType == health.EntityMCP {
+		if bots, err := s.mcpUsecase.ListBotsUsingServer(ctx, entityID); err == nil {
+			for _, botID := range bots {
+				go s.CheckBot(ctx, botID)
+			}
+		}
+	}
+}
+
+func (s *healthService) ReportSuccess(ctx context.Context, entityType health.EntityType, entityID string) {
+	record := health.HealthRecord{
+		EntityType:  entityType,
+		EntityID:    entityID,
+		Status:      health.StatusOk,
+		LastMessage: "OK",
+	}
+	s.upsertStatus(ctx, record)
+
+	// If an MCP is back up, bots using it might be OK now
+	if entityType == health.EntityMCP {
+		if bots, err := s.mcpUsecase.ListBotsUsingServer(ctx, entityID); err == nil {
+			for _, botID := range bots {
+				go s.CheckBot(ctx, botID)
+			}
+		}
+	}
+}
+
 func (s *healthService) CheckMCP(ctx context.Context, id string) (health.HealthRecord, error) {
 	record := health.HealthRecord{
 		EntityType: health.EntityMCP,
@@ -263,8 +301,8 @@ func (s *healthService) CheckAll(ctx context.Context) ([]health.HealthRecord, er
 }
 
 func (s *healthService) StartPeriodicChecks(ctx context.Context) {
-	logrus.Info("[Health] starting periodic health checks loop (interval: 2m)")
-	ticker := time.NewTicker(2 * time.Minute)
+	logrus.Info("[Health] starting periodic health checks loop (interval: 6h)")
+	ticker := time.NewTicker(6 * time.Hour)
 
 	// Run once at start
 	go func() {

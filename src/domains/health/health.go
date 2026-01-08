@@ -38,5 +38,7 @@ type IHealthUsecase interface {
 	CheckAll(ctx context.Context) ([]HealthRecord, error)
 	GetStatus(ctx context.Context) ([]HealthRecord, error)
 	GetEntityStatus(ctx context.Context, entityType EntityType, entityID string) (HealthRecord, error)
+	ReportFailure(ctx context.Context, entityType EntityType, entityID string, message string)
+	ReportSuccess(ctx context.Context, entityType EntityType, entityID string)
 	StartPeriodicChecks(ctx context.Context)
 }

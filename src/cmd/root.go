@@ -382,6 +382,7 @@ func initApp() {
 	cacheUsecase.StartBackgroundCleanup(ctx)
 	mcpUsecase = usecase.NewMCPService()
 	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase)
+	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
 	gemini.SetMCPUsecase(mcpUsecase)
 
