@@ -11,11 +11,27 @@
 
 ___
 
-![release version](https://img.shields.io/github/v/release/AzielCF/az-wap)
-![Build Image](https://github.com/AzielCF/az-wap/actions/workflows/build-docker-image.yaml/badge.svg)
-![Binary Release](https://github.com/AzielCF/az-wap/actions/workflows/release.yml/badge.svg)
-
 ## Support for `ARM` & `AMD` Architecture along with `MCP` Support
+
+---
+
+### 🚀 High-Scale & Enterprise Architecture (v2)
+
+AzWap v2 has been re-engineered for production environments requiring high availability and massive session management. It is prepared to handle **hundreds of concurrent WhatsApp sessions** on a single instance thanks to its specialized concurrency engine.
+
+#### 🏗️ Dual-Worker Pool System
+Unlike standard gateways that spawn a new process for every message (causing CPU/RAM explosions), AzWap uses a **Fixed-Size Worker Pool** strategy:
+
+1.  **Message Worker Pool**: Manages the core message loop (AI processing, webhooks, and Chatwoot sync). It uses a sharding algorithm to ensure **Sequential Consistency**: messages from the same chat are always processed in order, while messages from different chats are processed in parallel.
+2.  **Bot Webhook Pool**: A dedicated secondary pool just for the Bot Webhook API. This isolates your LLM/AI logic from the WhatsApp core, preventing a slow AI response from affecting message delivery.
+
+#### 🤖 AI Agents with MCP Client Support
+AzWap now allows your AI Bots to have "hands" via the **Model Context Protocol (MCP)**.
+- **Dynamic Tooling**: You can link one or multiple MCP Servers to a single Bot.
+- **Enhanced Capabilities**: Your Bots are no longer limited to chat; they can now perform Google searches, query databases, or interact with any external service that provides an MCP interface.
+- **Remote & SSE Support**: Connect to MCP servers running locally or remotely via SSE (Server-Sent Events) with full encryption for custom headers and auth.
+
+---
 
 Download:
 
@@ -79,10 +95,9 @@ Download:
   - `--auto-mark-read=true` (automatically marks incoming messages as read)
 - Auto download media from incoming messages
   - `--auto-download-media=false` (disable automatic media downloads, default: `true`)
-- Webhook for received message
-  - `--webhook="http://yourwebhook.site/handler"`, or you can simplify
-  - `-w="http://yourwebhook.site/handler"`
-  - for more detail, see [Webhook Payload Documentation](./docs/webhook-payload.md)
+- **Webhook Payload Documentation**
+- **Reactive Health Monitoring**: Real-time status updates for all entities.
+- **Worker Pool Dashboard**: Real-time monitoring of message processing.
 - **Chatwoot Webhook (Inbound)**
   Configure Chatwoot to send webhooks to AzWap:
 
@@ -180,6 +195,29 @@ priority):
 | `BOT_WEBHOOK_QUEUE_SIZE`      | Bot webhook queue size per worker           | `250`                                        | `BOT_WEBHOOK_QUEUE_SIZE=500`                |
 | `BOT_MONITOR_BUFFER`          | Bot monitor ring buffer size (events)       | `200`                                        | `BOT_MONITOR_BUFFER=500`                    |
 | `BOT_MONITOR_TTL`             | Bot monitor TTL for recent events           | `0` (disabled)                               | `BOT_MONITOR_TTL=10m`                       |
+
+---
+
+### ⚙️ Scalability Configuration (Enterprise Sizing)
+
+To deploy in a real-world environment with 100+ sessions, tune these variables in your `.env` or via CLI:
+
+| Environment Variable | Scaling Recommendation | Sessions Covered | Description |
+| :--- | :--- | :--- | :--- |
+| `MESSAGE_WORKER_POOL_SIZE` | `50` to `100` | 100 - 300 | Concurrent workers for message processing. |
+| `MESSAGE_WORKER_QUEUE_SIZE` | `2000` to `5000` | Heavy Load | Prevents data loss during spikes. |
+| `BOT_WEBHOOK_POOL_SIZE` | `20` to `50` | 500+ Bots | Concurrency for AI webhooks. |
+| `WHATSAPP_ACCOUNT_VALIDATION` | `false` | Large Deployments | Skips initial check for faster startup. |
+
+---
+
+### 🏥 Reactive Health Monitoring
+AzWap v2 replaces heavy periodic scanning with an **Event-Driven Health System**:
+- **Zero Overhead**: Health status only updates when a real interaction occurs (e.g., a failed tool call) or manual validation.
+- **Dependency Propagation**: If an MCP Server fails, all dependent Bots are automatically flagged with the error status.
+- **Real-Time UI**: The dashboard reflects these changes instantly through a light 10-second polling mechanism.
+
+---
 
 Note: Command-line flags will override any values set in environment variables or `.env` file.
 
@@ -574,6 +612,10 @@ You can fork or edit this source code !
 | ✅       | Get Chat Messages                      | GET    | /chat/:chat_jid/messages            |
 | ✅       | Label Chat                             | POST   | /chat/:chat_jid/label               |
 | ✅       | Pin Chat                               | POST   | /chat/:chat_jid/pin                 |
+| ✅       | Get Health Status                      | GET    | /api/health/status                  |
+| ✅       | Trigger Individual Check               | POST   | /api/health/:type/:id/check         |
+| ✅       | Worker Pool Metrics                    | GET    | /api/worker-pool/stats              |
+| ✅       | Bot Webhook Metrics                    | GET    | /api/bot-webhook-pool/stats         |
 
 ```txt
 ✅ = Available
