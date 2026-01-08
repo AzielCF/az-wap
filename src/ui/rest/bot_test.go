@@ -58,7 +58,7 @@ func TestBotHandleWebhook_E2E(t *testing.T) {
 	}
 
 	service := &fakeBotService{}
-	InitRestBot(app, service)
+	InitRestBot(app, service, nil)
 
 	body := []byte(`{"memory_id":"mem-123","input":"  hola mundo  "}`)
 	req := httptest.NewRequest(http.MethodPost, "/bots/bot-123/webhook", bytes.NewReader(body))

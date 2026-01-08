@@ -19,6 +19,7 @@ import (
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
@@ -62,6 +63,7 @@ var (
 	instanceUsecase   domainInstance.IInstanceUsecase
 	cacheUsecase      domainCache.ICacheUsecase
 	mcpUsecase        domainMCP.IMCPUsecase
+	healthUsecase     domainHealth.IHealthUsecase
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -379,6 +381,9 @@ func initApp() {
 	cacheUsecase = usecase.NewCacheService()
 	cacheUsecase.StartBackgroundCleanup(ctx)
 	mcpUsecase = usecase.NewMCPService()
+	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase)
+	mcpUsecase.SetHealthUsecase(healthUsecase)
+	healthUsecase.StartPeriodicChecks(ctx)
 	gemini.SetMCPUsecase(mcpUsecase)
 
 	go autoConnectAllInstances(ctx)

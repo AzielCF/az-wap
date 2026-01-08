@@ -11,6 +11,10 @@ export default {
             type: String,
             default: '',
         },
+        healthStatus: {
+            type: Object,
+            default: () => ({}),
+        },
     },
     data() {
         return {

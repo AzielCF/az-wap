@@ -14,6 +14,7 @@ export default {
             filterInstance: '',
             filterChat: '',
             filterProvider: '',
+            healthStatus: {}, // bot_id -> HealthRecord
         }
     },
     computed: {
@@ -137,6 +138,21 @@ export default {
                 const { data } = await window.http.get('/api/bot-monitor/stats');
                 this.stats = data;
 
+                // Sync Health Status
+                try {
+                    const hData = await window.http.get('/api/health/status');
+                    const results = hData.data?.results || [];
+                    const botHealth = {};
+                    results.forEach(r => {
+                        if (r.entity_type === 'bot') {
+                            botHealth[r.entity_id] = r;
+                        }
+                    });
+                    this.healthStatus = botHealth;
+                } catch (hErr) {
+                    console.warn('Failed to fetch health for bot monitor:', hErr);
+                }
+
                 if (this.page > this.totalPages) {
                     this.page = this.totalPages;
                 }
@@ -249,7 +265,18 @@ export default {
                 <i class="times icon"></i>
                 {{ error }}
             </div>
-            <div v-else-if="stats">
+
+            <!-- Health Warnings -->
+            <div v-if="Object.keys(healthStatus).length" style="margin-bottom: 1rem;">
+                <div v-for="(h, bid) in healthStatus" :key="bid">
+                    <div v-if="h.status === 'ERROR'" class="ui tiny warning message" style="padding: 0.5em 1em; margin-bottom: 0.5em;">
+                        <i class="exclamation triangle icon"></i>
+                        <strong>Bot Health Alert:</strong> {{ h.last_message }}
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="stats">
                 <div class="ui five stackable cards">
                     <div class="ui card">
                         <div class="content">

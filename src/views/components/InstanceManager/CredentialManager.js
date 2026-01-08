@@ -2,9 +2,18 @@ import { showSuccessInfo, showErrorInfo, handleApiError, filterCredentialsByKind
 
 export default {
     name: 'CredentialManager',
+    props: {
+        credentials: {
+            type: Array,
+            default: () => [],
+        },
+        healthStatus: {
+            type: Object,
+            default: () => ({}),
+        },
+    },
     data() {
         return {
-            credentials: [],
             loadingCredentials: false,
             showCredentialSection: false,
             showCredentialModal: false,
@@ -15,24 +24,41 @@ export default {
             credentialChatwootBaseUrlInput: '',
             credentialChatwootAccountTokenInput: '',
             savingCredential: false,
+            checkingHealth: {}, // Map of entity_id -> boolean
         };
     },
     created() {
-        this.loadCredentials();
+        // Managed by parent
     },
     methods: {
-        async loadCredentials() {
+        async checkCredentialHealth(cred) {
+            this.checkingHealth[cred.id] = true;
             try {
-                this.loadingCredentials = true;
-                const { data } = await window.http.get('/credentials');
-                const results = data?.results || [];
-                this.credentials = Array.isArray(results) ? results : [];
-                this.$emit('credentials-loaded', this.credentials);
+                const { data } = await window.http.post(`/api/health/credentials/${cred.id}/check`);
+                if (data.status === 200 || data.code === 'SUCCESS') {
+                    // Update the centralized status via parent if necessary, 
+                    // or just show local result if parent doesn't need to sync immediately
+                    this.$emit('credentials-updated'); 
+                    if (data.results.status === 'ERROR') {
+                        window.showErrorInfo(`Health check failed: ${data.results.last_message}`);
+                    } else {
+                        window.showSuccessInfo('Credential is valid');
+                    }
+                }
             } catch (err) {
-                handleApiError(err, 'Failed to load IA credentials');
+                window.showErrorInfo('Failed to perform health check');
             } finally {
-                this.loadingCredentials = false;
+                this.checkingHealth[cred.id] = false;
             }
+        },
+        getHealthLabel(credId) {
+            const h = this.healthStatus[`ia_credential:${credId}`];
+            if (!h) return { text: 'UNKNOWN', color: '' };
+            return {
+                text: h.status,
+                color: h.status === 'OK' ? 'green' : (h.status === 'ERROR' ? 'red' : 'yellow'),
+                message: h.last_message
+            };
         },
         geminiCredentials() {
             return filterCredentialsByKind(this.credentials, 'gemini');
@@ -88,7 +114,7 @@ export default {
                     await window.http.post('/credentials', payload);
                     showSuccessInfo('Credential created.');
                 }
-                await this.loadCredentials();
+                this.$emit('credentials-updated');
                 this.cancelCredentialEditor();
             } catch (err) {
                 handleApiError(err, 'Failed to save credential');
@@ -104,7 +130,7 @@ export default {
             try {
                 await window.http.delete(`/credentials/${cred.id}`);
                 showSuccessInfo('Credential deleted.');
-                await this.loadCredentials();
+                this.$emit('credentials-updated');
             } catch (err) {
                 handleApiError(err, 'Failed to delete credential');
             }
@@ -152,7 +178,16 @@ export default {
                             <tbody>
                             <tr v-for="cred in credentials" :key="cred.id">
                                 <td>{{ cred.name }}</td>
-                                <td>{{ cred.kind }}</td>
+                                <td>
+                                    {{ cred.kind }}
+                                    <div v-if="getHealthLabel(cred.id).text !== 'UNKNOWN'" 
+                                         class="ui mini label" 
+                                         :class="getHealthLabel(cred.id).color" 
+                                         style="margin-left: 5px;"
+                                         :title="getHealthLabel(cred.id).message">
+                                        {{ getHealthLabel(cred.id).text }}
+                                    </div>
+                                </td>
                                 <td>
                                     <span v-if="cred.kind === 'gemini'">Gemini API key stored</span>
                                     <span v-else-if="cred.kind === 'chatwoot'">
@@ -160,7 +195,10 @@ export default {
                                     </span>
                                 </td>
                                 <td style="text-align: right;">
-                                    <button type="button" class="ui mini basic button" @click="openCredentialEditor(cred)">
+                                    <button type="button" class="ui mini basic icon button" @click="checkCredentialHealth(cred)" :class="{ 'loading': checkingHealth[cred.id] }" title="Check health now">
+                                        <i class="heartbeat icon" :class="getHealthLabel(cred.id).color"></i>
+                                    </button>
+                                    <button type="button" class="ui mini basic button" style="margin-left: 0.5em;" @click="openCredentialEditor(cred)">
                                         Edit
                                     </button>
                                     <button type="button" class="ui mini red basic button" style="margin-left: 0.5em;" @click="deleteCredential(cred)">
