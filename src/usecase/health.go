@@ -209,7 +209,8 @@ func (s *healthService) CheckBot(ctx context.Context, id string) (health.HealthR
 		var failingServers []string
 		for _, srv := range servers {
 			if srv.Enabled {
-				status, _ := s.GetEntityStatus(ctx, health.EntityMCP, srv.ID)
+				// Proactively check MCP dependency during bot check
+				status, _ := s.CheckMCP(ctx, srv.ID)
 				if status.Status == health.StatusError {
 					failingServers = append(failingServers, srv.Name)
 				}
@@ -262,8 +263,8 @@ func (s *healthService) CheckAll(ctx context.Context) ([]health.HealthRecord, er
 }
 
 func (s *healthService) StartPeriodicChecks(ctx context.Context) {
-	logrus.Info("[Health] starting periodic health checks loop (interval: 30m)")
-	ticker := time.NewTicker(30 * time.Minute)
+	logrus.Info("[Health] starting periodic health checks loop (interval: 2m)")
+	ticker := time.NewTicker(2 * time.Minute)
 
 	// Run once at start
 	go func() {

@@ -39,6 +39,7 @@ export default {
             savingBot: false,
             botMCPServers: [],
             loadingBotMCPs: false,
+            checkingHealth: {},
         };
     },
     created() {
@@ -287,9 +288,25 @@ export default {
                 this.$emit('bots-updated');
                 this.cancelBotEditor();
             } catch (err) {
-                handleApiError(err, 'Failed to save Bot AI');
+                window.showErrorInfo(err.response?.data?.message || 'Error saving bot');
             } finally {
                 this.savingBot = false;
+            }
+        },
+        async checkBotHealth(bot) {
+            this.checkingHealth[bot.id] = true;
+            try {
+                const { data } = await window.http.post(`/api/health/bot/${bot.id}/check`);
+                this.$emit('bots-updated');
+                if (data.results?.status === 'ERROR') {
+                    window.showErrorInfo(`Bot health check failed: ${data.results.last_message}`);
+                } else {
+                    window.showSuccessInfo('Bot and dependencies are healthy');
+                }
+            } catch (err) {
+                window.showErrorInfo('Failed to perform bot health check');
+            } finally {
+                this.checkingHealth[bot.id] = false;
             }
         },
         async deleteBot(bot) {
@@ -381,7 +398,16 @@ export default {
                                 <td>{{ bot.image_enabled ? 'Yes' : 'No' }}</td>
                                 <td>{{ bot.memory_enabled ? 'Yes' : 'No' }}</td>
                                 <td style="text-align: right;">
-                                    <button type="button" class="ui mini basic button" @click="openBotEditor(bot)">
+                                    <button 
+                                        type="button" 
+                                        class="ui mini basic button" 
+                                        :class="{ loading: checkingHealth[bot.id] }"
+                                        @click="checkBotHealth(bot)"
+                                        title="Check Bot dependencies health"
+                                    >
+                                        <i class="sync icon"></i> Check
+                                    </button>
+                                    <button type="button" class="ui mini basic button" style="margin-left: 0.5em;" @click="openBotEditor(bot)">
                                         Edit
                                     </button>
                                     <button

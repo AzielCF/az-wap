@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -737,17 +738,45 @@ func (s *mcpService) Validate(ctx context.Context, id string) error {
 }
 
 func (s *mcpService) checkAvailability(ctx context.Context, server domainMCP.MCPServer) error {
-	// For SSE/HTTP, we try to start the client.
-	// If it's a template, we just want to know if the endpoint exists.
-	mcpClient, err := s.getClient(ctx, server)
+	if server.URL == "" {
+		return fmt.Errorf("URL is required for this connection type")
+	}
+
+	// For SSE/HTTP, we perform a standard HTTP request to see if the endpoint is reachable.
+	// We accept 200, 401, 403, 405 as "reachable" because a template might require Auth.
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// Add basic headers if any
+	for k, v := range server.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("server not reachable: %w", err)
 	}
-	mcpClient.Close()
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("server returned 404 Not Found")
+	}
+
 	return nil
 }
 
 func (s *mcpService) performFullValidation(ctx context.Context, server domainMCP.MCPServer) error {
+	// First check basic connectivity
+	if err := s.checkAvailability(ctx, server); err != nil {
+		return err
+	}
+
 	mcpClient, err := s.getClient(ctx, server)
 	if err != nil {
 		return err
