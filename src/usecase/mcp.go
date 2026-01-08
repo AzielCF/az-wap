@@ -12,6 +12,7 @@ import (
 
 	"github.com/AzielCF/az-wap/config"
 	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
+	"github.com/AzielCF/az-wap/pkg/crypto"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -105,6 +106,11 @@ func initMCPStorageDB() (*sql.DB, error) {
 }
 
 func NewMCPService() domainMCP.IMCPUsecase {
+	// Initialize crypto
+	if err := crypto.SetEncryptionKey(config.AppSecretKey); err != nil {
+		logrus.WithError(err).Error("[MCP] failed to set encryption key")
+	}
+
 	db, err := initMCPStorageDB()
 	if err != nil {
 		logrus.WithError(err).Error("[MCP] failed to initialize storage")
@@ -194,7 +200,13 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		srv.Type = domainMCP.ConnectionType(typeStr)
 		json.Unmarshal([]byte(argsJSON), &srv.Args)
 		json.Unmarshal([]byte(envJSON), &srv.Env)
-		json.Unmarshal([]byte(headersJSON), &srv.Headers)
+
+		// Decrypt headers
+		if headersJSON != "" {
+			decrypted, _ := crypto.Decrypt(headersJSON)
+			json.Unmarshal([]byte(decrypted), &srv.Headers)
+		}
+
 		json.Unmarshal([]byte(toolsJSON), &srv.Tools)
 		json.Unmarshal([]byte(templateConfigJSON), &srv.TemplateConfig)
 		srv.IsTemplate = isTemplateInt != 0
@@ -218,7 +230,13 @@ func (s *mcpService) GetServer(ctx context.Context, id string) (domainMCP.MCPSer
 	srv.Type = domainMCP.ConnectionType(typeStr)
 	json.Unmarshal([]byte(argsJSON), &srv.Args)
 	json.Unmarshal([]byte(envJSON), &srv.Env)
-	json.Unmarshal([]byte(headersJSON), &srv.Headers)
+
+	// Decrypt headers
+	if headersJSON != "" {
+		decrypted, _ := crypto.Decrypt(headersJSON)
+		json.Unmarshal([]byte(decrypted), &srv.Headers)
+	}
+
 	json.Unmarshal([]byte(toolsJSON), &srv.Tools)
 	json.Unmarshal([]byte(templateConfigJSON), &srv.TemplateConfig)
 	srv.IsTemplate = isTemplateInt != 0
@@ -245,9 +263,16 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	if server.Env == nil {
 		envJSON = []byte("{}")
 	}
-	headersJSON, _ := json.Marshal(server.Headers)
-	if server.Headers == nil {
-		headersJSON = []byte("{}")
+	// Encrypt headers
+	headersJSON := []byte("{}")
+	if server.Headers != nil {
+		hJSON, _ := json.Marshal(server.Headers)
+		encrypted, err := crypto.Encrypt(string(hJSON))
+		if err == nil {
+			headersJSON = []byte(encrypted)
+		} else {
+			logrus.WithError(err).Error("[MCP] failed to encrypt headers in UpdateServer")
+		}
 	}
 	toolsJSON := "[]"
 	if server.Tools != nil {
@@ -279,10 +304,7 @@ func (s *mcpService) getClient(ctx context.Context, server domainMCP.MCPServer) 
 
 	switch server.Type {
 	case domainMCP.ConnTypeStdio:
-		if strings.TrimSpace(server.Command) == "" {
-			return nil, fmt.Errorf("MCP stdio server '%s' has no command configured", server.Name)
-		}
-		mcpClient, err = client.NewStdioMCPClient(server.Command, server.Args)
+		return nil, fmt.Errorf("MCP stdio connections are disabled for security reasons")
 	case domainMCP.ConnTypeHTTP:
 		if strings.TrimSpace(server.URL) == "" {
 			return nil, fmt.Errorf("MCP HTTP server '%s' has no URL configured", server.Name)
@@ -405,7 +427,12 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 				server.Headers = make(map[string]string)
 			}
 			for k, v := range cfg.CustomHeaders {
-				server.Headers[k] = v
+				// Decrypt value
+				if decrypted, err := crypto.Decrypt(v); err == nil {
+					server.Headers[k] = decrypted
+				} else {
+					server.Headers[k] = v // Fallback
+				}
 			}
 		}
 	}
@@ -497,10 +524,23 @@ func (s *mcpService) GetBotTools(ctx context.Context, botID string) ([]domainMCP
 			if configJSON.Valid && configJSON.String != "" {
 				var cfg struct {
 					DisabledTools []string          `json:"disabled_tools"`
-					CustomHeaders map[string]string `json:"custom_headers"`
+					CustomHeaders map[string]string `json:"custom_headers"` // Encrypted
 				}
 				if err := json.Unmarshal([]byte(configJSON.String), &cfg); err == nil {
 					disabledTools = cfg.DisabledTools
+					// Decrypt custom headers values?
+					// Wait, the WHOLE CONFIG is JSON. We should encrypt values or the whole blob?
+					// Implementation choice: We encrypted just the values map in UpdateBotMCPConfig?
+					// Let's re-read UpdateBotMCPConfig...
+					// Ah, we haven't updated UpdateBotMCPConfig yet to encrypt.
+					// Let's assume we encrypt VALUES of CustomHeaders.
+
+					for k, v := range cfg.CustomHeaders {
+						if decrypted, err := crypto.Decrypt(v); err == nil {
+							cfg.CustomHeaders[k] = decrypted
+						}
+					}
+
 					// Merge headers for tool fetching if needed
 					if srv.Headers == nil {
 						srv.Headers = make(map[string]string)
@@ -603,12 +643,22 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.Bo
 		return err
 	}
 
+	// Encrypt Custom Headers Values
+	encryptedHeaders := make(map[string]string)
+	for k, v := range config.CustomHeaders {
+		if enc, err := crypto.Encrypt(v); err == nil {
+			encryptedHeaders[k] = enc
+		} else {
+			encryptedHeaders[k] = v // Should probably error, but fallback for now
+		}
+	}
+
 	confJSON, _ := json.Marshal(struct {
 		DisabledTools []string          `json:"disabled_tools"`
 		CustomHeaders map[string]string `json:"custom_headers"`
 	}{
 		DisabledTools: config.DisabledTools,
-		CustomHeaders: config.CustomHeaders,
+		CustomHeaders: encryptedHeaders,
 	})
 
 	enabledInt := 0

@@ -108,7 +108,7 @@ export default {
             }
         },
         resetForm() {
-            this.newServer = { name: '', description: '', type: 'sse', url: '', command: '', args: [], headers: {} };
+            this.newServer = { name: '', description: '', type: 'http', url: '', command: '', args: [], headers: {} };
             this.argsString = '';
             this.argsString = '';
             this.headersString = '';
@@ -302,7 +302,7 @@ export default {
 
                     <div class="field">
                         <label>Transport Method</label>
-                        <div class="ui three column grid">
+                        <div class="ui two column grid">
                             <div class="column">
                                 <div class="ui fluid button" :class="{ 'primary': target.type === 'http' }" @click="target.type = 'http'">
                                     <i class="globe icon"></i><br>
@@ -315,29 +315,12 @@ export default {
                                     SSE
                                 </div>
                             </div>
-                            <div class="column">
-                                <div class="ui fluid button" :class="{ 'primary': target.type === 'stdio' }" @click="target.type = 'stdio'">
-                                    <i class="terminal icon"></i><br>
-                                    Stdio
-                                </div>
-                            </div>
                         </div>
                     </div>
 
-                    <div v-if="target.type !== 'stdio'" class="field">
+                    <div class="field">
                         <label>Remote Server URL</label>
                         <input type="text" v-model="target.url" placeholder="https://api.example.com/mcp">
-                    </div>
-
-                    <div v-if="target.type === 'stdio'">
-                        <div class="field">
-                            <label>Command</label>
-                            <input type="text" v-model="target.command" placeholder="e.g. npx, node, python">
-                        </div>
-                        <div class="field">
-                            <label>Arguments (one per line)</label>
-                            <textarea v-model="argsString" rows="3" placeholder="e.g.&#10;mcp-remote&#10;https://server.com"></textarea>
-                        </div>
                     </div>
 
                     <div class="field">
@@ -347,7 +330,7 @@ export default {
 
                     <div class="ui info message">
                         <i class="info circle icon"></i>
-                        Headers are sent with every request to the remote MCP server. (HTTP/SSE only).
+                        Headers are sent with every request to the remote MCP server.
                     </div>
 
                     <div class="ui divider"></div>

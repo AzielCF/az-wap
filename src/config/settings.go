@@ -62,6 +62,9 @@ var (
 	// Message Worker Pool settings
 	MessageWorkerPoolSize  int = 20
 	MessageWorkerQueueSize int = 1000
+
+	// Security
+	AppSecretKey string = "changeme_please_change_me_in_prod_12345"
 )
 
 func init() {
@@ -119,10 +122,13 @@ func init() {
 		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
 			MessageWorkerQueueSize = parsed
 		}
-	} else if val := os.Getenv("BOT_WORKER_QUEUE_SIZE"); val != "" {
 		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
 			MessageWorkerQueueSize = parsed
 		}
+	}
+
+	if val := os.Getenv("APP_SECRET_KEY"); val != "" {
+		AppSecretKey = val
 	}
 }
 
