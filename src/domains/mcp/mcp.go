@@ -75,4 +75,5 @@ type IMCPUsecase interface {
 	ListServersForBot(ctx context.Context, botID string) ([]MCPServer, error)
 	ToggleServerForBot(ctx context.Context, botID string, serverID string, enabled bool) error
 	UpdateBotMCPConfig(ctx context.Context, config BotMCPConfig) error
+	Validate(ctx context.Context, id string) error
 }

@@ -42,4 +42,5 @@ type ICredentialUsecase interface {
 	GetByID(ctx context.Context, id string) (Credential, error)
 	Update(ctx context.Context, id string, req UpdateCredentialRequest) (Credential, error)
 	Delete(ctx context.Context, id string) error
+	Validate(ctx context.Context, id string) error
 }
