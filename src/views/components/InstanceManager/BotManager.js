@@ -136,24 +136,114 @@ export default {
             this.loadingBotMCPs = true;
             try {
                 const { data } = await window.http.get(`/bots/${botId}/mcp`);
-                this.botMCPServers = data?.results || [];
+                const results = data?.results || [];
+                // Add headersString to each server for editing
+                // Prepare headersMap for each server based on template or existing custom_headers
+                this.botMCPServers = results.map(srv => {
+                    let headersMap = {};
+                    let headersString = '';
+
+                    // If it has custom_headers saved, use them
+                    if (srv.custom_headers) {
+                        headersMap = { ...srv.custom_headers };
+                        // Also build string for non-template mode fallback
+                        headersString = Object.entries(srv.custom_headers)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join('\n');
+                    }
+
+                    // If it is a template, ensure all keys exist in headersMap
+                    if (srv.is_template && srv.template_config) {
+                        Object.keys(srv.template_config).forEach(k => {
+                            if (!headersMap[k]) headersMap[k] = '';
+                        });
+                    }
+
+                    return { ...srv, headersString, headersMap };
+                });
             } catch (err) {
                 console.error('Failed to load bot MCPs:', err);
             } finally {
                 this.loadingBotMCPs = false;
             }
         },
-        async toggleMCPForBot(server) {
+        async saveMCPPreference(server) {
             if (!this.editingBotId) return;
-            try {
-                await window.http.post(`/bots/${this.editingBotId}/mcp`, {
-                    server_id: server.id,
-                    enabled: !server.enabled
+
+            let headers = {};
+
+            // If template, construct from headersMap
+            if (server.is_template) {
+                headers = { ...server.headersMap };
+            } else {
+                // Legacy / Non-template mode: Parse headers (Key: Value) from textarea
+                (server.headersString || '').split('\n').forEach(line => {
+                    const idx = line.indexOf(':');
+                    if (idx > 0) {
+                        const key = line.substring(0, idx).trim();
+                        const val = line.substring(idx + 1).trim();
+                        if (key) headers[key] = val;
+                    }
                 });
-                this.loadBotMCPs(this.editingBotId);
-            } catch (err) {
-                handleApiError(err, 'Failed to toggle MCP server');
             }
+
+            try {
+                await window.http.put(`/bots/${this.editingBotId}/mcp/${server.id}`, {
+                    enabled: server.enabled,
+                    disabled_tools: server.disabled_tools || [],
+                    custom_headers: headers
+                });
+                return true;
+            } catch (err) {
+                handleApiError(err, 'Failed to update MCP preference');
+                return false;
+            }
+        },
+        async toggleMCPForBot(server) {
+            // If enabling a template, don't auto-save immediately to enabled=true.
+            // Just expand the section and let user fill info. 
+            // BUT for UX simplification as per request: "if not template, activate. if template, ask."
+            
+            if (server.is_template && !server.enabled) {
+                // Expanding will happen automatically because we are not toggling 'enabled' yet?
+                // Actually the checkbox is bound to :checked="srv.enabled". 
+                // We need to allow the toggle to happen visually but maybe not save 'enabled=true' if validation fails?
+                // Let's just toggle 'enabled' state locally.
+                server.enabled = !server.enabled;
+
+                // If now enabled, check if we need to show validation error or just save
+                // We save immediately to 'enabled=true', user then fills headers.
+                await this.saveMCPPreference(server);
+            } else {
+                server.enabled = !server.enabled;
+                await this.saveMCPPreference(server);
+            }
+            // Reload to refresh state
+            this.loadBotMCPs(this.editingBotId);
+        },
+        getTemplateConfig(server) {
+            return server.template_config || {};
+        },
+        isToolDisabled(server, toolName) {
+            if (!server.disabled_tools) return false;
+            return server.disabled_tools.includes(toolName);
+        },
+        async toggleToolForBot(server, toolName) {
+            if (!this.editingBotId) return;
+            
+            let disabledTools = [...(server.disabled_tools || [])];
+            if (disabledTools.includes(toolName)) {
+                disabledTools = disabledTools.filter(t => t !== toolName);
+            } else {
+                disabledTools.push(toolName);
+            }
+            server.disabled_tools = disabledTools;
+
+            await this.saveMCPPreference(server);
+        },
+        async saveBotMCPHeaders(server) {
+            const ok = await this.saveMCPPreference(server);
+            if (ok) showSuccessInfo(`MCP headers updated for ${server.name}`);
         },
         cancelBotEditor() {
             this.showBotModal = false;
@@ -231,8 +321,13 @@ export default {
             <div class="ui segment">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
                     <div>
-                        <h4 class="ui header" style="margin-bottom: 0;">Reusable Bot AI</h4>
-                        <div style="font-size: 0.9em; opacity: 0.7;">Create shared IA assistants and reuse them across instances.</div>
+                        <h3 class="ui header" style="margin-bottom: 0;">
+                            <i class="robot icon blue"></i>
+                            <div class="content">
+                                Reusable Bot AI
+                                <div class="sub header">Create shared AI assistants and reuse them across instances</div>
+                            </div>
+                        </h3>
                     </div>
                     <button type="button" class="ui mini button" @click="showBotSection = !showBotSection">
                         {{ showBotSection ? 'Hide' : 'Show' }}
@@ -372,7 +467,7 @@ export default {
                             <textarea rows="3" v-model="botKnowledgeBaseInput" placeholder="Domain knowledge and FAQs for this Bot AI" :disabled="savingBot"></textarea>
                         </div>
                         <div class="field">
-                            <label>IA timezone (IANA)</label>
+                            <label>AI timezone (IANA)</label>
                             <select id="bot-timezone-dropdown" class="ui dropdown" v-model="botTimezoneInput" :disabled="savingBot">
                                 <option value="">(Use global / server default)</option>
                                 <option value="UTC">UTC</option>
@@ -429,8 +524,54 @@ export default {
                                         </div>
                                     </div>
                                     <div class="content">
-                                        <div class="header" style="font-size: 0.95em;">{{ srv.name }}</div>
+                                        <div class="header" style="font-size: 0.95em;">
+                                            {{ srv.name }}
+                                            <span v-if="srv.tools && srv.tools.length" class="ui tiny label">{{ srv.tools.length }} tools</span>
+                                        </div>
                                         <div class="description" style="font-size: 0.85em;">{{ srv.description || srv.url }}</div>
+                                        
+                                        <!-- Tool detail / selection -->
+                                        <div v-if="srv.enabled" style="margin-top: 10px; padding-left: 20px; border-left: 2px solid #eee;">
+                                            <div v-if="srv.is_template" class="field" style="margin-bottom: 1rem;">
+                                                <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 5px;">
+                                                    Required Configuration
+                                                </label>
+
+                                                <!-- Template Mode -->
+                                                <div v-if="srv.template_config" class="ui form tiny">
+                                                    <div v-for="(help, key) in srv.template_config" :key="key" class="field required">
+                                                        <label style="font-size: 0.8em;">{{ key }}</label>
+                                                        <div class="ui input">
+                                                            <input type="text" v-model="srv.headersMap[key]" :placeholder="help || 'Value required'">
+                                                        </div>
+                                                        <div v-if="help" style="font-size: 0.75em; opacity: 0.6; margin-top:2px;">{{ help }}</div>
+                                                    </div>
+                                                    <div style="text-align: right; margin-top: 5px;">
+                                                        <button type="button" class="ui icon button teal tiny" @click="saveBotMCPHeaders(srv)">
+                                                            <i class="save icon"></i> Save Configuration
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div v-if="!srv.tools || !srv.tools.length" class="ui tiny orange message">
+                                                No cached tools found for this server. Go to MCP Manager to sync.
+                                            </div>
+                                            <div v-else class="ui list">
+                                                <div v-for="tool in srv.tools" :key="tool.name" class="item" style="padding: 4px 0;">
+                                                    <div class="ui checkbox tiny">
+                                                        <input type="checkbox" 
+                                                               :id="'tool-' + srv.id + '-' + tool.name"
+                                                               :checked="!isToolDisabled(srv, tool.name)"
+                                                               @change="toggleToolForBot(srv, tool.name)">
+                                                        <label :for="'tool-' + srv.id + '-' + tool.name" style="cursor:pointer">
+                                                            <strong>{{ tool.name }}</strong>
+                                                            <div style="font-size:0.85em; opacity:0.7">{{ tool.description }}</div>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

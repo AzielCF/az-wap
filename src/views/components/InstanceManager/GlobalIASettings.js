@@ -64,18 +64,23 @@ export default {
             <div class="ui segment">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
                     <div>
-                        <h4 class="ui header" style="margin-bottom: 0;">Global IA settings</h4>
-                        <div style="font-size: 0.9em; opacity: 0.7;">Applies to all IA assistants in all instances.</div>
+                        <h3 class="ui header" style="margin-bottom: 0;">
+                            <i class="cog icon blue"></i>
+                            <div class="content">
+                                Global AI settings
+                                <div class="sub header">Applies to all AI assistants in all instances</div>
+                            </div>
+                        </h3>
                     </div>
                     <button type="button" class="ui mini button" @click="showGlobalIASettings = !showGlobalIASettings">
                         {{ showGlobalIASettings ? 'Hide' : 'Show' }}
                     </button>
                 </div>
                 <div v-if="showGlobalIASettings" style="margin-top: 0.75rem;">
-                    <label>Global IA system prompt</label>
-                    <textarea rows="4" v-model="globalGeminiPrompt" placeholder="Global rules for all IA assistants"></textarea>
+                    <label>Global AI system prompt</label>
+                    <textarea rows="4" v-model="globalGeminiPrompt" placeholder="Global rules for all AI assistants"></textarea>
                     <div class="field" style="margin-top: 0.5rem;">
-                        <label>IA timezone (IANA)</label>
+                        <label>AI timezone (IANA)</label>
                         <select class="ui dropdown" v-model="globalGeminiTimezone">
                             <option value="">(Use server default / UTC)</option>
                             <option value="UTC">UTC</option>

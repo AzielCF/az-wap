@@ -8,10 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"time"
+
 	"github.com/AzielCF/az-wap/config"
 	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 )
@@ -40,7 +43,9 @@ func initMCPStorageDB() (*sql.DB, error) {
 			command TEXT,
 			args TEXT,
 			env TEXT,
+			headers TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1,
+			tools TEXT,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 	`
@@ -62,6 +67,38 @@ func initMCPStorageDB() (*sql.DB, error) {
 	}
 	if _, err := db.Exec(createBotMCPTable); err != nil {
 		return nil, err
+	}
+
+	// Internal migration for headers column
+	var hasHeaders bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('mcp_servers') WHERE name='headers'").Scan(&hasHeaders)
+	if !hasHeaders {
+		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN headers TEXT")
+	}
+
+	var hasTools bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('mcp_servers') WHERE name='tools'").Scan(&hasTools)
+	if !hasTools {
+		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN tools TEXT")
+	}
+
+	var hasConfigJson bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('bot_mcp_configs') WHERE name='config_json'").Scan(&hasConfigJson)
+	if !hasConfigJson {
+		_, _ = db.Exec("ALTER TABLE bot_mcp_configs ADD COLUMN config_json TEXT")
+	}
+
+	// Internal migration for template columns
+	var hasIsTemplate bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('mcp_servers') WHERE name='is_template'").Scan(&hasIsTemplate)
+	if !hasIsTemplate {
+		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN is_template INTEGER DEFAULT 0")
+	}
+
+	var hasTemplateConfig bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('mcp_servers') WHERE name='template_config'").Scan(&hasTemplateConfig)
+	if !hasTemplateConfig {
+		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN template_config TEXT")
 	}
 
 	return db, nil
@@ -108,9 +145,29 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 	if server.Env == nil {
 		envJSON = []byte("{}")
 	}
+	headersJSON, _ := json.Marshal(server.Headers)
+	if server.Headers == nil {
+		headersJSON = []byte("{}")
+	}
+	toolsJSON := "[]"
+	if server.Tools != nil {
+		b, _ := json.Marshal(server.Tools)
+		toolsJSON = string(b)
+	}
 
-	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), 1)
+	templateConfigJSON := "{}"
+	if server.TemplateConfig != nil {
+		b, _ := json.Marshal(server.TemplateConfig)
+		templateConfigJSON = string(b)
+	}
+
+	isTemplateInt := 0
+	if server.IsTemplate {
+		isTemplateInt = 1
+	}
+
+	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, headers, tools, enabled, is_template, template_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON)
 	return server, err
 }
 
@@ -119,7 +176,8 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, description, type, url, command, args, env, enabled FROM mcp_servers")
+	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}') FROM mcp_servers`
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -128,20 +186,18 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 	var servers []domainMCP.MCPServer
 	for rows.Next() {
 		var srv domainMCP.MCPServer
-		var enabledVal int
-		var typeStr string
-		var argsStr, envStr sql.NullString
-		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsStr, &envStr, &enabledVal); err != nil {
+		var typeStr, argsJSON, envJSON, headersJSON, toolsJSON, templateConfigJSON string
+		var isTemplateInt int
+		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON); err != nil {
 			return nil, err
 		}
 		srv.Type = domainMCP.ConnectionType(typeStr)
-		srv.Enabled = enabledVal != 0
-		if argsStr.Valid && argsStr.String != "" {
-			_ = json.Unmarshal([]byte(argsStr.String), &srv.Args)
-		}
-		if envStr.Valid && envStr.String != "" {
-			_ = json.Unmarshal([]byte(envStr.String), &srv.Env)
-		}
+		json.Unmarshal([]byte(argsJSON), &srv.Args)
+		json.Unmarshal([]byte(envJSON), &srv.Env)
+		json.Unmarshal([]byte(headersJSON), &srv.Headers)
+		json.Unmarshal([]byte(toolsJSON), &srv.Tools)
+		json.Unmarshal([]byte(templateConfigJSON), &srv.TemplateConfig)
+		srv.IsTemplate = isTemplateInt != 0
 		servers = append(servers, srv)
 	}
 	return servers, nil
@@ -152,22 +208,20 @@ func (s *mcpService) GetServer(ctx context.Context, id string) (domainMCP.MCPSer
 		return domainMCP.MCPServer{}, err
 	}
 	var srv domainMCP.MCPServer
-	var enabledVal int
-	var typeStr string
-	var argsStr, envStr sql.NullString
-	query := "SELECT id, name, description, type, url, command, args, env, enabled FROM mcp_servers WHERE id = ?"
-	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsStr, &envStr, &enabledVal)
+	var typeStr, argsJSON, envJSON, headersJSON, toolsJSON, templateConfigJSON string
+	var isTemplateInt int
+	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}') FROM mcp_servers WHERE id = ?`
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON)
 	if err != nil {
 		return srv, err
 	}
 	srv.Type = domainMCP.ConnectionType(typeStr)
-	srv.Enabled = enabledVal != 0
-	if argsStr.Valid && argsStr.String != "" {
-		_ = json.Unmarshal([]byte(argsStr.String), &srv.Args)
-	}
-	if envStr.Valid && envStr.String != "" {
-		_ = json.Unmarshal([]byte(envStr.String), &srv.Env)
-	}
+	json.Unmarshal([]byte(argsJSON), &srv.Args)
+	json.Unmarshal([]byte(envJSON), &srv.Env)
+	json.Unmarshal([]byte(headersJSON), &srv.Headers)
+	json.Unmarshal([]byte(toolsJSON), &srv.Tools)
+	json.Unmarshal([]byte(templateConfigJSON), &srv.TemplateConfig)
+	srv.IsTemplate = isTemplateInt != 0
 	return srv, nil
 }
 
@@ -191,28 +245,62 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	if server.Env == nil {
 		envJSON = []byte("{}")
 	}
+	headersJSON, _ := json.Marshal(server.Headers)
+	if server.Headers == nil {
+		headersJSON = []byte("{}")
+	}
+	toolsJSON := "[]"
+	if server.Tools != nil {
+		b, _ := json.Marshal(server.Tools)
+		toolsJSON = string(b)
+	}
 
-	query := `UPDATE mcp_servers SET name = ?, description = ?, type = ?, url = ?, command = ?, args = ?, env = ?, enabled = ? WHERE id = ?`
-	_, err := s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), 1, id)
+	templateConfigJSON := "{}"
+	if server.TemplateConfig != nil {
+		b, _ := json.Marshal(server.TemplateConfig)
+		templateConfigJSON = string(b)
+	}
+
+	isTemplateInt := 0
+	if server.IsTemplate {
+		isTemplateInt = 1
+	}
+
+	query := `UPDATE mcp_servers 
+			  SET name=?, description=?, type=?, url=?, command=?, args=?, env=?, headers=?, tools=?, enabled=?, is_template=?, template_config=?
+			  WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, id)
 	return server, err
 }
 
-func (s *mcpService) ListTools(ctx context.Context, serverID string) ([]domainMCP.Tool, error) {
-	server, err := s.GetServer(ctx, serverID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create MCP Client
+func (s *mcpService) getClient(ctx context.Context, server domainMCP.MCPServer) (*client.Client, error) {
 	var mcpClient *client.Client
-	if server.Type == domainMCP.ConnTypeSSE {
-		mcpClient, err = client.NewSSEMCPClient(server.URL)
-	} else if server.Type == domainMCP.ConnTypeStdio {
-		// client.NewStdioMCPClient takes (command, args, options...)
-		// We'll pass env as an option if supported, or just use command/args
+	var err error
+
+	switch server.Type {
+	case domainMCP.ConnTypeStdio:
+		if strings.TrimSpace(server.Command) == "" {
+			return nil, fmt.Errorf("MCP stdio server '%s' has no command configured", server.Name)
+		}
 		mcpClient, err = client.NewStdioMCPClient(server.Command, server.Args)
-	} else {
-		return nil, fmt.Errorf("unsupported connection type: %s", server.Type)
+	case domainMCP.ConnTypeHTTP:
+		if strings.TrimSpace(server.URL) == "" {
+			return nil, fmt.Errorf("MCP HTTP server '%s' has no URL configured", server.Name)
+		}
+		var opts []transport.StreamableHTTPCOption
+		if len(server.Headers) > 0 {
+			opts = append(opts, transport.WithHTTPHeaders(server.Headers))
+		}
+		mcpClient, err = client.NewStreamableHttpClient(server.URL, opts...)
+	default: // ConnTypeSSE or fallback
+		if strings.TrimSpace(server.URL) == "" {
+			return nil, fmt.Errorf("MCP SSE server '%s' has no URL configured", server.Name)
+		}
+		var opts []transport.ClientOption
+		if len(server.Headers) > 0 {
+			opts = append(opts, client.WithHeaders(server.Headers))
+		}
+		mcpClient, err = client.NewSSEMCPClient(server.URL, opts...)
 	}
 
 	if err != nil {
@@ -222,20 +310,60 @@ func (s *mcpService) ListTools(ctx context.Context, serverID string) ([]domainMC
 	if err := mcpClient.Start(ctx); err != nil {
 		return nil, err
 	}
+
+	return mcpClient, nil
+}
+
+func (s *mcpService) ListTools(ctx context.Context, serverID string) ([]domainMCP.Tool, error) {
+	server, err := s.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create MCP Client
+	location := server.URL
+	if server.Type == domainMCP.ConnTypeStdio {
+		location = server.Command
+	}
+	logrus.Infof("[MCP] Connecting to server %s (%s) at %s", server.Name, server.Type, location)
+	mcpClient, err := s.getClient(ctx, server)
+	if err != nil {
+		logrus.WithError(err).Errorf("[MCP] Failed to create client for %s", serverID)
+		return nil, err
+	}
 	defer mcpClient.Close()
 
+	logrus.Infof("[MCP] Initializing session for %s", server.Name)
 	initReq := mcp.InitializeRequest{}
 	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
 	initReq.Params.Capabilities = mcp.ClientCapabilities{}
 	initReq.Params.ClientInfo = mcp.Implementation{Name: "az-wap-bot", Version: "1.0.0"}
 
-	_, err = mcpClient.Initialize(ctx, initReq)
-	if err != nil {
-		return nil, err
+	// Retry initialization for SSE servers as they might take a moment to establish the session
+	var initErr error
+	for i := 0; i < 5; i++ {
+		_, initErr = mcpClient.Initialize(ctx, initReq)
+		if initErr == nil {
+			break
+		}
+		errStr := initErr.Error()
+		if strings.Contains(errStr, "404") || strings.Contains(strings.ToLower(errStr), "session") {
+			time.Sleep(500 * time.Millisecond)
+			logrus.Warnf("[MCP] Session not ready for %s, retrying (%d/5)...", server.Name, i+1)
+			continue
+		}
+		break
 	}
 
+	if initErr != nil {
+		logrus.WithError(initErr).Errorf("[MCP] Failed to initialize server %s", serverID)
+		return nil, initErr
+	}
+
+	logrus.Infof("[MCP] Listing tools for %s", server.Name)
 	toolsRes, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
+		logrus.WithError(err).Errorf("[MCP] Failed to list tools for server %s", serverID)
 		return nil, err
 	}
 
@@ -248,29 +376,42 @@ func (s *mcpService) ListTools(ctx context.Context, serverID string) ([]domainMC
 		})
 	}
 
+	// Cache tools in database
+	if len(results) > 0 {
+		toolsJSON, _ := json.Marshal(results)
+		_, _ = s.db.ExecContext(ctx, "UPDATE mcp_servers SET tools = ? WHERE id = ?", string(toolsJSON), serverID)
+	}
+
 	return results, nil
 }
 
 func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.CallToolRequest) (domainMCP.CallToolResult, error) {
+	logrus.Infof("[MCP] Bot %s calling tool %s on server %s", botID, req.ToolName, req.ServerID)
 	server, err := s.GetServer(ctx, req.ServerID)
 	if err != nil {
 		return domainMCP.CallToolResult{}, err
 	}
 
-	var mcpClient *client.Client
-	if server.Type == domainMCP.ConnTypeSSE {
-		mcpClient, err = client.NewSSEMCPClient(server.URL)
-	} else if server.Type == domainMCP.ConnTypeStdio {
-		mcpClient, err = client.NewStdioMCPClient(server.Command, server.Args)
-	} else {
-		return domainMCP.CallToolResult{}, fmt.Errorf("unsupported connection type: %s", server.Type)
+	// Fetch per-bot config to check for custom headers
+	var configJSON sql.NullString
+	_ = s.db.QueryRowContext(ctx, "SELECT config_json FROM bot_mcp_configs WHERE bot_id = ? AND server_id = ?", botID, req.ServerID).Scan(&configJSON)
+
+	if configJSON.Valid && configJSON.String != "" {
+		var cfg struct {
+			CustomHeaders map[string]string `json:"custom_headers"`
+		}
+		if err := json.Unmarshal([]byte(configJSON.String), &cfg); err == nil {
+			if server.Headers == nil {
+				server.Headers = make(map[string]string)
+			}
+			for k, v := range cfg.CustomHeaders {
+				server.Headers[k] = v
+			}
+		}
 	}
 
+	mcpClient, err := s.getClient(ctx, server)
 	if err != nil {
-		return domainMCP.CallToolResult{}, err
-	}
-
-	if err := mcpClient.Start(ctx); err != nil {
 		return domainMCP.CallToolResult{}, err
 	}
 	defer mcpClient.Close()
@@ -278,7 +419,25 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 	// Initialize
 	initReq := mcp.InitializeRequest{}
 	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	_, _ = mcpClient.Initialize(ctx, initReq)
+	initReq.Params.Capabilities = mcp.ClientCapabilities{}
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "az-wap-bot", Version: "1.0.0"}
+
+	// Retry initialization
+	for i := 0; i < 5; i++ {
+		_, err = mcpClient.Initialize(ctx, initReq)
+		if err == nil {
+			break
+		}
+		errStr := err.Error()
+		if strings.Contains(errStr, "404") || strings.Contains(strings.ToLower(errStr), "session") {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	if err != nil {
+		return domainMCP.CallToolResult{}, err
+	}
 
 	callReq := mcp.CallToolRequest{}
 	callReq.Params.Name = req.ToolName
@@ -286,9 +445,11 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 
 	res, err := mcpClient.CallTool(ctx, callReq)
 	if err != nil {
+		logrus.WithError(err).Errorf("[MCP] Tool call failed for %s", req.ToolName)
 		return domainMCP.CallToolResult{}, err
 	}
 
+	logrus.Infof("[MCP] Tool call %s successful (IsError: %v)", req.ToolName, res.IsError)
 	var result domainMCP.CallToolResult
 	result.IsError = res.IsError
 	for _, content := range res.Content {
@@ -322,8 +483,69 @@ func (s *mcpService) GetBotTools(ctx context.Context, botID string) ([]domainMCP
 	for rows.Next() {
 		var serverID string
 		if err := rows.Scan(&serverID); err == nil {
-			tools, _ := s.ListTools(ctx, serverID)
-			allTools = append(allTools, tools...)
+			// Get server
+			srv, err := s.GetServer(ctx, serverID)
+			if err != nil {
+				continue
+			}
+
+			// Get configuration for this bot+server
+			var configJSON sql.NullString
+			_ = s.db.QueryRowContext(ctx, "SELECT config_json FROM bot_mcp_configs WHERE bot_id = ? AND server_id = ?", botID, serverID).Scan(&configJSON)
+
+			var disabledTools []string
+			if configJSON.Valid && configJSON.String != "" {
+				var cfg struct {
+					DisabledTools []string          `json:"disabled_tools"`
+					CustomHeaders map[string]string `json:"custom_headers"`
+				}
+				if err := json.Unmarshal([]byte(configJSON.String), &cfg); err == nil {
+					disabledTools = cfg.DisabledTools
+					// Merge headers for tool fetching if needed
+					if srv.Headers == nil {
+						srv.Headers = make(map[string]string)
+					}
+					for k, v := range cfg.CustomHeaders {
+						srv.Headers[k] = v
+					}
+				}
+			}
+
+			disabledMap := make(map[string]bool)
+			for _, dt := range disabledTools {
+				disabledMap[dt] = true
+			}
+
+			// Try to list tools with the bot-aware server config
+			// We call getClient directly here to avoid the bot-less ListTools
+			tools := srv.Tools
+			if len(tools) == 0 {
+				mcpClient, err := s.getClient(ctx, srv)
+				if err == nil {
+					// We just need tool list, but it requires initialization
+					initReq := mcp.InitializeRequest{}
+					initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+					initReq.Params.ClientInfo = mcp.Implementation{Name: "az-wap-bot", Version: "1.0.0"}
+					if _, err := mcpClient.Initialize(ctx, initReq); err == nil {
+						if res, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{}); err == nil {
+							for _, t := range res.Tools {
+								tools = append(tools, domainMCP.Tool{
+									Name:        t.Name,
+									Description: t.Description,
+									InputSchema: t.InputSchema,
+								})
+							}
+						}
+					}
+					mcpClient.Close()
+				}
+			}
+
+			for _, t := range tools {
+				if !disabledMap[t.Name] {
+					allTools = append(allTools, t)
+				}
+			}
 		}
 	}
 	return allTools, nil
@@ -338,10 +560,20 @@ func (s *mcpService) ListServersForBot(ctx context.Context, botID string) ([]dom
 	// For each server, check if it's enabled for this bot
 	for i := range servers {
 		var enabled int
-		query := `SELECT enabled FROM bot_mcp_configs WHERE bot_id = ? AND server_id = ?`
-		err := s.db.QueryRowContext(ctx, query, botID, servers[i].ID).Scan(&enabled)
+		var configJSON sql.NullString
+		query := `SELECT enabled, config_json FROM bot_mcp_configs WHERE bot_id = ? AND server_id = ?`
+		err := s.db.QueryRowContext(ctx, query, botID, servers[i].ID).Scan(&enabled, &configJSON)
 		if err == nil {
 			servers[i].Enabled = enabled != 0
+			if configJSON.Valid && configJSON.String != "" {
+				var cfg struct {
+					DisabledTools []string          `json:"disabled_tools"`
+					CustomHeaders map[string]string `json:"custom_headers"`
+				}
+				json.Unmarshal([]byte(configJSON.String), &cfg)
+				servers[i].DisabledTools = cfg.DisabledTools
+				servers[i].CustomHeaders = cfg.CustomHeaders
+			}
 		} else {
 			servers[i].Enabled = false
 		}
@@ -363,5 +595,29 @@ func (s *mcpService) ToggleServerForBot(ctx context.Context, botID string, serve
 	query := `INSERT INTO bot_mcp_configs (bot_id, server_id, enabled) VALUES (?, ?, ?)
 			  ON CONFLICT(bot_id, server_id) DO UPDATE SET enabled = ?`
 	_, err := s.db.ExecContext(ctx, query, botID, serverID, status, status)
+	return err
+}
+
+func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.BotMCPConfig) error {
+	if err := s.ensureDB(); err != nil {
+		return err
+	}
+
+	confJSON, _ := json.Marshal(struct {
+		DisabledTools []string          `json:"disabled_tools"`
+		CustomHeaders map[string]string `json:"custom_headers"`
+	}{
+		DisabledTools: config.DisabledTools,
+		CustomHeaders: config.CustomHeaders,
+	})
+
+	enabledInt := 0
+	if config.Enabled {
+		enabledInt = 1
+	}
+
+	query := `INSERT INTO bot_mcp_configs (bot_id, server_id, enabled, config_json) VALUES (?, ?, ?, ?)
+			  ON CONFLICT(bot_id, server_id) DO UPDATE SET enabled = ?, config_json = ?`
+	_, err := s.db.ExecContext(ctx, query, config.BotID, config.ServerID, enabledInt, string(confJSON), enabledInt, string(confJSON))
 	return err
 }

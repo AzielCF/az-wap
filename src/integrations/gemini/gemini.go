@@ -181,7 +181,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 			return
 		}
 		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-		reply, err := generateReplyFromImage(ctx, cfg, key, imageBytes, media.MimeType)
+		reply, err := generateReplyFromImage(ctx, cfg, key, imageBytes, media.MimeType, traceID, instanceID, chatJID)
 		if err != nil {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from image")
@@ -247,7 +247,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 			return
 		}
 		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-		reply, err := generateReplyFromAudio(ctx, cfg, key, audioBytes, media.MimeType)
+		reply, err := generateReplyFromAudio(ctx, cfg, key, audioBytes, media.MimeType, traceID, instanceID, chatJID)
 		if err != nil {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from audio")
@@ -288,7 +288,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "text", Status: "ok"})
 	start := time.Now()
 	key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-	reply, err := generateReply(ctx, cfg, key, text)
+	reply, err := generateReply(ctx, cfg, key, text, traceID, instanceID, chatJID)
 	if err != nil {
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 		logrus.WithError(err).Error("[GEMINI] failed to generate reply")
@@ -656,7 +656,7 @@ func GenerateBotTextReply(ctx context.Context, botID string, memoryID string, in
 		memoryKey = fmt.Sprintf("bot|%s|%s", botID, memoryID)
 	}
 
-	reply, err := generateReply(ctx, cfg, memoryKey, input)
+	reply, err := generateReply(ctx, cfg, memoryKey, input, traceID, monitorInstanceID, monitorChatID)
 	if err != nil {
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: monitorInstanceID, ChatJID: monitorChatID, Provider: provider, Stage: "outbound", Kind: "webhook", Status: "error", Error: err.Error()})
@@ -667,7 +667,7 @@ func GenerateBotTextReply(ctx context.Context, botID string, memoryID string, in
 	return reply, nil
 }
 
-func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, input string) (string, error) {
+func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, input string, traceID, instanceID, chatJID string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -727,14 +727,19 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 	var mcpTools []domainMCP.Tool
 	serverMap := make(map[string]string)
 	if cfg.BotID != "" && mcpUsecase != nil {
-		if servers, err := mcpUsecase.ListServers(ctx); err == nil {
+		// Use ListServersForBot to respect bot-specific enablement
+		if servers, err := mcpUsecase.ListServersForBot(ctx, cfg.BotID); err == nil {
 			for _, srv := range servers {
 				if srv.Enabled {
-					if tools, err := mcpUsecase.ListTools(ctx, srv.ID); err == nil {
-						for _, t := range tools {
-							mcpTools = append(mcpTools, t)
-							serverMap[t.Name] = srv.ID
-						}
+					// Use cached tools if available
+					tools := srv.Tools
+					if len(tools) == 0 {
+						// Fallback if not cached yet (e.g. first use)
+						tools, _ = mcpUsecase.ListTools(ctx, srv.ID)
+					}
+					for _, t := range tools {
+						mcpTools = append(mcpTools, t)
+						serverMap[t.Name] = srv.ID
 					}
 				}
 			}
@@ -813,7 +818,7 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 	var finalResponse string
 
 	for i := 0; i < 10; i++ {
-		result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+		result, err := generateContentWithRetry(ctx, client, cfg.Model, contents, genConfig)
 		if err != nil {
 			return "", err
 		}
@@ -844,19 +849,39 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 					closed = true
 					toolResult = map[string]any{"status": "ok"}
 				} else if serverID, ok := serverMap[toolName]; ok {
+					startCall := time.Now()
 					mcpRes, mErr := mcpUsecase.CallTool(ctx, cfg.BotID, domainMCP.CallToolRequest{
 						ServerID:  serverID,
 						ToolName:  toolName,
 						Arguments: args,
 					})
+					duration := time.Since(startCall).Milliseconds()
+
+					event := botmonitor.Event{
+						TraceID:    traceID,
+						InstanceID: instanceID,
+						ChatJID:    chatJID,
+						Provider:   "mcp",
+						Stage:      "mcp_call",
+						Kind:       toolName,
+						Status:     "ok",
+						DurationMs: duration,
+					}
+
 					if mErr != nil {
 						toolResult = map[string]any{"error": mErr.Error()}
+						event.Status = "error"
+						event.Error = mErr.Error()
 					} else {
 						toolResult = map[string]any{
 							"content":  mcpRes.Content,
 							"is_error": mcpRes.IsError,
 						}
+						if mcpRes.IsError {
+							event.Status = "error"
+						}
 					}
+					botmonitor.Record(event)
 				} else {
 					toolResult = map[string]any{"error": "tool not found"}
 				}
@@ -917,7 +942,7 @@ type audioResponse struct {
 	Response      string `json:"response"`
 }
 
-func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string) (string, error) {
+func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string, traceID, instanceID, chatJID string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -1027,7 +1052,7 @@ Important: The "response" MUST be written in the same language the user is speak
 		genConfig.SystemInstruction = genai.NewContentFromText(systemText, genai.RoleUser)
 	}
 
-	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+	result, err := generateContentWithRetry(ctx, client, cfg.Model, contents, genConfig)
 	if err != nil {
 		return "", err
 	}
@@ -1070,7 +1095,7 @@ type imageResponse struct {
 	Response    string `json:"response"`
 }
 
-func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, imageBytes []byte, mimeType string) (string, error) {
+func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, imageBytes []byte, mimeType string, traceID, instanceID, chatJID string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -1180,7 +1205,7 @@ Important: The "response" MUST be written in the same language the user is speak
 		genConfig.SystemInstruction = genai.NewContentFromText(systemText, genai.RoleUser)
 	}
 
-	result, err := client.Models.GenerateContent(ctx, cfg.Model, contents, genConfig)
+	result, err := generateContentWithRetry(ctx, client, cfg.Model, contents, genConfig)
 	if err != nil {
 		return "", err
 	}
@@ -1216,4 +1241,36 @@ Important: The "response" MUST be written in the same language the user is speak
 	}
 
 	return response, nil
+}
+
+func generateContentWithRetry(ctx context.Context, client *genai.Client, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+	maxRetries := 3
+	lastErr := error(nil)
+
+	for i := 0; i < maxRetries; i++ {
+		result, err := client.Models.GenerateContent(ctx, model, contents, config)
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+		errStr := err.Error()
+
+		// Error 503 is "The model is overloaded"
+		if strings.Contains(errStr, "503") || strings.Contains(strings.ToLower(errStr), "overloaded") {
+			backoff := time.Duration(1<<uint(i)) * time.Second
+			logrus.Warnf("[GEMINI] Model overloaded, retrying in %v (attempt %d/%d)...", backoff, i+1, maxRetries)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				continue
+			}
+		}
+
+		// Other errors should not be retried
+		return nil, err
+	}
+
+	return nil, lastErr
 }

@@ -67,6 +67,7 @@ func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService dom
 	// Bot-MCP relations
 	app.Get("/bots/:id/mcp", rest.ListBotMCPs)
 	app.Post("/bots/:id/mcp", rest.AddBotMCP)
+	app.Put("/bots/:id/mcp/:server_id", rest.UpdateBotMCPConfig) // Granular config
 	app.Delete("/bots/:id/mcp/:server_id", rest.RemoveBotMCP)
 
 	return rest
@@ -339,6 +340,28 @@ func (h *Bot) AddBotMCP(c *fiber.Ctx) error {
 	err := h.MCPService.ToggleServerForBot(c.UserContext(), id, req.ServerID, req.Enabled)
 	utils.PanicIfNeeded(err)
 	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP toggled"})
+}
+
+func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
+	id := c.Params("id")
+	serverID := c.Params("server_id")
+	var req struct {
+		Enabled       bool              `json:"enabled"`
+		DisabledTools []string          `json:"disabled_tools"`
+		CustomHeaders map[string]string `json:"custom_headers"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
+	err := h.MCPService.UpdateBotMCPConfig(c.UserContext(), domainMCP.BotMCPConfig{
+		BotID:         id,
+		ServerID:      serverID,
+		Enabled:       req.Enabled,
+		DisabledTools: req.DisabledTools,
+		CustomHeaders: req.CustomHeaders,
+	})
+	utils.PanicIfNeeded(err)
+	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP config updated"})
 }
 
 func (h *Bot) RemoveBotMCP(c *fiber.Ctx) error {

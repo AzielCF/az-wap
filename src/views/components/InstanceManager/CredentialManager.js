@@ -115,8 +115,13 @@ export default {
             <div class="ui segment">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
                     <div>
-                        <h4 class="ui header" style="margin-bottom: 0;">IA Credentials</h4>
-                        <div style="font-size: 0.9em; opacity: 0.7;">Manage reusable Gemini and Chatwoot credentials.</div>
+                        <h3 class="ui header" style="margin-bottom: 0;">
+                            <i class="key icon blue"></i>
+                            <div class="content">
+                                AI Credentials
+                                <div class="sub header">Manage reusable Gemini and Chatwoot credentials</div>
+                            </div>
+                        </h3>
                     </div>
                     <button type="button" class="ui mini button" @click="showCredentialSection = !showCredentialSection">
                         {{ showCredentialSection ? 'Hide' : 'Show' }}

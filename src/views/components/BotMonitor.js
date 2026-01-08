@@ -366,8 +366,18 @@ export default {
                                                     <tbody>
                                                         <tr v-for="(e, idx) in g.events" :key="g.trace_id + '-' + idx">
                                                             <td>{{ formatTs(e.timestamp) }}</td>
-                                                            <td>{{ e.stage }}</td>
-                                                            <td>{{ e.kind }}</td>
+                                                            <td>
+                                                                <span v-if="e.stage === 'mcp_call'" class="ui tiny teal label">
+                                                                    <i class="wrench icon"></i> {{ e.stage }}
+                                                                </span>
+                                                                <span v-else>{{ e.stage }}</span>
+                                                            </td>
+                                                            <td>
+                                                                <span v-if="e.stage === 'mcp_call'">
+                                                                    <i class="wrench icon teal"></i> <strong>{{ e.kind }}</strong>
+                                                                </span>
+                                                                <span v-else>{{ e.kind }}</span>
+                                                            </td>
                                                             <td>
                                                                 <span v-if="e.status === 'ok'" class="ui tiny green label">ok</span>
                                                                 <span v-else-if="e.status === 'error'" class="ui tiny red label">error</span>
