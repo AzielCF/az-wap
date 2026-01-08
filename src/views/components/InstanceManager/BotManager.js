@@ -398,15 +398,6 @@ export default {
                                 <td>{{ bot.image_enabled ? 'Yes' : 'No' }}</td>
                                 <td>{{ bot.memory_enabled ? 'Yes' : 'No' }}</td>
                                 <td style="text-align: right;">
-                                    <button 
-                                        type="button" 
-                                        class="ui mini basic button" 
-                                        :class="{ loading: checkingHealth[bot.id] }"
-                                        @click="checkBotHealth(bot)"
-                                        title="Check Bot dependencies health"
-                                    >
-                                        <i class="sync icon"></i> Check
-                                    </button>
                                     <button type="button" class="ui mini basic button" style="margin-left: 0.5em;" @click="openBotEditor(bot)">
                                         Edit
                                     </button>

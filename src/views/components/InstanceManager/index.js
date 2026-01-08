@@ -44,10 +44,20 @@ export default {
             mcpServers: [],
             healthStatus: {},
             loadingData: false,
+            pollTimer: null,
         };
     },
     created() {
         this.handleDiscovery();
+        // Arrancamos el polling para reactividad automática (cada 10 seg)
+        this.pollTimer = setInterval(() => {
+            this.handleDiscovery();
+        }, 10000);
+    },
+    beforeUnmount() {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+        }
     },
     computed: {
         currentEditingInstance() {
