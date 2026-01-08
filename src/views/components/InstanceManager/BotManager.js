@@ -7,10 +7,17 @@ export default {
             type: Array,
             default: () => [],
         },
+        bots: {
+            type: Array,
+            default: () => [],
+        },
+        healthStatus: {
+            type: Object,
+            default: () => ({}),
+        },
     },
     data() {
         return {
-            bots: [],
             loadingBots: false,
             showBotSection: false,
             showBotModal: false,
@@ -35,7 +42,7 @@ export default {
         };
     },
     created() {
-        this.loadBots();
+        // No auto-load here, managed by parent
     },
     computed: {
         geminiCredentials() {
@@ -60,18 +67,14 @@ export default {
         },
     },
     methods: {
-        async loadBots() {
-            try {
-                this.loadingBots = true;
-                const { data } = await window.http.get('/bots');
-                const results = data?.results || [];
-                this.bots = Array.isArray(results) ? results : [];
-                this.$emit('bots-loaded', this.bots);
-            } catch (err) {
-                handleApiError(err, 'Failed to load Bot AI list');
-            } finally {
-                this.loadingBots = false;
-            }
+        getHealthLabel(botId) {
+            const h = this.healthStatus[`bot:${botId}`];
+            if (!h) return { text: 'UNKNOWN', color: '' };
+            return {
+                text: h.status,
+                color: h.status === 'OK' ? 'green' : (h.status === 'ERROR' ? 'red' : 'yellow'),
+                message: h.last_message
+            };
         },
         getBotWebhookUrl(bot) {
             return botWebhookUrl(bot.id);
@@ -281,9 +284,8 @@ export default {
                     await window.http.post('/bots', payload);
                     showSuccessInfo('Bot AI created.');
                 }
-                await this.loadBots();
-                this.showBotModal = false;
-                this.openNewBotForm();
+                this.$emit('bots-updated');
+                this.cancelBotEditor();
             } catch (err) {
                 handleApiError(err, 'Failed to save Bot AI');
             } finally {
@@ -298,7 +300,7 @@ export default {
             try {
                 await window.http.delete(`/bots/${bot.id}`);
                 showSuccessInfo('Bot AI deleted.');
-                await this.loadBots();
+                this.$emit('bots-updated');
             } catch (err) {
                 handleApiError(err, 'Failed to delete Bot AI');
             }
@@ -356,7 +358,16 @@ export default {
                             </thead>
                             <tbody>
                             <tr v-for="bot in bots" :key="bot.id">
-                                <td>{{ bot.name }}</td>
+                                <td>
+                                    {{ bot.name }}
+                                    <div v-if="getHealthLabel(bot.id).text !== 'UNKNOWN'" 
+                                         class="ui mini label" 
+                                         :class="getHealthLabel(bot.id).color" 
+                                         style="margin-left: 5px;"
+                                         :title="getHealthLabel(bot.id).message">
+                                        {{ getHealthLabel(bot.id).text }}
+                                    </div>
+                                </td>
                                 <td>{{ bot.provider }}</td>
                                 <td>
                                     <div class="ui action input" style="max-width: 260px;">

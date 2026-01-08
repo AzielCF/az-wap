@@ -38,10 +38,16 @@ export default {
             chatwootEditingInstanceId: null,
             geminiEditingInstanceId: null,
             
-            // Datos compartidos
+            // Datos compartidos centralizados
             credentials: [],
             bots: [],
+            mcpServers: [],
+            healthStatus: {},
+            loadingData: false,
         };
+    },
+    created() {
+        this.handleDiscovery();
     },
     computed: {
         currentEditingInstance() {
@@ -73,11 +79,40 @@ export default {
         handleRefreshInstances() {
             this.$emit('refresh-instances');
         },
-        handleCredentialsLoaded(credentials) {
-            this.credentials = credentials;
+        async handleDiscovery() {
+            if (this.loadingData) return;
+            this.loadingData = true;
+            try {
+                const [credRes, botRes, mcpRes, healthRes] = await Promise.all([
+                    window.http.get('/credentials'),
+                    window.http.get('/bots'),
+                    window.http.get('/api/mcp/servers'),
+                    window.http.get('/api/health/status')
+                ]);
+
+                this.credentials = credRes.data?.results || [];
+                this.bots = botRes.data?.results || [];
+                this.mcpServers = mcpRes.data?.results || [];
+                
+                const statusMap = {};
+                (healthRes.data?.results || []).forEach(r => {
+                    statusMap[`${r.entity_type}:${r.entity_id}`] = r;
+                });
+                this.healthStatus = statusMap;
+            } catch (err) {
+                console.error('Discovery failed:', err);
+            } finally {
+                this.loadingData = false;
+            }
         },
-        handleBotsLoaded(bots) {
-            this.bots = bots;
+        handleCredentialsUpdated() {
+            this.handleDiscovery();
+        },
+        handleBotsUpdated() {
+            this.handleDiscovery();
+        },
+        handleMCPServersUpdated() {
+            this.handleDiscovery();
         },
         openWebhookEditor(inst) {
             if (!inst || !inst.id) return;
@@ -122,7 +157,9 @@ export default {
 
                         <!-- Gestión de credenciales -->
                         <CredentialManager 
-                            @credentials-loaded="handleCredentialsLoaded"
+                            :credentials="credentials"
+                            :health-status="healthStatus"
+                            @credentials-updated="handleCredentialsUpdated"
                         />
 
                         <!-- Formulario de nueva instancia -->
@@ -133,18 +170,25 @@ export default {
 
                         <!-- Gestión de Bots AI -->
                         <BotManager 
+                            :bots="bots"
                             :credentials="credentials"
-                            @bots-loaded="handleBotsLoaded"
+                            :health-status="healthStatus"
+                            @bots-updated="handleBotsUpdated"
                         />
 
                         <!-- Gestión de MCP -->
-                        <MCPManager />
+                        <MCPManager 
+                            :servers="mcpServers"
+                            :health-status="healthStatus"
+                            @mcp-servers-updated="handleMCPServersUpdated"
+                        />
                     </div>
 
                     <!-- Lista de instancias existentes -->
                     <InstanceList 
                         :instances="instances"
                         :selectedToken="selectedToken"
+                        :health-status="healthStatus"
                         @set-active-token="handleSetActiveToken"
                         @refresh-instances="handleRefreshInstances"
                         @open-webhook-editor="openWebhookEditor"

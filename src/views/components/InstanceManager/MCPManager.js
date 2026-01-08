@@ -1,8 +1,17 @@
 export default {
     name: 'MCPManager',
+    props: {
+        servers: {
+            type: Array,
+            default: () => [],
+        },
+        healthStatus: {
+            type: Object,
+            default: () => ({}),
+        },
+    },
     data() {
         return {
-            servers: [],
             loading: false,
             showAddModal: false,
             newServer: {
@@ -11,7 +20,6 @@ export default {
                 type: 'sse',
                 url: '',
                 command: '',
-                args: [],
                 args: [],
                 headers: {},
                 is_template: false,
@@ -24,6 +32,7 @@ export default {
             selectedServerTools: null,
             argsString: '',
             headersString: '', // Now for custom headers
+            checkingHealth: {}, // Map of entity_id -> boolean
         };
     },
     computed: {
@@ -32,21 +41,39 @@ export default {
         }
     },
     mounted() {
-        this.fetchServers();
+        // Managed by parent
     },
     methods: {
-        async fetchServers() {
-            this.loading = true;
+        async checkServerHealth(srv) {
+            this.checkingHealth[srv.id] = true;
             try {
-                const { data } = await window.http.get('/api/mcp/servers');
+                const { data } = await window.http.post(`/api/health/mcp/${srv.id}/check`);
                 if (data.status === 200 || data.code === 'SUCCESS') {
-                    this.servers = data.results || [];
+                    this.$emit('mcp-servers-updated');
+                    if (data.results.status === 'ERROR') {
+                        window.showErrorInfo(`Health check failed: ${data.results.last_message}`);
+                    } else {
+                        window.showSuccessInfo('Server is healthy');
+                    }
                 }
             } catch (err) {
-                console.error('Failed to fetch MCP servers:', err);
+                window.showErrorInfo('Failed to perform health check');
             } finally {
-                this.loading = false;
+                this.checkingHealth[srv.id] = false;
             }
+        },
+        getHealthLabel(srvId) {
+            const h = this.healthStatus[`mcp_server:${srvId}`];
+            if (!h) return { text: 'UNKNOWN', color: '' };
+            return {
+                text: h.status,
+                color: h.status === 'OK' ? 'green' : (h.status === 'ERROR' ? 'red' : 'yellow'),
+                message: h.last_message,
+                lastChecked: h.last_checked
+            };
+        },
+        async fetchServers() {
+            this.$emit('mcp-servers-updated');
         },
         async saveServer() {
             if (!this.target.name) {
@@ -97,7 +124,6 @@ export default {
 
                 if (data.status === 200 || data.status === 201 || data.code === 'SUCCESS') {
                     this.closeModal();
-                    await this.fetchServers();
                     this.$emit('mcp-servers-updated');
                     window.showSuccessInfo('MCP Server saved successfully');
                 } else {
@@ -144,7 +170,6 @@ export default {
             try {
                 const { data } = await window.http.delete(`/api/mcp/servers/${id}`);
                 if (data.status === 200 || data.code === 'SUCCESS') {
-                    await this.fetchServers();
                     this.$emit('mcp-servers-updated');
                     window.showSuccessInfo('Server deleted successfully');
                 }
@@ -176,11 +201,6 @@ export default {
                 const { data } = await window.http.get(`/api/mcp/servers/${server.id}/tools`);
                 if (data.status === 200 || data.code === 'SUCCESS') {
                     this.tools = data.results || [];
-                    // Update the local server reference tools so UI stays in sync
-                    const srvIdx = this.servers.findIndex(s => s.id === server.id);
-                    if (srvIdx !== -1) {
-                        this.servers[srvIdx].tools = this.tools;
-                    }
                 } else {
                     window.showErrorInfo(data.message || 'Error loading tools');
                 }
@@ -253,6 +273,13 @@ export default {
                     <div class="header">
                         {{ srv.name }}
                         <div v-if="srv.is_template" class="ui mini label violet" style="margin-left: 5px;">Template</div>
+                        <div v-if="getHealthLabel(srv.id).text !== 'UNKNOWN'" 
+                             class="ui mini label" 
+                             :class="getHealthLabel(srv.id).color" 
+                             style="margin-left: 5px;"
+                             :title="getHealthLabel(srv.id).message">
+                            {{ getHealthLabel(srv.id).text }}
+                        </div>
                     </div>
                     <div class="meta">
                         {{ srv.description || 'No description' }}
@@ -267,15 +294,18 @@ export default {
                     </div>
                 </div>
                 <div class="extra content">
-                    <div class="ui three tiny basic buttons">
+                    <div class="ui four tiny basic buttons">
+                        <button class="ui button" @click="checkServerHealth(srv)" :class="{ 'loading': checkingHealth[srv.id] }" title="Check health now">
+                            <i class="heartbeat icon" :class="getHealthLabel(srv.id).color"></i>
+                        </button>
                         <button class="ui button" @click="viewTools(srv)">
-                            <i class="eye icon"></i> View Tools
+                            <i class="eye icon"></i> Tools
                         </button>
                         <button class="ui button" @click="editServer(srv)">
-                            <i class="edit icon"></i> Edit
+                            <i class="edit icon"></i>
                         </button>
                         <button class="ui button" @click="deleteServer(srv.id)">
-                            <i class="trash icon red"></i> Delete
+                            <i class="trash icon red"></i>
                         </button>
                     </div>
                 </div>
