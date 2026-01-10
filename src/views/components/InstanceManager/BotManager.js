@@ -40,6 +40,7 @@ export default {
             botMCPServers: [],
             loadingBotMCPs: false,
             checkingHealth: {},
+            expandedServers: [], // IDs of MCP servers that are expanded for config
         };
     },
     created() {
@@ -107,6 +108,7 @@ export default {
         },
         openBotEditor(bot) {
             if (!bot || !bot.id) return;
+            this.expandedServers = []; // Clear UI state from previous bot
             this.editingBotId = bot.id;
             this.botNameInput = bot.name || '';
             this.botDescriptionInput = bot.description || '';
@@ -138,6 +140,7 @@ export default {
         },
         async loadBotMCPs(botId) {
             this.loadingBotMCPs = true;
+            this.botMCPServers = []; // Clear current list to avoid showing stale data from previous bot
             try {
                 const { data } = await window.http.get(`/bots/${botId}/mcp`);
                 const results = data?.results || [];
@@ -163,7 +166,12 @@ export default {
                         });
                     }
 
-                    return { ...srv, headersString, headersMap };
+                    return { 
+                        ...srv, 
+                        headersString, 
+                        headersMap,
+                        botInstructions: srv.bot_instructions || '' // Use dedicated bot-specific field
+                    };
                 });
             } catch (err) {
                 console.error('Failed to load bot MCPs:', err);
@@ -195,7 +203,8 @@ export default {
                 await window.http.put(`/bots/${this.editingBotId}/mcp/${server.id}`, {
                     enabled: server.enabled,
                     disabled_tools: server.disabled_tools || [],
-                    custom_headers: headers
+                    custom_headers: headers,
+                    instructions: server.botInstructions || ''
                 });
                 return true;
             } catch (err) {
@@ -208,22 +217,32 @@ export default {
             // Just expand the section and let user fill info. 
             // BUT for UX simplification as per request: "if not template, activate. if template, ask."
             
-            if (server.is_template && !server.enabled) {
-                // Expanding will happen automatically because we are not toggling 'enabled' yet?
-                // Actually the checkbox is bound to :checked="srv.enabled". 
-                // We need to allow the toggle to happen visually but maybe not save 'enabled=true' if validation fails?
-                // Let's just toggle 'enabled' state locally.
-                server.enabled = !server.enabled;
-
-                // If now enabled, check if we need to show validation error or just save
-                // We save immediately to 'enabled=true', user then fills headers.
-                await this.saveMCPPreference(server);
-            } else {
-                server.enabled = !server.enabled;
-                await this.saveMCPPreference(server);
+            if (server.is_template) {
+                // If it's a template, check if at least one header value is present relative to template_config
+                // We could be more strict, but for now, expanding is the primary action if it's not and we are trying to enable it.
+                const configKeys = Object.keys(server.template_config || {});
+                const hasConfig = configKeys.every(k => (server.headersMap[k] || '').trim() !== '');
+                
+                if (!server.enabled && !hasConfig) {
+                    if (!this.expandedServers.includes(server.id)) {
+                        this.expandedServers.push(server.id);
+                    }
+                    window.showErrorInfo(`Please configure required headers for ${server.name} before activating.`);
+                    return;
+                }
             }
+            
+            server.enabled = !server.enabled;
+            await this.saveMCPPreference(server);
             // Reload to refresh state
             this.loadBotMCPs(this.editingBotId);
+        },
+        toggleServerExpansion(serverId) {
+            if (this.expandedServers.includes(serverId)) {
+                this.expandedServers = this.expandedServers.filter(id => id !== serverId);
+            } else {
+                this.expandedServers.push(serverId);
+            }
         },
         getTemplateConfig(server) {
             return server.template_config || {};
@@ -530,7 +549,6 @@ export default {
                                     <label for="bot-memory-enabled-toggle">Memory</label>
                                 </div>
                             </div>
-                            </div>
                         </div>
 
                         <!-- MCP Tools for this bot -->
@@ -545,21 +563,30 @@ export default {
                             </div>
                             <div v-else class="ui middle aligned divided list">
                                 <div v-for="srv in botMCPServers" :key="srv.id" class="item">
-                                    <div class="right floated content">
-                                        <div class="ui toggle checkbox">
-                                            <input type="checkbox" :checked="srv.enabled" @change="toggleMCPForBot(srv)">
-                                            <label></label>
-                                        </div>
-                                    </div>
-                                    <div class="content">
-                                        <div class="header" style="font-size: 0.95em;">
-                                            {{ srv.name }}
+                                        <div class="header" style="font-size: 0.95em; display: flex; align-items: center; gap: 8px;">
+                                            <span style="font-weight: bold;">{{ srv.name }}</span>
                                             <span v-if="srv.tools && srv.tools.length" class="ui tiny label">{{ srv.tools.length }} tools</span>
+                                            <button type="button" 
+                                                    class="ui mini basic button" 
+                                                    :class="expandedServers.includes(srv.id) ? 'teal' : ''"
+                                                    style="padding: 4px 8px; margin-left: auto;"
+                                                    @click="toggleServerExpansion(srv.id)">
+                                                <i class="cog icon"></i> Configure
+                                            </button>
                                         </div>
                                         <div class="description" style="font-size: 0.85em;">{{ srv.description || srv.url }}</div>
                                         
+                                        <!-- Activation Toggle (Moved below name for clarity) -->
+                                        <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 0.85em; opacity: 0.8;">Enable this MCP for this bot:</span>
+                                            <div class="ui toggle checkbox" :class="{ disabled: srv.is_template && !Object.values(srv.headersMap || {}).some(v => v) }">
+                                                <input type="checkbox" :checked="srv.enabled" @change="toggleMCPForBot(srv)">
+                                                <label></label>
+                                            </div>
+                                        </div>
+
                                         <!-- Tool detail / selection -->
-                                        <div v-if="srv.enabled" style="margin-top: 10px; padding-left: 20px; border-left: 2px solid #eee;">
+                                        <div v-if="expandedServers.includes(srv.id) || srv.enabled" style="margin-top: 10px; padding-left: 20px; border-left: 2px solid #eee;">
                                             <div v-if="srv.is_template" class="field" style="margin-bottom: 1rem;">
                                                 <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 5px;">
                                                     Required Configuration
@@ -582,6 +609,21 @@ export default {
                                                 </div>
                                             </div>
 
+                                            <div class="field" style="margin-bottom: 1rem;">
+                                                <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 5px;">
+                                                    Bot-Specific Guidelines for this Toolset (Optional)
+                                                </label>
+                                                <textarea v-model="srv.botInstructions" rows="2" style="font-size: 0.9em;" placeholder="Tell the bot how to use these tools in its specific context..."></textarea>
+                                                <div style="font-size: 0.75em; opacity: 0.6; margin-top: 2px;">
+                                                    These specific instructions help the bot know <b>when</b> and <b>why</b> to use these tools for its unique mission.
+                                                </div>
+                                                <div style="text-align: right; margin-top: 5px;">
+                                                    <button type="button" class="ui icon button tiny basic blue" @click="saveBotMCPHeaders(srv)">
+                                                        <i class="save icon"></i> Update Guidelines
+                                                    </button>
+                                                </div>
+                                            </div>
+
                                             <div v-if="!srv.tools || !srv.tools.length" class="ui tiny orange message">
                                                 No cached tools found for this server. Go to MCP Manager to sync.
                                             </div>
@@ -599,7 +641,6 @@ export default {
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>

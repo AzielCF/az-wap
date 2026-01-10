@@ -11,6 +11,10 @@
 
 ___
 
+![release version](https://img.shields.io/github/v/release/AzielCF/az-wap)
+![Build Image](https://github.com/AzielCF/az-wap/actions/workflows/build-docker-image.yaml/badge.svg)
+![Binary Release](https://github.com/AzielCF/az-wap/actions/workflows/release.yml/badge.svg)
+
 ## Support for `ARM` & `AMD` Architecture along with `MCP` Support
 
 ---
@@ -207,7 +211,13 @@ To deploy in a real-world environment with 100+ sessions, tune these variables i
 | `MESSAGE_WORKER_POOL_SIZE` | `50` to `100` | 100 - 300 | Concurrent workers for message processing. |
 | `MESSAGE_WORKER_QUEUE_SIZE` | `2000` to `5000` | Heavy Load | Prevents data loss during spikes. |
 | `BOT_WEBHOOK_POOL_SIZE` | `20` to `50` | 500+ Bots | Concurrency for AI webhooks. |
-| `WHATSAPP_ACCOUNT_VALIDATION` | `false` | Large Deployments | Skips initial check for faster startup. |
+| `WHATSAPP_ACCOUNT_VALIDATION` | `false` | Large Deployments | Skips initial check for faster startup and safer mass-sending. |
+
+#### ⚠️ Pro-Tip: Disabling Account Validation at Scale
+For 100+ sessions or high-frequency automated sending, we strongly recommend setting `WHATSAPP_ACCOUNT_VALIDATION=false`.
+
+- **Reduced Latency**: Skips the pre-send network check, making message delivery significantly faster.
+- **Improved Stability**: Prevents hitting WhatsApp's rate-limits for "check number" queries, which is a common trigger for temporary session blocks in mass-sending environments.
 
 ---
 

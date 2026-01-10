@@ -105,6 +105,12 @@ func initMCPStorageDB() (*sql.DB, error) {
 		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN template_config TEXT")
 	}
 
+	var hasInstructions bool
+	_ = db.QueryRow("SELECT count(*) FROM pragma_table_info('mcp_servers') WHERE name='instructions'").Scan(&hasInstructions)
+	if !hasInstructions {
+		_, _ = db.Exec("ALTER TABLE mcp_servers ADD COLUMN instructions TEXT")
+	}
+
 	return db, nil
 }
 
@@ -195,8 +201,8 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 		return server, fmt.Errorf("validation failed: %w", err)
 	}
 
-	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, headers, tools, enabled, is_template, template_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON)
+	query := `INSERT INTO mcp_servers (id, name, description, type, url, command, args, env, headers, tools, enabled, is_template, template_config, instructions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = s.db.ExecContext(ctx, query, server.ID, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, server.Instructions)
 	return server, err
 }
 
@@ -205,7 +211,7 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		return nil, err
 	}
 
-	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}') FROM mcp_servers`
+	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}'), COALESCE(instructions, '') FROM mcp_servers`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -217,7 +223,7 @@ func (s *mcpService) ListServers(ctx context.Context) ([]domainMCP.MCPServer, er
 		var srv domainMCP.MCPServer
 		var typeStr, argsJSON, envJSON, headersJSON, toolsJSON, templateConfigJSON string
 		var isTemplateInt int
-		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON); err != nil {
+		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON, &srv.Instructions); err != nil {
 			return nil, err
 		}
 		srv.Type = domainMCP.ConnectionType(typeStr)
@@ -245,8 +251,8 @@ func (s *mcpService) GetServer(ctx context.Context, id string) (domainMCP.MCPSer
 	var srv domainMCP.MCPServer
 	var typeStr, argsJSON, envJSON, headersJSON, toolsJSON, templateConfigJSON string
 	var isTemplateInt int
-	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}') FROM mcp_servers WHERE id = ?`
-	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON)
+	query := `SELECT id, name, description, type, url, command, args, env, headers, tools, COALESCE(is_template, 0), COALESCE(template_config, '{}'), COALESCE(instructions, '') FROM mcp_servers WHERE id = ?`
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&srv.ID, &srv.Name, &srv.Description, &typeStr, &srv.URL, &srv.Command, &argsJSON, &envJSON, &headersJSON, &toolsJSON, &isTemplateInt, &templateConfigJSON, &srv.Instructions)
 	if err != nil {
 		return srv, err
 	}
@@ -335,9 +341,9 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	}
 
 	query := `UPDATE mcp_servers 
-			  SET name=?, description=?, type=?, url=?, command=?, args=?, env=?, headers=?, tools=?, enabled=?, is_template=?, template_config=?
+			  SET name=?, description=?, type=?, url=?, command=?, args=?, env=?, headers=?, tools=?, enabled=?, is_template=?, template_config=?, instructions=?
 			  WHERE id = ?`
-	_, err = s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, id)
+	_, err = s.db.ExecContext(ctx, query, server.Name, server.Description, string(server.Type), server.URL, server.Command, string(argsJSON), string(envJSON), string(headersJSON), string(toolsJSON), 1, isTemplateInt, templateConfigJSON, server.Instructions, id)
 	return server, err
 }
 
@@ -575,6 +581,7 @@ func (s *mcpService) GetBotTools(ctx context.Context, botID string) ([]domainMCP
 				var cfg struct {
 					DisabledTools []string          `json:"disabled_tools"`
 					CustomHeaders map[string]string `json:"custom_headers"` // Encrypted
+					Instructions  string            `json:"instructions"`
 				}
 				if err := json.Unmarshal([]byte(configJSON.String), &cfg); err == nil {
 					disabledTools = cfg.DisabledTools
@@ -659,9 +666,11 @@ func (s *mcpService) ListServersForBot(ctx context.Context, botID string) ([]dom
 				var cfg struct {
 					DisabledTools []string          `json:"disabled_tools"`
 					CustomHeaders map[string]string `json:"custom_headers"`
+					Instructions  string            `json:"instructions"`
 				}
 				json.Unmarshal([]byte(configJSON.String), &cfg)
 				servers[i].DisabledTools = cfg.DisabledTools
+				servers[i].BotInstructions = cfg.Instructions // Map to dedicated bot-specific field
 				// Decrypt custom headers for the UI/Validation
 				decryptedHeaders := make(map[string]string)
 				for k, v := range cfg.CustomHeaders {
@@ -739,9 +748,11 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, config domainMCP.Bo
 	confJSON, _ := json.Marshal(struct {
 		DisabledTools []string          `json:"disabled_tools"`
 		CustomHeaders map[string]string `json:"custom_headers"`
+		Instructions  string            `json:"instructions"`
 	}{
 		DisabledTools: config.DisabledTools,
 		CustomHeaders: encryptedHeaders,
+		Instructions:  config.Instructions,
 	})
 
 	enabledInt := 0

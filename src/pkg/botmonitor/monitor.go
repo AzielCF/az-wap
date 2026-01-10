@@ -10,16 +10,17 @@ import (
 )
 
 type Event struct {
-	Timestamp  time.Time `json:"timestamp"`
-	TraceID    string    `json:"trace_id"`
-	InstanceID string    `json:"instance_id"`
-	ChatJID    string    `json:"chat_jid"`
-	Provider   string    `json:"provider"`
-	Stage      string    `json:"stage"`       // inbound | ai_request | ai_response | outbound
-	Kind       string    `json:"kind"`        // text | image | audio | webhook
-	Status     string    `json:"status"`      // ok | error | skipped
-	Error      string    `json:"error"`       // optional
-	DurationMs int64     `json:"duration_ms"` // optional
+	Timestamp  time.Time         `json:"timestamp"`
+	TraceID    string            `json:"trace_id"`
+	InstanceID string            `json:"instance_id"`
+	ChatJID    string            `json:"chat_jid"`
+	Provider   string            `json:"provider"`
+	Stage      string            `json:"stage"`       // inbound | ai_request | ai_response | outbound
+	Kind       string            `json:"kind"`        // text | image | audio | webhook
+	Status     string            `json:"status"`      // ok | error | skipped
+	Error      string            `json:"error"`       // optional
+	Metadata   map[string]string `json:"metadata"`    // optional technical details (json strings, etc)
+	DurationMs int64             `json:"duration_ms"` // optional
 }
 
 type Stats struct {

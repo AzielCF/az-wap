@@ -349,6 +349,7 @@ func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
 		Enabled       bool              `json:"enabled"`
 		DisabledTools []string          `json:"disabled_tools"`
 		CustomHeaders map[string]string `json:"custom_headers"`
+		Instructions  string            `json:"instructions"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
@@ -359,6 +360,7 @@ func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
 		Enabled:       req.Enabled,
 		DisabledTools: req.DisabledTools,
 		CustomHeaders: req.CustomHeaders,
+		Instructions:  req.Instructions,
 	})
 	utils.PanicIfNeeded(err)
 	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP config updated"})

@@ -15,21 +15,23 @@ const (
 )
 
 type MCPServer struct {
-	ID             string            `json:"id"`
-	Name           string            `json:"name"`
-	Description    string            `json:"description"`
-	Type           ConnectionType    `json:"type"`
-	URL            string            `json:"url,omitempty"`     // For SSE
-	Command        string            `json:"command,omitempty"` // For Stdio (disabled by default)
-	Args           []string          `json:"args,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
-	Headers        map[string]string `json:"headers,omitempty"`
-	Enabled        bool              `json:"enabled"`
-	Tools          []Tool            `json:"tools,omitempty"`
-	DisabledTools  []string          `json:"disabled_tools,omitempty"`
-	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`  // Per-bot header overrides
-	IsTemplate     bool              `json:"is_template"`               // Defines if this server requires per-bot config
-	TemplateConfig map[string]string `json:"template_config,omitempty"` // Required headers for template (Key: HeaderName, Value: HelperText)
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Type            ConnectionType    `json:"type"`
+	URL             string            `json:"url,omitempty"`     // For SSE
+	Command         string            `json:"command,omitempty"` // For Stdio (disabled by default)
+	Args            []string          `json:"args,omitempty"`
+	Env             map[string]string `json:"env,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Enabled         bool              `json:"enabled"`
+	Tools           []Tool            `json:"tools,omitempty"`
+	DisabledTools   []string          `json:"disabled_tools,omitempty"`
+	CustomHeaders   map[string]string `json:"custom_headers,omitempty"`   // Per-bot header overrides
+	IsTemplate      bool              `json:"is_template"`                // Defines if this server requires per-bot config
+	TemplateConfig  map[string]string `json:"template_config,omitempty"`  // Required headers for template (Key: HeaderName, Value: HelperText)
+	Instructions    string            `json:"instructions,omitempty"`     // Global instructions for this MCP server
+	BotInstructions string            `json:"bot_instructions,omitempty"` // Bot-specific instructions for this MCP server
 }
 
 type Tool struct {
@@ -58,6 +60,7 @@ type BotMCPConfig struct {
 	Enabled       bool              `json:"enabled"`
 	DisabledTools []string          `json:"disabled_tools"` // List of tool names to hide from this bot
 	CustomHeaders map[string]string `json:"custom_headers"` // Bot-specific headers (auth, etc)
+	Instructions  string            `json:"instructions"`   // Bot-specific instructions for this MCP server
 }
 
 type IMCPUsecase interface {

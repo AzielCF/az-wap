@@ -15,6 +15,7 @@ export default {
             filterChat: '',
             filterProvider: '',
             healthStatus: {}, // bot_id -> HealthRecord
+            expandedSubEvents: {}, // key -> boolean (for technical details toggles)
         }
     },
     computed: {
@@ -238,6 +239,33 @@ export default {
                 $m.modal('refresh');
             }, 0);
         },
+
+        toggleSubEvent(traceId, eventIdx) {
+            const key = `${traceId}-${eventIdx}`;
+            this.expandedSubEvents[key] = !this.expandedSubEvents[key];
+            setTimeout(() => {
+                $('#modalBotMonitor').modal('refresh');
+            }, 0);
+        },
+
+        isSubEventExpanded(traceId, eventIdx) {
+            return !!this.expandedSubEvents[`${traceId}-${eventIdx}`];
+        },
+        
+        hasMetadata(e) {
+            return e && e.metadata && Object.keys(e.metadata).length > 0;
+        },
+
+        parseMetadata(val) {
+            try {
+                if (typeof val === 'string' && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
+                    return JSON.stringify(JSON.parse(val), null, 2);
+                }
+                return val;
+            } catch (e) {
+                return val;
+            }
+        },
     },
     template: `
     <div class="violet card" @click="openModal()" style="cursor: pointer">
@@ -391,32 +419,64 @@ export default {
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        <tr v-for="(e, idx) in g.events" :key="g.trace_id + '-' + idx">
-                                                            <td>{{ formatTs(e.timestamp) }}</td>
-                                                            <td>
-                                                                <span v-if="e.stage === 'mcp_call'" class="ui tiny teal label">
-                                                                    <i class="wrench icon"></i> {{ e.stage }}
-                                                                </span>
-                                                                <span v-else>{{ e.stage }}</span>
-                                                            </td>
-                                                            <td>
-                                                                <span v-if="e.stage === 'mcp_call'">
-                                                                    <i class="wrench icon teal"></i> <strong>{{ e.kind }}</strong>
-                                                                </span>
-                                                                <span v-else>{{ e.kind }}</span>
-                                                            </td>
-                                                            <td>
-                                                                <span v-if="e.status === 'ok'" class="ui tiny green label">ok</span>
-                                                                <span v-else-if="e.status === 'error'" class="ui tiny red label">error</span>
-                                                                <span v-else class="ui tiny grey label">{{ e.status }}</span>
-                                                            </td>
-                                                            <td>
-                                                                <span v-if="e.duration_ms">{{ e.duration_ms }} ms</span>
-                                                            </td>
-                                                            <td style="max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                                                <span v-if="e.error">{{ e.error }}</span>
-                                                            </td>
-                                                        </tr>
+                                                        <template v-for="(e, idx) in g.events" :key="g.trace_id + '-' + idx">
+                                                            <tr>
+                                                                <td>{{ formatTs(e.timestamp) }}</td>
+                                                                <td>
+                                                                    <span v-if="e.stage === 'mcp_call'" class="ui tiny teal label">
+                                                                        <i class="wrench icon"></i> {{ e.stage }}
+                                                                    </span>
+                                                                    <span v-else-if="e.stage === 'ai_request'" class="ui tiny blue label">
+                                                                        <i class="brain icon"></i> {{ e.stage }}
+                                                                    </span>
+                                                                    <span v-else>{{ e.stage }}</span>
+                                                                </td>
+                                                                <td>
+                                                                    <span v-if="e.stage === 'mcp_call'">
+                                                                        <i class="wrench icon teal"></i> <strong>{{ e.kind }}</strong>
+                                                                    </span>
+                                                                    <span v-else>{{ e.kind }}</span>
+                                                                </td>
+                                                                <td>
+                                                                    <span v-if="e.status === 'ok'" class="ui tiny green label">ok</span>
+                                                                    <span v-else-if="e.status === 'error'" class="ui tiny red label">error</span>
+                                                                    <span v-else class="ui tiny grey label">{{ e.status }}</span>
+                                                                </td>
+                                                                <td>
+                                                                    <span v-if="e.duration_ms">{{ e.duration_ms }} ms</span>
+                                                                </td>
+                                                                <td style="max-width: 520px;">
+                                                                    <div style="display: flex; flex-direction: row; align-items: center; width: 100%;">
+                                                                        <button v-if="hasMetadata(e)" 
+                                                                                class="ui mini basic button" 
+                                                                                style="padding: 2px 6px; font-size: 10px; flex: 0 0 auto; margin-right: 8px;"
+                                                                                @click.stop="toggleSubEvent(g.trace_id, idx)">
+                                                                            <i class="code icon"></i> {{ isSubEventExpanded(g.trace_id, idx) ? 'Hide' : 'Inspect' }}
+                                                                        </button>
+                                                                        <span v-else-if="e.stage === 'mcp_call' || e.stage === 'ai_request'" class="ui tiny basic disabled label" style="flex: 0 0 auto; margin-right: 8px;">No info</span>
+                                                                        
+                                                                        <div v-if="e.error" 
+                                                                              style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #db2828; font-size: 0.9em;"
+                                                                              :title="e.error">
+                                                                            {{ e.error }}
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                            <!-- Technical Details (Metadata) -->
+                                                            <tr v-if="hasMetadata(e) && isSubEventExpanded(g.trace_id, idx)">
+                                                                <td colspan="6" style="background: #fbfbfb; border-bottom: 2px solid #ddd;">
+                                                                    <div style="padding: 15px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.9em; max-height: 500px; overflow: auto;">
+                                                                        <div v-for="(val, key) in e.metadata" :key="key" style="margin-bottom: 12px;">
+                                                                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+                                                                                <span class="ui tiny grey label">{{ key.replace(/_/g, ' ').toUpperCase() }}</span>
+                                                                            </div>
+                                                                            <pre style="background: #f1f1f1; padding: 12px; border-radius: 4px; border: 1px solid #ddd; white-space: pre-wrap; word-break: break-all; margin: 0; color: #333;">{{ parseMetadata(val) }}</pre>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        </template>
                                                     </tbody>
                                                 </table>
                                             </div>

@@ -156,6 +156,14 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	provider := "gemini"
 	chatJID := recipientJID.String()
 	traceID := string(evt.Info.ID)
+	memoryKey := ""
+	if cfg.MemoryEnabled {
+		if cfg.BotID != "" {
+			memoryKey = fmt.Sprintf("bot|%s|%s", cfg.BotID, recipientJID.String())
+		} else {
+			memoryKey = fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
+		}
+	}
 
 	if img := evt.Message.GetImageMessage(); img != nil && cfg.ImageEnabled {
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "image", Status: "ok"})
@@ -180,8 +188,8 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		if err != nil || len(imageBytes) == 0 {
 			return
 		}
-		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-		reply, err := generateReplyFromImage(ctx, cfg, key, imageBytes, media.MimeType, traceID, instanceID, chatJID)
+		caption := img.GetCaption()
+		reply, err := generateReplyFromImage(ctx, cfg, memoryKey, imageBytes, media.MimeType, caption, traceID, instanceID, chatJID)
 		if err != nil {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "image", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from image")
@@ -246,8 +254,9 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		if err != nil || len(audioBytes) == 0 {
 			return
 		}
-		key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-		reply, err := generateReplyFromAudio(ctx, cfg, key, audioBytes, media.MimeType, traceID, instanceID, chatJID)
+		// Audio messages in WA do not usually have captions
+		caption := ""
+		reply, err := generateReplyFromAudio(ctx, cfg, memoryKey, audioBytes, media.MimeType, caption, traceID, instanceID, chatJID)
 		if err != nil {
 			botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "audio", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 			logrus.WithError(err).Error("[GEMINI] failed to generate reply from audio")
@@ -287,8 +296,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "text", Status: "ok"})
 	botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "text", Status: "ok"})
 	start := time.Now()
-	key := fmt.Sprintf("%s|%s", instanceID, recipientJID.String())
-	reply, err := generateReply(ctx, cfg, key, text, traceID, instanceID, chatJID)
+	reply, err := generateReply(ctx, cfg, memoryKey, text, traceID, instanceID, chatJID)
 	if err != nil {
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_response", Kind: "text", Status: "error", Error: err.Error(), DurationMs: time.Since(start).Milliseconds()})
 		logrus.WithError(err).Error("[GEMINI] failed to generate reply")
@@ -724,27 +732,84 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 		}
 	}
 
+	// Capture initial prompt state (without MCP guidelines yet)
+	fullSystemPrompt := systemText
+
 	var mcpTools []domainMCP.Tool
 	serverMap := make(map[string]string)
+	var mcpInstructions strings.Builder
+
 	if cfg.BotID != "" && mcpUsecase != nil {
 		// Use ListServersForBot to respect bot-specific enablement
 		if servers, err := mcpUsecase.ListServersForBot(ctx, cfg.BotID); err == nil {
 			for _, srv := range servers {
 				if srv.Enabled {
+					// Collect instructions
+					if srv.Instructions != "" || srv.BotInstructions != "" {
+						mcpInstructions.WriteString(fmt.Sprintf("\n\n### TOOLSET: %s", srv.Name))
+						if srv.Instructions != "" {
+							mcpInstructions.WriteString(fmt.Sprintf("\nGeneral Purpose: %s", srv.Instructions))
+						}
+						if srv.BotInstructions != "" {
+							mcpInstructions.WriteString(fmt.Sprintf("\nBot-Specific Guidelines: %s", srv.BotInstructions))
+						}
+					}
+
 					// Use cached tools if available
 					tools := srv.Tools
 					if len(tools) == 0 {
 						// Fallback if not cached yet (e.g. first use)
 						tools, _ = mcpUsecase.ListTools(ctx, srv.ID)
 					}
+
+					// Build disabled map for fast lookup
+					disabledMap := make(map[string]bool)
+					for _, dt := range srv.DisabledTools {
+						disabledMap[dt] = true
+					}
+
 					for _, t := range tools {
-						mcpTools = append(mcpTools, t)
-						serverMap[t.Name] = srv.ID
+						if !disabledMap[t.Name] {
+							mcpTools = append(mcpTools, t)
+							serverMap[t.Name] = srv.ID
+						}
 					}
 				}
 			}
 		}
 	}
+
+	if mcpInstructions.Len() > 0 {
+		mcpCtx := "\n\n## MODEL CONTEXT PROTOCOL (MCP) - TOOL GUIDELINES\n" +
+			"IMPORTANT: You MUST respect the parameters of the tools. If a tool requires a 'tableId' or 'baseId', do NOT invent them. " +
+			"Use only valid IDs discovered during the conversation or provided in the guidelines below. " +
+			"Always double-check what each parameter represents before calling the tool." +
+			mcpInstructions.String()
+		systemText = systemText + mcpCtx
+		fullSystemPrompt = systemText // Update with guidelines
+	}
+
+	if systemText != "" {
+		if genConfig == nil {
+			genConfig = &genai.GenerateContentConfig{}
+		}
+		genConfig.SystemInstruction = genai.NewContentFromText(systemText, genai.RoleUser)
+	}
+
+	// Record AI request with full context
+	botmonitor.Record(botmonitor.Event{
+		TraceID:    traceID,
+		InstanceID: instanceID,
+		ChatJID:    chatJID,
+		Provider:   "gemini",
+		Stage:      "ai_request",
+		Kind:       "text",
+		Status:     "ok",
+		Metadata: map[string]string{
+			"full_system_prompt": fullSystemPrompt,
+			"user_input":         input,
+		},
+	})
 
 	var functionDecls []*genai.FunctionDeclaration
 	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
@@ -857,6 +922,12 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 					})
 					duration := time.Since(startCall).Milliseconds()
 
+					// Marshaling args defensively
+					argsJSON, _ := json.Marshal(args)
+					if len(argsJSON) == 0 {
+						argsJSON = []byte("{}")
+					}
+
 					event := botmonitor.Event{
 						TraceID:    traceID,
 						InstanceID: instanceID,
@@ -866,17 +937,24 @@ func generateReply(ctx context.Context, cfg *instanceGeminiConfig, memoryKey str
 						Kind:       toolName,
 						Status:     "ok",
 						DurationMs: duration,
+						Metadata: map[string]string{
+							"args": string(argsJSON),
+						},
 					}
 
 					if mErr != nil {
 						toolResult = map[string]any{"error": mErr.Error()}
 						event.Status = "error"
 						event.Error = mErr.Error()
+						// Ensure error is also visible in metadata for inspection
+						event.Metadata["error_details"] = mErr.Error()
 					} else {
 						toolResult = map[string]any{
 							"content":  mcpRes.Content,
 							"is_error": mcpRes.IsError,
 						}
+						resJSON, _ := json.Marshal(mcpRes.Content)
+						event.Metadata["response"] = string(resJSON)
 						if mcpRes.IsError {
 							event.Status = "error"
 						}
@@ -926,23 +1004,45 @@ func convertMCPSchemaToGemini(input interface{}) *genai.Schema {
 	if input == nil {
 		return nil
 	}
+
+	// Convert to map to inspect/fix
 	data, err := json.Marshal(input)
 	if err != nil {
 		return nil
 	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil
+	}
+
+	// Gemini genai.Schema expects properties to be map[string]*genai.Schema
+	// and type to be string (object, string, etc).
+	// Our input is already a JSON Schema compliant object from MCP.
+
+	// We re-marshal to the target type
 	var schema genai.Schema
 	if err := json.Unmarshal(data, &schema); err != nil {
 		return nil
 	}
+
+	// Ensure common pitfalls are avoided
+	if schema.Type == "" {
+		schema.Type = "object"
+	}
+
 	return &schema
 }
 
 type audioResponse struct {
 	Transcription string `json:"transcription"`
-	Response      string `json:"response"`
 }
 
-func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string, traceID, instanceID, chatJID string) (string, error) {
+type imageResponse struct {
+	Description string `json:"description"`
+}
+
+func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, audioBytes []byte, mimeType string, caption string, traceID, instanceID, chatJID string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -1013,13 +1113,13 @@ func generateReplyFromAudio(ctx context.Context, cfg *instanceGeminiConfig, memo
 	}
 
 	// Add the audio message with structured output prompt
-	prompt := `Listen to this voice message and do the following:
-1. Transcribe literally what the user says in the audio.
-2. Reply to the user as if they had typed that message.
+	// Step 1: Transcribe the audio
+	prompt := `Listen to this voice message and transcribe literally what the user says.
+Return a JSON object with the field "transcription".`
 
-Return a JSON object with fields "transcription" and "response".
-
-Important: The "response" MUST be written in the same language the user is speaking.`
+	if strings.TrimSpace(caption) != "" {
+		prompt += fmt.Sprintf("\n\nAttached text context: \"%s\"", caption)
+	}
 
 	contents = append(contents, &genai.Content{
 		Role: genai.RoleUser,
@@ -1039,13 +1139,9 @@ Important: The "response" MUST be written in the same language the user is speak
 					Type:        "string",
 					Description: "A literal transcription of what the user says in the audio",
 				},
-				"response": {
-					Type:        "string",
-					Description: "A helpful reply to the user based on what they said in the audio (must be in the user's language)",
-				},
 			},
-			Required:         []string{"transcription", "response"},
-			PropertyOrdering: []string{"transcription", "response"},
+			Required:         []string{"transcription"},
+			PropertyOrdering: []string{"transcription"},
 		},
 	}
 	if systemText != "" {
@@ -1068,34 +1164,22 @@ Important: The "response" MUST be written in the same language the user is speak
 	}
 
 	transcription := strings.TrimSpace(audioResp.Transcription)
-	response := strings.TrimSpace(audioResp.Response)
+	if transcription == "" {
+		return "Sorry, I couldn't understand the audio message.", nil
+	}
 
 	logrus.Infof("[GEMINI] Audio transcription: %s", transcription)
 
-	// Store both transcription and response in memory
-	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && transcription != "" {
-		chatMemoryMu.Lock()
-		history := chatMemory[memoryKey]
-		history = append(history, chatTurn{Role: "user", Text: transcription})
-		if response != "" {
-			history = append(history, chatTurn{Role: "assistant", Text: response})
-		}
-		if len(history) > 10 {
-			history = history[len(history)-10:]
-		}
-		chatMemory[memoryKey] = history
-		chatMemoryMu.Unlock()
+	fullInput := transcription
+	if strings.TrimSpace(caption) != "" {
+		fullInput = fmt.Sprintf("%s\n\n[User also attached this text to the audio: %s]", transcription, caption)
 	}
 
-	return response, nil
+	// Step 2: Use the standard reply flow for processing tools and history
+	return generateReply(ctx, cfg, memoryKey, fullInput, traceID, instanceID, chatJID)
 }
 
-type imageResponse struct {
-	Description string `json:"description"`
-	Response    string `json:"response"`
-}
-
-func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, imageBytes []byte, mimeType string, traceID, instanceID, chatJID string) (string, error) {
+func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memoryKey string, imageBytes []byte, mimeType string, caption string, traceID, instanceID, chatJID string) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -1165,14 +1249,14 @@ func generateReplyFromImage(ctx context.Context, cfg *instanceGeminiConfig, memo
 		}
 	}
 
-	// Add the image message with structured output prompt
-	prompt := `Look at this image and do the following:
-1. Describe exactly what you see in the image (objects, text, people, context, etc.)
-2. Reply to the user based on the image content.
+	// Step 1: Describe the image
+	prompt := `Look at this image and describe exactly what you see.
+Include objects, text, people, and context.
+Return a JSON object with the field "description".`
 
-Return a JSON object with fields "description" and "response".
-
-Important: The "response" MUST be written in the same language the user is speaking.`
+	if strings.TrimSpace(caption) != "" {
+		prompt += fmt.Sprintf("\n\nAttached text context: \"%s\"", caption)
+	}
 
 	contents = append(contents, &genai.Content{
 		Role: genai.RoleUser,
@@ -1190,15 +1274,11 @@ Important: The "response" MUST be written in the same language the user is speak
 			Properties: map[string]*genai.Schema{
 				"description": {
 					Type:        "string",
-					Description: "A detailed description of what is visible in the image (objects, text, people, context, etc.)",
-				},
-				"response": {
-					Type:        "string",
-					Description: "A helpful reply to the user based on the image content (must be in the user's language)",
+					Description: "A detailed description of what is visible in the image",
 				},
 			},
-			Required:         []string{"description", "response"},
-			PropertyOrdering: []string{"description", "response"},
+			Required:         []string{"description"},
+			PropertyOrdering: []string{"description"},
 		},
 	}
 	if systemText != "" {
@@ -1221,26 +1301,19 @@ Important: The "response" MUST be written in the same language the user is speak
 	}
 
 	description := strings.TrimSpace(imgResp.Description)
-	response := strings.TrimSpace(imgResp.Response)
+	if description == "" {
+		return "Sorry, I couldn't analyze the image.", nil
+	}
 
 	logrus.Infof("[GEMINI] Image description: %s", description)
 
-	// Store both description and response in memory
-	if cfg.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && description != "" {
-		chatMemoryMu.Lock()
-		history := chatMemory[memoryKey]
-		history = append(history, chatTurn{Role: "user", Text: "[Image] " + description})
-		if response != "" {
-			history = append(history, chatTurn{Role: "assistant", Text: response})
-		}
-		if len(history) > 10 {
-			history = history[len(history)-10:]
-		}
-		chatMemory[memoryKey] = history
-		chatMemoryMu.Unlock()
+	fullInput := "Context from image: " + description
+	if strings.TrimSpace(caption) != "" {
+		fullInput = fmt.Sprintf("%s\n\n[User also attached this text to the image: %s]", fullInput, caption)
 	}
 
-	return response, nil
+	// Step 2: Use the standard reply flow for processing tools and history
+	return generateReply(ctx, cfg, memoryKey, fullInput, traceID, instanceID, chatJID)
 }
 
 func generateContentWithRetry(ctx context.Context, client *genai.Client, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {

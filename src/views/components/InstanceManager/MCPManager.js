@@ -24,6 +24,7 @@ export default {
                 headers: {},
                 is_template: false,
                 template_config: {}, // Key: HelperText
+                instructions: '',
             },
             templateHeaders: [], // Array of { key: '', help: '' } for UI editing
             editingServer: null,
@@ -134,8 +135,7 @@ export default {
             }
         },
         resetForm() {
-            this.newServer = { name: '', description: '', type: 'http', url: '', command: '', args: [], headers: {} };
-            this.argsString = '';
+            this.newServer = { name: '', description: '', type: 'http', url: '', command: '', args: [], headers: {}, instructions: '' };
             this.argsString = '';
             this.headersString = '';
             this.templateHeaders = [];
@@ -324,10 +324,17 @@ export default {
                         <label>Server Name</label>
                         <input type="text" v-model="target.name" placeholder="e.g. My NocoDB Database">
                     </div>
-
                     <div class="field">
                         <label>Description (optional)</label>
                         <input type="text" v-model="target.description" placeholder="Describe what this server is for">
+                    </div>
+                    
+                    <div class="field">
+                        <label>AI Instructions & Usage Guidelines (Optional)</label>
+                        <textarea v-model="target.instructions" rows="2" placeholder="Tell the AI how and when to use this server's tools..."></textarea>
+                        <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                            These instructions are passed to any AI Bot that uses this server, helping it understand the general purpose of these tools.
+                        </div>
                     </div>
 
                     <div class="field">
