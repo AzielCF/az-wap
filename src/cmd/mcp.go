@@ -3,6 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/AzielCF/az-wap/config"
@@ -66,6 +70,18 @@ func mcpServer(_ *cobra.Command, _ []string) {
 	logrus.Printf("Starting WhatsApp MCP SSE server on %s", addr)
 	logrus.Printf("SSE endpoint: http://%s:%s/sse", config.McpHost, config.McpPort)
 	logrus.Printf("Message endpoint: http://%s:%s/message", config.McpHost, config.McpPort)
+
+	// Graceful shutdown handler
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		logrus.Info("[MCP] Reception of termination signal, shutting down gracefully...")
+		// Note: SSEServer might not have a Shutdown method in this version of the library,
+		// but we still want to close our app resources cleanly.
+		StopApp()
+		os.Exit(0)
+	}()
 
 	if err := sseServer.Start(addr); err != nil {
 		logrus.Fatalf("Failed to start SSE server: %v", err)
