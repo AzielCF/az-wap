@@ -343,7 +343,7 @@ func initApp() {
 	}
 
 	//preparing folder if not exist
-	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia)
+	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia, config.PathCacheMedia)
 	if err != nil {
 		logrus.Errorln(err)
 	}
@@ -396,4 +396,25 @@ func Execute(embedIndex embed.FS, embedViews embed.FS) {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// StopApp performs a clean shutdown of all database connections and services.
+func StopApp() {
+	logrus.Info("[APP] Stopping application...")
+
+	// 1. Shutdown WhatsApp subsystem (handles all instance clients and their DBs)
+	whatsapp.GracefulShutdown()
+
+	// 2. Clear in-memory chat storage caches or close connections
+	chatstorage.CloseInstanceRepositories()
+
+	// 3. Close the global chat storage database handle
+	if chatStorageDB != nil {
+		logrus.Info("[APP] Closing chat storage database...")
+		if err := chatStorageDB.Close(); err != nil {
+			logrus.Errorf("[APP] Error closing chat storage database: %v", err)
+		}
+	}
+
+	logrus.Info("[APP] Application stopped cleanly.")
 }

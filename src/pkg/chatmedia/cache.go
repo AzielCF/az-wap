@@ -90,3 +90,29 @@ func Get(messageID string) []Item {
 
 	return result
 }
+
+// Cleanup recorre todo el cache y elimina los items que han expirado,
+// borrando también sus archivos asociados del disco.
+// Esta función debe llamarse periódicamente.
+func Cleanup() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	now := time.Now()
+	for id, items := range store {
+		filtered := items[:0]
+		for _, it := range items {
+			if now.Before(it.ExpiresAt) {
+				filtered = append(filtered, it)
+			} else if p := strings.TrimSpace(it.Path); p != "" {
+				_ = os.Remove(p)
+			}
+		}
+
+		if len(filtered) == 0 {
+			delete(store, id)
+		} else {
+			store[id] = filtered
+		}
+	}
+}

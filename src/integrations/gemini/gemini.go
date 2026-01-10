@@ -169,7 +169,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "image", Status: "ok"})
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "image", Status: "ok"})
 		start := time.Now()
-		storagePath := filepath.Join(config.PathMedia, instanceID)
+		storagePath := filepath.Join(config.PathCacheMedia, instanceID)
 		utils.CreateFolder(storagePath)
 		media, err := utils.ExtractMedia(ctx, client, storagePath, img)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {
@@ -226,7 +226,7 @@ func HandleIncomingMessage(ctx context.Context, client *whatsmeow.Client, instan
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "inbound", Kind: "audio", Status: "ok"})
 		botmonitor.Record(botmonitor.Event{TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID, Provider: provider, Stage: "ai_request", Kind: "audio", Status: "ok"})
 		start := time.Now()
-		storagePath := filepath.Join(config.PathMedia, instanceID)
+		storagePath := filepath.Join(config.PathCacheMedia, instanceID)
 		utils.CreateFolder(storagePath)
 		media, err := utils.ExtractMedia(ctx, client, storagePath, audio)
 		if err != nil || strings.TrimSpace(media.MediaPath) == "" {

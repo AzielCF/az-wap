@@ -98,6 +98,47 @@ func GetInstanceIDFromContext(ctx context.Context) string {
 	return ""
 }
 
+// GracefulShutdown disconnects all clients and closes all database connections.
+func GracefulShutdown() {
+	logrus.Info("[WHATSAPP] Starting graceful shutdown...")
+
+	// 1. Shutdown multi-instance clients
+	instanceClientsMu.Lock()
+	for id, ic := range instanceClients {
+		if ic.Client != nil {
+			logrus.Infof("[WHATSAPP] Disconnecting instance %s...", id)
+			ic.Client.Disconnect()
+		}
+		if ic.DB != nil {
+			// Whatsmeow's Close() closes the underlying database handle
+			ic.DB.Close()
+		}
+	}
+	instanceClients = make(map[string]*InstanceClient)
+	instanceClientsMu.Unlock()
+
+	// 2. Shutdown global client
+	globalStateMu.Lock()
+	if cli != nil {
+		logrus.Info("[WHATSAPP] Disconnecting global client...")
+		cli.Disconnect()
+	}
+	if db != nil {
+		db.Close()
+	}
+	if keysDB != nil {
+		keysDB.Close()
+	}
+	globalStateMu.Unlock()
+
+	// 3. Stop worker pool
+	if poolCancel != nil {
+		poolCancel()
+	}
+
+	logrus.Info("[WHATSAPP] Graceful shutdown completed.")
+}
+
 func resolveInstanceIDForAI(ctx context.Context) string {
 	id := strings.TrimSpace(GetInstanceIDFromContext(ctx))
 	if id != "" && id != "global" {
@@ -700,7 +741,7 @@ func handleMessage(ctx context.Context, evt *events.Message, repo domainChatStor
 				if instanceID == "" {
 					instanceID = "global"
 				}
-				storagePath := filepath.Join(config.PathMedia, instanceID)
+				storagePath := filepath.Join(config.PathCacheMedia, instanceID)
 				utils.CreateFolder(storagePath)
 				if path, err := utils.ExtractMedia(ctx, client, storagePath, img); err == nil {
 					log.Infof("Image downloaded to %s", path)
