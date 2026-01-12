@@ -117,6 +117,9 @@ export default {
                             </div>
                         </div>
                     </div>
+                    <div class="item" v-if="channels.length === 0">
+                        <div class="content">No channels found.</div>
+                    </div>
                 </div>
             </div>
         </div>
