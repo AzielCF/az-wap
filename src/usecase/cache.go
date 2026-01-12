@@ -12,6 +12,7 @@ import (
 
 	"github.com/AzielCF/az-wap/config"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
+	"github.com/AzielCF/az-wap/pkg/chatmedia"
 	"github.com/dustin/go-humanize"
 	"github.com/sirupsen/logrus"
 )
@@ -135,17 +136,21 @@ func (s *cacheService) runCleanup(settings domainCache.CacheSettings) {
 	maxAge := time.Duration(settings.MaxAgeDays) * 24 * time.Hour
 	cutoff := time.Now().Add(-maxAge)
 
-	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems}
+	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems, config.PathCacheMedia}
 	for _, dir := range dirs {
 		s.pruneByAge(dir, cutoff)
 	}
 	s.pruneFilesByPatternAge(config.PathStorages, "history-*", cutoff)
+	s.pruneFilesByPatternAge(config.PathStorages, "*.jfif", cutoff)
 
 	// 2. Delete files by size limit
 	maxSizeBytes := settings.MaxSizeMB * 1024 * 1024
 	if maxSizeBytes > 0 {
 		s.pruneBySize(maxSizeBytes)
 	}
+
+	// 3. Chatmedia cleanup (in-memory and short-lived files)
+	chatmedia.Cleanup()
 }
 
 func (s *cacheService) pruneByAge(path string, cutoff time.Time) {
@@ -186,7 +191,7 @@ func (s *cacheService) pruneBySize(limit int64) {
 		})
 	}
 
-	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems}
+	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems, config.PathCacheMedia}
 	for _, dir := range dirs {
 		collect(dir)
 	}
@@ -223,7 +228,7 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 	var totalSize int64
 
 	// Directories to scan
-	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems}
+	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems, config.PathCacheMedia}
 	for _, dir := range dirs {
 		size, _ := s.getDirSize(dir)
 		totalSize += size
@@ -240,13 +245,14 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 }
 
 func (s *cacheService) ClearGlobalCache(ctx context.Context) error {
-	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems}
+	dirs := []string{config.PathMedia, config.PathQrCode, config.PathSendItems, config.PathCacheMedia}
 	for _, dir := range dirs {
 		s.clearDir(dir)
 	}
 
-	// Clear history files
+	// Clear history files and jfif files from storages
 	s.clearFilesByPattern(config.PathStorages, "history-*")
+	s.clearFilesByPattern(config.PathStorages, "*.jfif")
 
 	return nil
 }
@@ -258,6 +264,10 @@ func (s *cacheService) GetInstanceStats(ctx context.Context, instanceID string) 
 	instanceMediaDir := filepath.Join(config.PathMedia, instanceID)
 	size, _ := s.getDirSize(instanceMediaDir)
 	totalSize += size
+
+	instanceCacheDir := filepath.Join(config.PathCacheMedia, instanceID)
+	cSize, _ := s.getDirSize(instanceCacheDir)
+	totalSize += cSize
 
 	// History files for this instance
 	// Pattern: history-*-<instanceID>-*.json
@@ -276,9 +286,15 @@ func (s *cacheService) ClearInstanceCache(ctx context.Context, instanceID string
 	instanceMediaDir := filepath.Join(config.PathMedia, instanceID)
 	os.RemoveAll(instanceMediaDir)
 
+	instanceCacheDir := filepath.Join(config.PathCacheMedia, instanceID)
+	os.RemoveAll(instanceCacheDir)
+
 	// Clear history files
 	pattern := fmt.Sprintf("history-*-%s-*.json", instanceID)
 	s.clearFilesByPattern(config.PathStorages, pattern)
+
+	// Clear jfif files from storages
+	s.clearFilesByPattern(config.PathStorages, "*.jfif")
 
 	return nil
 }

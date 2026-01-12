@@ -152,6 +152,11 @@ func ensureInstanceWebhookColumns(db *sql.DB) error {
 			return err
 		}
 	}
+	if !columns["auto_reconnect"] {
+		if _, err := db.Exec(`ALTER TABLE instances ADD COLUMN auto_reconnect INTEGER NOT NULL DEFAULT 1`); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -318,6 +323,7 @@ func (service *instanceService) Create(_ context.Context, request domainInstance
 		GeminiAPIKey:              "",
 		GeminiModel:               "",
 		GeminiSystemPrompt:        "",
+		AutoReconnect:             true,
 	}
 
 	service.mu.Lock()
@@ -418,6 +424,18 @@ func (service *instanceService) List(ctx context.Context) ([]domainInstance.Inst
 	return result, nil
 }
 
+func (service *instanceService) GetByID(_ context.Context, id string) (domainInstance.Instance, error) {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+
+	for _, inst := range service.instancesByToken {
+		if inst.ID == id {
+			return inst, nil
+		}
+	}
+	return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
+}
+
 func (service *instanceService) GetByToken(_ context.Context, token string) (domainInstance.Instance, error) {
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {
@@ -474,7 +492,8 @@ func initInstanceStorageDB() (*sql.DB, error) {
 			gemini_timezone TEXT,
 			gemini_audio_enabled INTEGER NOT NULL DEFAULT 0,
 			gemini_image_enabled INTEGER NOT NULL DEFAULT 0,
-			gemini_memory_enabled INTEGER NOT NULL DEFAULT 0
+			gemini_memory_enabled INTEGER NOT NULL DEFAULT 0,
+			auto_reconnect INTEGER NOT NULL DEFAULT 1
 		);
 	`
 	if _, err := db.Exec(createTable); err != nil {
@@ -497,7 +516,7 @@ func (service *instanceService) loadFromDB() error {
 		return nil
 	}
 
-	rows, err := service.db.Query(`SELECT id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id FROM instances`)
+	rows, err := service.db.Query(`SELECT id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id, auto_reconnect FROM instances`)
 	if err != nil {
 		return err
 	}
@@ -516,7 +535,8 @@ func (service *instanceService) loadFromDB() error {
 		var chatwootEnabledVal, geminiEnabledVal, geminiAudioEnabledVal, geminiImageEnabledVal, geminiMemoryEnabledVal sql.NullInt64
 		var geminiAPIKeyStr, geminiModelStr, geminiSystemPromptStr, geminiKnowledgeBaseStr, geminiTimezoneStr sql.NullString
 		var botIDStr, chatwootCredIDStr sql.NullString
-		if err := rows.Scan(&inst.ID, &inst.Name, &inst.Token, &statusStr, &urlsStr, &secretStr, &insecureVal, &baseURLStr, &accountTokenStr, &botTokenStr, &accountIDStr, &inboxIDStr, &inboxIdentifierStr, &chatwootEnabledVal, &geminiEnabledVal, &geminiAPIKeyStr, &geminiModelStr, &geminiSystemPromptStr, &geminiKnowledgeBaseStr, &geminiTimezoneStr, &geminiAudioEnabledVal, &geminiImageEnabledVal, &geminiMemoryEnabledVal, &botIDStr, &chatwootCredIDStr); err != nil {
+		var autoReconnectVal sql.NullInt64
+		if err := rows.Scan(&inst.ID, &inst.Name, &inst.Token, &statusStr, &urlsStr, &secretStr, &insecureVal, &baseURLStr, &accountTokenStr, &botTokenStr, &accountIDStr, &inboxIDStr, &inboxIdentifierStr, &chatwootEnabledVal, &geminiEnabledVal, &geminiAPIKeyStr, &geminiModelStr, &geminiSystemPromptStr, &geminiKnowledgeBaseStr, &geminiTimezoneStr, &geminiAudioEnabledVal, &geminiImageEnabledVal, &geminiMemoryEnabledVal, &botIDStr, &chatwootCredIDStr, &autoReconnectVal); err != nil {
 			return err
 		}
 		inst.Status = domainInstance.Status(statusStr)
@@ -636,6 +656,11 @@ func (service *instanceService) loadFromDB() error {
 		} else {
 			inst.ChatwootCredentialID = ""
 		}
+		if autoReconnectVal.Valid {
+			inst.AutoReconnect = autoReconnectVal.Int64 != 0
+		} else {
+			inst.AutoReconnect = true
+		}
 
 		service.instancesByToken[inst.Token] = inst
 
@@ -685,10 +710,14 @@ func (service *instanceService) persistInstance(inst domainInstance.Instance) {
 	if inst.ChatwootEnabled {
 		chatwootEnabledInt = 1
 	}
+	autoReconnectInt := 0
+	if inst.AutoReconnect {
+		autoReconnectInt = 1
+	}
 
 	query := `
-		INSERT INTO instances (id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO instances (id, name, token, status, webhook_urls, webhook_secret, webhook_insecure_skip_verify, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_enabled, gemini_enabled, gemini_api_key, gemini_model, gemini_system_prompt, gemini_knowledge_base, gemini_timezone, gemini_audio_enabled, gemini_image_enabled, gemini_memory_enabled, bot_id, chatwoot_credential_id, auto_reconnect)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			token = excluded.token,
@@ -714,10 +743,11 @@ func (service *instanceService) persistInstance(inst domainInstance.Instance) {
 			gemini_memory_enabled = excluded.gemini_memory_enabled,
 			bot_id = excluded.bot_id,
 			chatwoot_credential_id = excluded.chatwoot_credential_id,
+			auto_reconnect = excluded.auto_reconnect,
 			updated_at = CURRENT_TIMESTAMP;
 	`
 
-	if _, err := service.db.Exec(query, inst.ID, inst.Name, inst.Token, string(inst.Status), urlsStr, inst.WebhookSecret, insecureInt, inst.ChatwootBaseURL, inst.ChatwootAccountToken, inst.ChatwootBotToken, inst.ChatwootAccountID, inst.ChatwootInboxID, inst.ChatwootInboxIdentifier, chatwootEnabledInt, geminiEnabledInt, inst.GeminiAPIKey, inst.GeminiModel, inst.GeminiSystemPrompt, inst.GeminiKnowledgeBase, inst.GeminiTimezone, geminiAudioEnabledInt, geminiImageEnabledInt, geminiMemoryEnabledInt, strings.TrimSpace(inst.BotID), strings.TrimSpace(inst.ChatwootCredentialID)); err != nil {
+	if _, err := service.db.Exec(query, inst.ID, inst.Name, inst.Token, string(inst.Status), urlsStr, inst.WebhookSecret, insecureInt, inst.ChatwootBaseURL, inst.ChatwootAccountToken, inst.ChatwootBotToken, inst.ChatwootAccountID, inst.ChatwootInboxID, inst.ChatwootInboxIdentifier, chatwootEnabledInt, geminiEnabledInt, inst.GeminiAPIKey, inst.GeminiModel, inst.GeminiSystemPrompt, inst.GeminiKnowledgeBase, inst.GeminiTimezone, geminiAudioEnabledInt, geminiImageEnabledInt, geminiMemoryEnabledInt, strings.TrimSpace(inst.BotID), strings.TrimSpace(inst.ChatwootCredentialID), autoReconnectInt); err != nil {
 		logrus.WithError(err).Error("[INSTANCE] failed to persist instance")
 	}
 }
@@ -789,6 +819,38 @@ func (service *instanceService) UpdateGeminiConfig(_ context.Context, id string,
 	inst.GeminiImageEnabled = imageEnabled
 	inst.GeminiMemoryEnabled = memoryEnabled
 
+	service.instancesByToken[instToken] = inst
+	service.persistInstance(inst)
+
+	return inst, nil
+}
+
+func (service *instanceService) UpdateAutoReconnectConfig(_ context.Context, id string, enabled bool) (domainInstance.Instance, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: cannot be blank.")
+	}
+
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	var (
+		instToken string
+		inst      domainInstance.Instance
+	)
+	for token, candidate := range service.instancesByToken {
+		if candidate.ID == trimmedID {
+			instToken = token
+			inst = candidate
+			break
+		}
+	}
+
+	if instToken == "" {
+		return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
+	}
+
+	inst.AutoReconnect = enabled
 	service.instancesByToken[instToken] = inst
 	service.persistInstance(inst)
 

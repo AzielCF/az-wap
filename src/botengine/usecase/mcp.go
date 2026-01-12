@@ -11,9 +11,9 @@ import (
 
 	"time"
 
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/config"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	"github.com/AzielCF/az-wap/pkg/crypto"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"

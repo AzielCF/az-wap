@@ -11,7 +11,6 @@ import (
 	"github.com/AzielCF/az-wap/config"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
-	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -214,6 +213,7 @@ func InitRestInstance(app fiber.Router, service domainInstance.IInstanceUsecase,
 	app.Post("/instances/:id/chatwoot/webhook", rest.ReceiveChatwootWebhook)
 	app.Put("/instances/:id/bot", rest.UpdateInstanceBotConfig)
 	app.Put("/instances/:id/gemini", rest.UpdateInstanceGeminiConfig)
+	app.Put("/instances/:id/auto-reconnect", rest.UpdateInstanceAutoReconnectConfig)
 	app.Post("/instances/:id/gemini/memory/clear", rest.ClearInstanceGeminiMemory)
 	app.Get("/settings/gemini", rest.GetGeminiSettings)
 	app.Put("/settings/gemini", rest.UpdateGeminiSettings)
@@ -276,6 +276,7 @@ func (handler *Instance) ListInstances(c *fiber.Ctx) error {
 			"gemini_audio_enabled":         instance.GeminiAudioEnabled,
 			"gemini_image_enabled":         instance.GeminiImageEnabled,
 			"gemini_memory_enabled":        instance.GeminiMemoryEnabled,
+			"auto_reconnect":               instance.AutoReconnect,
 		})
 	}
 
@@ -358,6 +359,7 @@ func (handler *Instance) UpdateInstanceWebhookConfig(c *fiber.Ctx) error {
 		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
 		"gemini_image_enabled":         inst.GeminiImageEnabled,
 		"gemini_memory_enabled":        inst.GeminiMemoryEnabled,
+		"auto_reconnect":               inst.AutoReconnect,
 	}
 
 	return c.JSON(utils.ResponseData{
@@ -423,6 +425,7 @@ func (handler *Instance) UpdateInstanceChatwootConfig(c *fiber.Ctx) error {
 		"gemini_timezone":              inst.GeminiTimezone,
 		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
 		"gemini_image_enabled":         inst.GeminiImageEnabled,
+		"auto_reconnect":               inst.AutoReconnect,
 	}
 
 	return c.JSON(utils.ResponseData{
@@ -488,6 +491,7 @@ func (handler *Instance) UpdateInstanceGeminiConfig(c *fiber.Ctx) error {
 		"gemini_timezone":              inst.GeminiTimezone,
 		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
 		"gemini_image_enabled":         inst.GeminiImageEnabled,
+		"auto_reconnect":               inst.AutoReconnect,
 	}
 
 	return c.JSON(utils.ResponseData{
@@ -557,6 +561,7 @@ func (handler *Instance) UpdateInstanceBotConfig(c *fiber.Ctx) error {
 		"gemini_audio_enabled":         inst.GeminiAudioEnabled,
 		"gemini_image_enabled":         inst.GeminiImageEnabled,
 		"gemini_memory_enabled":        inst.GeminiMemoryEnabled,
+		"auto_reconnect":               inst.AutoReconnect,
 	}
 
 	return c.JSON(utils.ResponseData{
@@ -1122,6 +1127,47 @@ func (handler *Instance) ReceiveChatwootWebhook(c *fiber.Ctx) error {
 	})
 }
 
+func (handler *Instance) UpdateInstanceAutoReconnectConfig(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var request struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	inst, err := handler.Service.UpdateAutoReconnectConfig(c.UserContext(), id, request.Enabled)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+			Results: nil,
+		})
+	}
+
+	response := map[string]any{
+		"id":             inst.ID,
+		"name":           inst.Name,
+		"status":         inst.Status,
+		"token":          inst.Token,
+		"auto_reconnect": inst.AutoReconnect,
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Instance auto-reconnect config updated",
+		Results: response,
+	})
+}
+
 func (handler *Instance) ClearInstanceGeminiMemory(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if strings.TrimSpace(id) == "" {
@@ -1159,7 +1205,9 @@ func (handler *Instance) ClearInstanceGeminiMemory(c *fiber.Ctx) error {
 		})
 	}
 
-	integrationGemini.ClearInstanceMemory(id)
+	if engine != nil {
+		engine.ClearBotMemory("instance-" + id)
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

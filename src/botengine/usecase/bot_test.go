@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	"github.com/AzielCF/az-wap/config"
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
 )
 
 // helper to create a fresh BotService using a temporary storages directory
@@ -20,7 +20,7 @@ func newTestBotService(t *testing.T) *botService {
 
 	config.PathStorages = t.TempDir()
 
-	svc := NewBotService()
+	svc := NewBotService(nil)
 	// NewBotService siempre devuelve domainBot.IBotUsecase; para los tests sabemos
 	// que es *botService, salvo que falle la inicialización de la DB.
 	bs, ok := svc.(*botService)

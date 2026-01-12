@@ -93,3 +93,19 @@ func CleanupInstanceRepository(instanceID string) error {
 
 	return nil
 }
+
+// CloseInstanceRepositories closes all open instance database connections.
+func CloseInstanceRepositories() {
+	instanceRepoMu.Lock()
+	defer instanceRepoMu.Unlock()
+
+	for id, repo := range instanceRepos {
+		if sqliteRepo, ok := repo.(*SQLiteRepository); ok && sqliteRepo.db != nil {
+			logrus.Infof("[CHATSTORAGE_INSTANCE] Closing DB for instance %s...", id)
+			if err := sqliteRepo.db.Close(); err != nil {
+				logrus.Errorf("[CHATSTORAGE_INSTANCE] Failed to close DB for instance %s: %v", id, err)
+			}
+		}
+	}
+	instanceRepos = make(map[string]domainChatStorage.IChatStorageRepository)
+}

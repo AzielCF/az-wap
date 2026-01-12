@@ -147,7 +147,7 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 		if config.WhatsappAutoDownloadMedia {
 			client := getClientForContext(ctx)
 			if client != nil {
-				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, audioMedia)
+				media, err := utils.ExtractMedia(ctx, client, config.PathCacheMedia, audioMedia)
 				if err != nil {
 					logrus.Errorf("Failed to download audio from %s: %v", evt.Info.SourceString(), err)
 				} else {
@@ -180,7 +180,7 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 		if config.WhatsappAutoDownloadMedia {
 			client := getClientForContext(ctx)
 			if client != nil {
-				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, documentMedia)
+				media, err := utils.ExtractMedia(ctx, client, config.PathCacheMedia, documentMedia)
 				if err != nil {
 					logrus.Errorf("Failed to download document from %s: %v", evt.Info.SourceString(), err)
 				} else {
@@ -211,7 +211,7 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 		if config.WhatsappAutoDownloadMedia {
 			client := getClientForContext(ctx)
 			if client != nil {
-				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, imageMedia)
+				media, err := utils.ExtractMedia(ctx, client, config.PathCacheMedia, imageMedia)
 				if err != nil {
 					logrus.Errorf("Failed to download image from %s: %v", evt.Info.SourceString(), err)
 				} else {
@@ -258,7 +258,7 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 		if config.WhatsappAutoDownloadMedia {
 			client := getClientForContext(ctx)
 			if client != nil {
-				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, stickerMedia)
+				media, err := utils.ExtractMedia(ctx, client, config.PathCacheMedia, stickerMedia)
 				if err != nil {
 					logrus.Errorf("Failed to download sticker from %s: %v", evt.Info.SourceString(), err)
 				} else {
@@ -287,7 +287,7 @@ func createMessagePayload(ctx context.Context, evt *events.Message) (map[string]
 		if config.WhatsappAutoDownloadMedia {
 			client := getClientForContext(ctx)
 			if client != nil {
-				media, err := utils.ExtractMedia(ctx, client, config.PathMedia, videoMedia)
+				media, err := utils.ExtractMedia(ctx, client, config.PathCacheMedia, videoMedia)
 				if err != nil {
 					logrus.Errorf("Failed to download video from %s: %v", evt.Info.SourceString(), err)
 				} else {

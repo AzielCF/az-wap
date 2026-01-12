@@ -3,7 +3,10 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/ui/rest"
@@ -157,6 +160,20 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Set auto reconnect checking with a guaranteed client instance
 	startAutoReconnectCheckerIfClientAvailable()
+
+	// Graceful shutdown handler
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		logrus.Info("[REST] Reception of termination signal, shutting down gracefully...")
+		if err := app.Shutdown(); err != nil {
+			logrus.Errorf("[REST] Error during Fiber shutdown: %v", err)
+		}
+
+		// Stop all app subsystems (DBs, clients, etc.)
+		StopApp()
+	}()
 
 	if err := app.Listen(":" + config.AppPort); err != nil {
 		logrus.Fatalln("Failed to start: ", err.Error())

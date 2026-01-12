@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/config"
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/domains/health"
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )

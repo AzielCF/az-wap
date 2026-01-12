@@ -11,9 +11,13 @@ import (
 
 	"go.mau.fi/whatsmeow/store/sqlstore"
 
+	"github.com/AzielCF/az-wap/botengine"
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	"github.com/AzielCF/az-wap/botengine/providers"
+	botUsecaseLayer "github.com/AzielCF/az-wap/botengine/usecase"
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
@@ -21,15 +25,15 @@ import (
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
-	"github.com/AzielCF/az-wap/integrations/gemini"
+	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/utils"
+	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -64,6 +68,9 @@ var (
 	cacheUsecase      domainCache.ICacheUsecase
 	mcpUsecase        domainMCP.IMCPUsecase
 	healthUsecase     domainHealth.IHealthUsecase
+
+	// Bot Engine
+	botEngine *botengine.Engine
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -323,17 +330,47 @@ func autoConnectAllInstances(ctx context.Context) {
 
 			if client.IsConnected() && client.IsLoggedIn() {
 				logrus.Infof("[AUTO_CONNECT] instance %s already connected", id)
-				return
+			} else {
+				if err := client.Connect(); err != nil {
+					logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to connect instance %s", id)
+				} else {
+					logrus.Infof("[AUTO_CONNECT] instance %s connected on startup", id)
+				}
 			}
-
-			if err := client.Connect(); err != nil {
-				logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to connect instance %s", id)
-				return
-			}
-
-			logrus.Infof("[AUTO_CONNECT] instance %s connected on startup", id)
 		}(trimmedID)
 	}
+
+	// Start global auto-reconnect worker for all instances
+	startGlobalInstanceAutoReconnectWorker(instanceUsecase, chatStorageRepo)
+}
+
+func startGlobalInstanceAutoReconnectWorker(instanceService domainInstance.IInstanceUsecase, chatStorageRepo domainChatStorage.IChatStorageRepository) {
+	go func() {
+		logrus.Info("[AUTO_RECONNECT] starting global instance auto-reconnect worker")
+		// Initial wait to let boot connections settle
+		time.Sleep(1 * time.Minute)
+		for {
+			instances, err := instanceService.List(context.Background())
+			if err == nil {
+				for _, inst := range instances {
+					if !inst.AutoReconnect {
+						continue
+					}
+					// Only try if there's already a client (meaning it has been initialized/logged in before)
+					client := whatsapp.GetInstanceClient(inst.ID)
+					if client != nil && !client.IsConnected() && client.IsLoggedIn() {
+						logrus.Infof("[AUTO_RECONNECT] instance %s disconnected, attempting reconnection...", inst.ID)
+						if err := client.Connect(); err != nil {
+							logrus.WithError(err).Warnf("[AUTO_RECONNECT] failed to reconnect instance %s", inst.ID)
+						} else {
+							logrus.Infof("[AUTO_RECONNECT] instance %s reconnected successfully", inst.ID)
+						}
+					}
+				}
+			}
+			time.Sleep(5 * time.Minute)
+		}
+	}()
 }
 
 func initApp() {
@@ -343,7 +380,7 @@ func initApp() {
 	}
 
 	//preparing folder if not exist
-	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia)
+	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia, config.PathCacheMedia)
 	if err != nil {
 		logrus.Errorln(err)
 	}
@@ -376,17 +413,36 @@ func initApp() {
 	messageUsecase = usecase.NewMessageService(appUsecase, chatStorageRepo, instanceUsecase)
 	groupUsecase = usecase.NewGroupService(appUsecase, instanceUsecase)
 	newsletterUsecase = usecase.NewNewsletterService(instanceUsecase)
-	botUsecase = usecase.NewBotService()
 	credentialUsecase = usecase.NewCredentialService()
+	botUsecase = botUsecaseLayer.NewBotService(credentialUsecase)
 	cacheUsecase = usecase.NewCacheService()
 	cacheUsecase.StartBackgroundCleanup(ctx)
-	mcpUsecase = usecase.NewMCPService()
+	mcpUsecase = botUsecaseLayer.NewMCPService()
 	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase)
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
-	gemini.SetMCPUsecase(mcpUsecase)
+
+	// Bot Engine Initialization
+	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
+	botEngine.RegisterProvider(string(domainBot.ProviderGemini), providers.NewGeminiProvider(mcpUsecase, botEngine.GetMemoryStore()))
+
+	// Hooks: Chatwoot integration
+	botEngine.RegisterPostReplyHook(func(ctx context.Context, b domainBot.Bot, input botengine.BotInput, output botengine.BotOutput) {
+		phone, _ := input.Metadata["phone"].(string)
+		if phone != "" {
+			go chatwoot.ForwardBotReplyFromEvent(ctx, input.InstanceID, phone, output.Text)
+		}
+	})
+
+	whatsapp.SetBotEngine(botEngine)
+	whatsapp.SetInstanceUsecase(instanceUsecase)
+	uiRest.SetBotEngine(botEngine)
 
 	go autoConnectAllInstances(ctx)
+}
+
+func GetBotEngine() *botengine.Engine {
+	return botEngine
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -396,4 +452,25 @@ func Execute(embedIndex embed.FS, embedViews embed.FS) {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// StopApp performs a clean shutdown of all database connections and services.
+func StopApp() {
+	logrus.Info("[APP] Stopping application...")
+
+	// 1. Shutdown WhatsApp subsystem (handles all instance clients and their DBs)
+	whatsapp.GracefulShutdown()
+
+	// 2. Clear in-memory chat storage caches or close connections
+	chatstorage.CloseInstanceRepositories()
+
+	// 3. Close the global chat storage database handle
+	if chatStorageDB != nil {
+		logrus.Info("[APP] Closing chat storage database...")
+		if err := chatStorageDB.Close(); err != nil {
+			logrus.Errorf("[APP] Error closing chat storage database: %v", err)
+		}
+	}
+
+	logrus.Info("[APP] Application stopped cleanly.")
 }

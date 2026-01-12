@@ -40,6 +40,7 @@ type Instance struct {
 	GeminiAudioEnabled  bool   `json:"gemini_audio_enabled,omitempty"`
 	GeminiImageEnabled  bool   `json:"gemini_image_enabled,omitempty"`
 	GeminiMemoryEnabled bool   `json:"gemini_memory_enabled,omitempty"`
+	AutoReconnect       bool   `json:"auto_reconnect"`
 }
 
 type CreateInstanceRequest struct {
@@ -49,10 +50,12 @@ type CreateInstanceRequest struct {
 type IInstanceUsecase interface {
 	Create(ctx context.Context, request CreateInstanceRequest) (Instance, error)
 	List(ctx context.Context) ([]Instance, error)
+	GetByID(ctx context.Context, id string) (Instance, error)
 	GetByToken(ctx context.Context, token string) (Instance, error)
 	Delete(ctx context.Context, id string) error
 	UpdateWebhookConfig(ctx context.Context, id string, urls []string, secret string, insecure bool) (Instance, error)
 	UpdateChatwootConfig(ctx context.Context, id string, baseURL, accountID, inboxID, inboxIdentifier, accountToken, botToken, credentialID string, enabled bool) (Instance, error)
 	UpdateBotConfig(ctx context.Context, id string, botID string) (Instance, error)
 	UpdateGeminiConfig(ctx context.Context, id string, enabled bool, apiKey, model, systemPrompt, knowledgeBase, timezone string, audioEnabled, imageEnabled, memoryEnabled bool) (Instance, error)
+	UpdateAutoReconnectConfig(ctx context.Context, id string, enabled bool) (Instance, error)
 }

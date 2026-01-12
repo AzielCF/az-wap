@@ -8,23 +8,32 @@ import (
 	"strings"
 	"sync"
 
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
-	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
+	"github.com/AzielCF/az-wap/botengine"
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
 var (
-	generateBotTextReplyFunc = integrationGemini.GenerateBotTextReply
-	clearBotMemoryFunc       = integrationGemini.ClearBotMemory
+	GenerateBotTextReplyFunc func(ctx context.Context, botID string, memoryID string, input string) (string, error)
+	ClearBotMemoryFunc       func(botID string)
 
 	botWebhookPoolOnce   sync.Once
 	botWebhookPool       *msgworker.MessageWorkerPool
 	botWebhookPoolCtx    context.Context
 	botWebhookPoolCancel context.CancelFunc
+
+	engine *botengine.Engine
 )
+
+func SetBotEngine(e *botengine.Engine) {
+	engine = e
+	if e != nil {
+		ClearBotMemoryFunc = e.ClearBotMemory
+	}
+}
 
 func initBotWebhookPool() {
 	botWebhookPoolOnce.Do(func() {
@@ -196,7 +205,11 @@ func (h *Bot) ClearMemory(c *fiber.Ctx) error {
 		})
 	}
 
-	clearBotMemoryFunc(id)
+	if engine != nil {
+		engine.ClearBotMemory(id)
+	} else {
+		ClearBotMemoryFunc(id)
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -269,7 +282,24 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 					}
 				}
 			}()
-			reply, err := generateBotTextReplyFunc(ctx, id, req.MemoryID, text)
+
+			if engine != nil && req.MemoryID != "" {
+				output, err := engine.Process(ctx, botengine.BotInput{
+					BotID:      id,
+					SenderID:   req.MemoryID,
+					ChatID:     req.MemoryID,
+					Platform:   botengine.PlatformWeb,
+					Text:       text,
+					InstanceID: "webhook",
+				})
+				select {
+				case resCh <- res{reply: output.Text, err: err}:
+				default:
+				}
+				return err
+			}
+
+			reply, err := GenerateBotTextReplyFunc(ctx, id, req.MemoryID, text)
 			select {
 			case resCh <- res{reply: reply, err: err}:
 			default:

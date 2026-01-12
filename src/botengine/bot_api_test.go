@@ -1,4 +1,4 @@
-package rest
+package botengine_test
 
 import (
 	"bytes"
@@ -9,7 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	"github.com/AzielCF/az-wap/ui/rest"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -26,6 +27,10 @@ func (f *fakeBotService) List(ctx context.Context) ([]domainBot.Bot, error) {
 
 func (f *fakeBotService) GetByID(ctx context.Context, id string) (domainBot.Bot, error) {
 	return domainBot.Bot{ID: id}, nil
+}
+
+func (f *fakeBotService) GetByInstanceID(ctx context.Context, instanceID string) (domainBot.Bot, error) {
+	return domainBot.Bot{ID: "legacy-" + instanceID}, nil
 }
 
 func (f *fakeBotService) Update(ctx context.Context, id string, req domainBot.UpdateBotRequest) (domainBot.Bot, error) {
@@ -47,10 +52,10 @@ func TestBotHandleWebhook_E2E(t *testing.T) {
 		stubReply = "respuesta-e2e"
 	)
 
-	origGen := generateBotTextReplyFunc
-	t.Cleanup(func() { generateBotTextReplyFunc = origGen })
+	origGen := rest.GenerateBotTextReplyFunc
+	t.Cleanup(func() { rest.GenerateBotTextReplyFunc = origGen })
 
-	generateBotTextReplyFunc = func(ctx context.Context, botID string, memoryID string, input string) (string, error) {
+	rest.GenerateBotTextReplyFunc = func(ctx context.Context, botID string, memoryID string, input string) (string, error) {
 		gotBotID = botID
 		gotMemID = memoryID
 		gotInput = input
@@ -58,7 +63,7 @@ func TestBotHandleWebhook_E2E(t *testing.T) {
 	}
 
 	service := &fakeBotService{}
-	InitRestBot(app, service, nil)
+	rest.InitRestBot(app, service, nil)
 
 	body := []byte(`{"memory_id":"mem-123","input":"  hola mundo  "}`)
 	req := httptest.NewRequest(http.MethodPost, "/bots/bot-123/webhook", bytes.NewReader(body))

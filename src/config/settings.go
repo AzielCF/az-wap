@@ -24,10 +24,11 @@ var (
 	McpPort = "8080"
 	McpHost = "localhost"
 
-	PathQrCode    = "statics/qrcode"
-	PathSendItems = "statics/senditems"
-	PathMedia     = "statics/media"
-	PathStorages  = "storages"
+	PathQrCode     = "statics/qrcode"
+	PathSendItems  = "statics/senditems"
+	PathMedia      = "statics/media"
+	PathCacheMedia = "statics/cache/media"
+	PathStorages   = "storages"
 
 	DBURI     = "file:storages/whatsapp.db?_foreign_keys=on"
 	DBKeysURI = ""
