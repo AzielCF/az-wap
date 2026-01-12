@@ -11,8 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AzielCF/az-wap/botengine"
 	"github.com/AzielCF/az-wap/config"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
+	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	chatwoot "github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
@@ -83,6 +85,12 @@ var (
 	poolInitOnce  sync.Once
 	poolCtx       context.Context
 	poolCancel    context.CancelFunc
+
+	// Bot Engine
+	engine *botengine.Engine
+
+	// Usecase
+	instanceService domainInstance.IInstanceUsecase
 )
 
 // --- Context Helpers ---
@@ -96,6 +104,63 @@ func GetInstanceIDFromContext(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+func SetBotEngine(e *botengine.Engine) {
+	engine = e
+}
+
+// WhatsAppTransport implementa botengine.Transport
+type WhatsAppTransport struct {
+	instanceID string
+}
+
+func (t *WhatsAppTransport) ID() string {
+	return t.instanceID
+}
+
+func (t *WhatsAppTransport) SendMessage(ctx context.Context, chatID string, text string) error {
+	client := GetInstanceClient(t.instanceID)
+	if client == nil {
+		return fmt.Errorf("client for instance %s not found", t.instanceID)
+	}
+	jid := utils.FormatJID(chatID)
+	if jid.IsEmpty() {
+		return fmt.Errorf("invalid JID: %s", chatID)
+	}
+	_, err := client.SendMessage(ctx, jid, &waE2E.Message{Conversation: &text})
+	return err
+}
+
+func (t *WhatsAppTransport) SendPresence(ctx context.Context, chatID string, isTyping bool) error {
+	client := GetInstanceClient(t.instanceID)
+	if client == nil {
+		return fmt.Errorf("client for instance %s not found", t.instanceID)
+	}
+	jid := utils.FormatJID(chatID)
+	if jid.IsEmpty() {
+		return fmt.Errorf("invalid JID: %s", chatID)
+	}
+	presence := types.ChatPresenceComposing
+	if !isTyping {
+		presence = types.ChatPresencePaused
+	}
+	return client.SendChatPresence(ctx, jid, presence, types.ChatPresenceMediaText)
+}
+
+func SetInstanceUsecase(s domainInstance.IInstanceUsecase) {
+	instanceService = s
+}
+
+func GetInstanceBotID(ctx context.Context, instanceID string) string {
+	if instanceService == nil {
+		return ""
+	}
+	inst, err := instanceService.GetByID(ctx, instanceID)
+	if err != nil {
+		return ""
+	}
+	return inst.BotID
 }
 
 // GracefulShutdown disconnects all clients and closes all database connections.
@@ -360,6 +425,11 @@ func SetInstanceClient(instanceID string, client *whatsmeow.Client, instDB *sqls
 	}
 
 	instanceClients[instanceID] = &InstanceClient{Client: client, DB: instDB}
+
+	// Register in Bot Engine
+	if engine != nil {
+		engine.RegisterTransport(&WhatsAppTransport{instanceID: instanceID})
+	}
 }
 
 func GetActiveInstanceID() string {

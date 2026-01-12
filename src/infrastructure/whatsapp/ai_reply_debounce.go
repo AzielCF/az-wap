@@ -2,15 +2,19 @@ package whatsapp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/AzielCF/az-wap/botengine"
+	"github.com/AzielCF/az-wap/botengine/domain/bot"
 	"github.com/AzielCF/az-wap/config"
-	"github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -170,7 +174,71 @@ var defaultAIReplyDebouncer = func() *aiReplyDebouncer {
 				}
 			}
 
-			gemini.HandleIncomingMessage(jobCtx, cli, instanceID, phone, &evtCopy)
+			botID := GetInstanceBotID(jobCtx, instanceID)
+			var b bot.Bot
+			var err error
+			if botID != "" && engine != nil {
+				b, err = engine.GetBotUsecase().GetByID(jobCtx, botID)
+			} else if engine != nil {
+				b, err = engine.GetBotUsecase().GetByInstanceID(jobCtx, instanceID)
+			}
+
+			if err == nil && b.Enabled && engine != nil {
+				// 1. Preparar BotInput
+				input := botengine.BotInput{
+					BotID:      b.ID,
+					SenderID:   evtCopy.Info.Sender.String(),
+					ChatID:     chatJID,
+					Platform:   botengine.PlatformWhatsApp,
+					Text:       utils.ExtractMessageTextFromProto(evtCopy.Message),
+					InstanceID: instanceID,
+					Metadata: map[string]any{
+						"phone":    phone,
+						"trace_id": evtCopy.Info.ID,
+					},
+				}
+
+				// 2. Extraer Medios si existen (Imagen o Audio)
+				var mediaObj *botengine.BotMedia
+				if img := evtCopy.Message.GetImageMessage(); img != nil {
+					storagePath := filepath.Join(config.PathCacheMedia, instanceID)
+					utils.CreateFolder(storagePath)
+					extracted, err := utils.ExtractMedia(jobCtx, cli, storagePath, img)
+					if err == nil && extracted.MediaPath != "" {
+						data, _ := os.ReadFile(extracted.MediaPath)
+						mediaObj = &botengine.BotMedia{
+							Data:     data,
+							MimeType: extracted.MimeType,
+							FileName: filepath.Base(extracted.MediaPath),
+						}
+						// En imágenes, el caption es el texto
+						if input.Text == "" {
+							input.Text = img.GetCaption()
+						}
+					}
+				} else if audio := evtCopy.Message.GetAudioMessage(); audio != nil {
+					storagePath := filepath.Join(config.PathCacheMedia, instanceID)
+					utils.CreateFolder(storagePath)
+					extracted, err := utils.ExtractMedia(jobCtx, cli, storagePath, audio)
+					if err == nil && extracted.MediaPath != "" {
+						data, _ := os.ReadFile(extracted.MediaPath)
+						mediaObj = &botengine.BotMedia{
+							Data:     data,
+							MimeType: extracted.MimeType,
+							FileName: filepath.Base(extracted.MediaPath),
+						}
+					}
+				}
+				input.Media = mediaObj
+
+				// 3. Procesar si hay texto o medios
+				if input.Text != "" || input.Media != nil {
+					_, err := engine.Process(jobCtx, input)
+					if err != nil {
+						logrus.WithError(err).Error("[WHATSAPP] Bot Engine failed to process message")
+					}
+				}
+			}
 		}
 
 		if msgWorkerPool != nil {
