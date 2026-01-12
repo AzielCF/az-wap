@@ -11,9 +11,13 @@ import (
 
 	"go.mau.fi/whatsmeow/store/sqlstore"
 
+	"github.com/AzielCF/az-wap/botengine"
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	"github.com/AzielCF/az-wap/botengine/providers"
+	botUsecaseLayer "github.com/AzielCF/az-wap/botengine/usecase"
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	domainBot "github.com/AzielCF/az-wap/domains/bot"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
@@ -21,15 +25,15 @@ import (
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
-	"github.com/AzielCF/az-wap/integrations/gemini"
+	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/utils"
+	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -64,6 +68,9 @@ var (
 	cacheUsecase      domainCache.ICacheUsecase
 	mcpUsecase        domainMCP.IMCPUsecase
 	healthUsecase     domainHealth.IHealthUsecase
+
+	// Bot Engine
+	botEngine *botengine.Engine
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -406,17 +413,36 @@ func initApp() {
 	messageUsecase = usecase.NewMessageService(appUsecase, chatStorageRepo, instanceUsecase)
 	groupUsecase = usecase.NewGroupService(appUsecase, instanceUsecase)
 	newsletterUsecase = usecase.NewNewsletterService(instanceUsecase)
-	botUsecase = usecase.NewBotService()
 	credentialUsecase = usecase.NewCredentialService()
+	botUsecase = botUsecaseLayer.NewBotService(credentialUsecase)
 	cacheUsecase = usecase.NewCacheService()
 	cacheUsecase.StartBackgroundCleanup(ctx)
-	mcpUsecase = usecase.NewMCPService()
+	mcpUsecase = botUsecaseLayer.NewMCPService()
 	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase)
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
-	gemini.SetMCPUsecase(mcpUsecase)
+
+	// Bot Engine Initialization
+	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
+	botEngine.RegisterProvider(string(domainBot.ProviderGemini), providers.NewGeminiProvider(mcpUsecase, botEngine.GetMemoryStore()))
+
+	// Hooks: Chatwoot integration
+	botEngine.RegisterPostReplyHook(func(ctx context.Context, b domainBot.Bot, input botengine.BotInput, output botengine.BotOutput) {
+		phone, _ := input.Metadata["phone"].(string)
+		if phone != "" {
+			go chatwoot.ForwardBotReplyFromEvent(ctx, input.InstanceID, phone, output.Text)
+		}
+	})
+
+	whatsapp.SetBotEngine(botEngine)
+	whatsapp.SetInstanceUsecase(instanceUsecase)
+	uiRest.SetBotEngine(botEngine)
 
 	go autoConnectAllInstances(ctx)
+}
+
+func GetBotEngine() *botengine.Engine {
+	return botEngine
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
