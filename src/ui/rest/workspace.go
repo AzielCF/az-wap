@@ -19,8 +19,14 @@ func (h *WorkspaceHandler) Register(router fiber.Router) {
 	g.Post("/", h.CreateWorkspace)
 	g.Get("/", h.ListWorkspaces)
 	g.Get("/:id", h.GetWorkspace)
+	g.Put("/:id", h.UpdateWorkspace)
+	g.Delete("/:id", h.DeleteWorkspace)
+
 	g.Post("/:id/channels", h.CreateChannel)
 	g.Get("/:id/channels", h.ListChannels)
+	g.Post("/:id/channels/:cid/enable", h.EnableChannel)
+	g.Post("/:id/channels/:cid/disable", h.DisableChannel)
+	g.Delete("/:id/channels/:cid", h.DeleteChannel)
 }
 
 func (h *WorkspaceHandler) CreateWorkspace(c *fiber.Ctx) error {
@@ -87,6 +93,32 @@ func (h *WorkspaceHandler) CreateChannel(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(ch)
 }
 
+func (h *WorkspaceHandler) UpdateWorkspace(c *fiber.Ctx) error {
+	id := c.Params("id")
+	type req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	var r req
+	if err := c.BodyParser(&r); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+	}
+
+	ws, err := h.uc.UpdateWorkspace(c.Context(), id, r.Name, r.Description)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(ws)
+}
+
+func (h *WorkspaceHandler) DeleteWorkspace(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if err := h.uc.DeleteWorkspace(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *WorkspaceHandler) ListChannels(c *fiber.Ctx) error {
 	workspaceID := c.Params("id")
 	channels, err := h.uc.ListChannels(c.Context(), workspaceID)
@@ -94,4 +126,28 @@ func (h *WorkspaceHandler) ListChannels(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(channels)
+}
+
+func (h *WorkspaceHandler) EnableChannel(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+	if err := h.uc.EnableChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "enabled"})
+}
+
+func (h *WorkspaceHandler) DisableChannel(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+	if err := h.uc.DisableChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"status": "disabled"})
+}
+
+func (h *WorkspaceHandler) DeleteChannel(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+	if err := h.uc.DeleteChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
