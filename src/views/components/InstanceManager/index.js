@@ -81,6 +81,9 @@ export default {
         webhookInsecure() {
             return this.currentEditingInstance.webhook_insecure_skip_verify || false;
         },
+        autoReconnect() {
+            return this.currentEditingInstance.auto_reconnect !== false; // default true
+        },
     },
     methods: {
         handleSetActiveToken(token) {
@@ -212,6 +215,7 @@ export default {
                         :webhookUrls="webhookUrls"
                         :webhookSecret="webhookSecret"
                         :webhookInsecure="webhookInsecure"
+                        :autoReconnect="autoReconnect"
                         @cancel="cancelWebhookEditor"
                         @refresh-instances="handleRefreshInstances"
                     />

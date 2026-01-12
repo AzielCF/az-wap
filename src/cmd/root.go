@@ -323,17 +323,47 @@ func autoConnectAllInstances(ctx context.Context) {
 
 			if client.IsConnected() && client.IsLoggedIn() {
 				logrus.Infof("[AUTO_CONNECT] instance %s already connected", id)
-				return
+			} else {
+				if err := client.Connect(); err != nil {
+					logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to connect instance %s", id)
+				} else {
+					logrus.Infof("[AUTO_CONNECT] instance %s connected on startup", id)
+				}
 			}
-
-			if err := client.Connect(); err != nil {
-				logrus.WithError(err).Errorf("[AUTO_CONNECT] failed to connect instance %s", id)
-				return
-			}
-
-			logrus.Infof("[AUTO_CONNECT] instance %s connected on startup", id)
 		}(trimmedID)
 	}
+
+	// Start global auto-reconnect worker for all instances
+	startGlobalInstanceAutoReconnectWorker(instanceUsecase, chatStorageRepo)
+}
+
+func startGlobalInstanceAutoReconnectWorker(instanceService domainInstance.IInstanceUsecase, chatStorageRepo domainChatStorage.IChatStorageRepository) {
+	go func() {
+		logrus.Info("[AUTO_RECONNECT] starting global instance auto-reconnect worker")
+		// Initial wait to let boot connections settle
+		time.Sleep(1 * time.Minute)
+		for {
+			instances, err := instanceService.List(context.Background())
+			if err == nil {
+				for _, inst := range instances {
+					if !inst.AutoReconnect {
+						continue
+					}
+					// Only try if there's already a client (meaning it has been initialized/logged in before)
+					client := whatsapp.GetInstanceClient(inst.ID)
+					if client != nil && !client.IsConnected() && client.IsLoggedIn() {
+						logrus.Infof("[AUTO_RECONNECT] instance %s disconnected, attempting reconnection...", inst.ID)
+						if err := client.Connect(); err != nil {
+							logrus.WithError(err).Warnf("[AUTO_RECONNECT] failed to reconnect instance %s", inst.ID)
+						} else {
+							logrus.Infof("[AUTO_RECONNECT] instance %s reconnected successfully", inst.ID)
+						}
+					}
+				}
+			}
+			time.Sleep(5 * time.Minute)
+		}
+	}()
 }
 
 func initApp() {

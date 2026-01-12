@@ -139,6 +139,10 @@ export default {
                             >
                                 {{ inst.status === 'ONLINE' ? 'Online' : inst.status === 'OFFLINE' ? 'Offline' : inst.status }}
                             </div>
+                            <div v-if="inst.status === 'OFFLINE'" style="color: #db2828; font-size: 0.8em; margin-top: 4px; font-weight: bold;">
+                                <i class="exclamation triangle icon"></i>
+                                Not reconnected, new login required.
+                            </div>
                         </td>
                         <td>
                             <div class="ui transparent input" style="font-size: 0.9em;">
