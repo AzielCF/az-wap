@@ -50,6 +50,7 @@ type CreateInstanceRequest struct {
 type IInstanceUsecase interface {
 	Create(ctx context.Context, request CreateInstanceRequest) (Instance, error)
 	List(ctx context.Context) ([]Instance, error)
+	GetByID(ctx context.Context, id string) (Instance, error)
 	GetByToken(ctx context.Context, token string) (Instance, error)
 	Delete(ctx context.Context, id string) error
 	UpdateWebhookConfig(ctx context.Context, id string, urls []string, secret string, insecure bool) (Instance, error)
