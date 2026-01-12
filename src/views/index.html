@@ -66,6 +66,14 @@
     </div>
 
     <div class="ui horizontal divider" v-if="instances && instances.length">
+        Workspaces
+    </div>
+
+    <div class="ui one column stackable grid cards" v-if="instances && instances.length">
+        <workspace-manager></workspace-manager>
+    </div>
+
+    <div class="ui horizontal divider" v-if="instances && instances.length">
         App
     </div>
 
@@ -256,6 +264,7 @@
     import WorkerPoolMonitor from "{{ .AppBasePath }}/components/WorkerPoolMonitor.js";
     import BotMonitor from "{{ .AppBasePath }}/components/BotMonitor.js";
     import CacheManager from "{{ .AppBasePath }}/components/CacheManager.js";
+    import WorkspaceManager from "{{ .AppBasePath }}/components/WorkspaceManager/index.js";
 
     const showErrorInfo = (message) => {
         $('body').toast({
@@ -296,6 +305,7 @@
             WorkerPoolMonitor,
             BotMonitor,
             CacheManager,
+            WorkspaceManager,
         },
         delimiters: ['[[', ']]'],
         data() {
