@@ -18,15 +18,16 @@ type BotMedia struct {
 
 // BotInput es la estructura agnóstica de entrada para el motor del bot
 type BotInput struct {
-	BotID      string         `json:"bot_id"`
-	SenderID   string         `json:"sender_id"` // JID o ID de usuario único en la plataforma
-	ChatID     string         `json:"chat_id"`   // ID de la conversación
-	Platform   Platform       `json:"platform"`
-	Text       string         `json:"text"`
-	Media      *BotMedia      `json:"media,omitempty"`
-	InstanceID string         `json:"instance_id"` // Útil para saber qué instancia física recibió el mensaje
-	TraceID    string         `json:"trace_id,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
+	BotID       string         `json:"bot_id"`
+	WorkspaceID string         `json:"workspace_id"` // Adding WorkspaceID for scoped memory
+	SenderID    string         `json:"sender_id"`    // JID o ID de usuario único en la plataforma
+	ChatID      string         `json:"chat_id"`      // ID de la conversación
+	Platform    Platform       `json:"platform"`
+	Text        string         `json:"text"`
+	Media       *BotMedia      `json:"media,omitempty"`
+	InstanceID  string         `json:"instance_id"` // Útil para saber qué instancia física recibió el mensaje
+	TraceID     string         `json:"trace_id,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // BotOutput es la estructura de respuesta generada por el cerebro del bot

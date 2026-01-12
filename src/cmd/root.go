@@ -494,6 +494,11 @@ func initApp() {
 
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo)
 
+	// Run Migration
+	if err := AutoMigrateLegacyInstances(ctx, instanceUsecase, wkUsecase); err != nil {
+		logrus.Errorf("Migration failed: %v", err)
+	}
+
 	whatsapp.SetBotEngine(botEngine)
 	whatsapp.SetInstanceUsecase(instanceUsecase)
 	uiRest.SetBotEngine(botEngine)

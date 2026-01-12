@@ -45,7 +45,12 @@ func (p *GeminiProvider) GenerateReply(ctx context.Context, b bot.Bot, input bot
 
 	memoryKey := ""
 	if b.MemoryEnabled {
-		memoryKey = fmt.Sprintf("bot|%s|%s", b.ID, input.SenderID)
+		if input.WorkspaceID != "" {
+			memoryKey = fmt.Sprintf("ws|%s|bot|%s|%s", input.WorkspaceID, b.ID, input.SenderID)
+		} else {
+			// Fallback for legacy/global memory
+			memoryKey = fmt.Sprintf("bot|%s|%s", b.ID, input.SenderID)
+		}
 	}
 
 	traceID := input.TraceID

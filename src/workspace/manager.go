@@ -130,15 +130,16 @@ func (m *Manager) handleIncomingMessage(msg IncomingMessage) {
 	botID := "default_bot" // Placeholder
 
 	botInput := botengine.BotInput{
-		TraceID:    "",            // Engine will generate if empty
-		InstanceID: msg.ChannelID, // Use ChannelID as InstanceID
-		SenderID:   msg.SenderID,
-		ChatID:     msg.ChatID,
-		BotID:      botID,
-		Platform:   botengine.PlatformWhatsApp, // TODO: Map dynamically from channel type
-		Text:       msg.Text,
-		Media:      nil, // msg.Media needs conversion
-		Metadata:   msg.Metadata,
+		TraceID:     "",            // Engine will generate if empty
+		InstanceID:  msg.ChannelID, // Use ChannelID as InstanceID
+		WorkspaceID: msg.WorkspaceID,
+		SenderID:    msg.SenderID,
+		ChatID:      msg.ChatID,
+		BotID:       botID,
+		Platform:    botengine.PlatformWhatsApp, // TODO: Map dynamically from channel type
+		Text:        msg.Text,
+		Media:       nil, // msg.Media needs conversion
+		Metadata:    msg.Metadata,
 	}
 
 	// 2. Process
