@@ -35,6 +35,10 @@ import (
 	"github.com/AzielCF/az-wap/pkg/utils"
 	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
+	"github.com/AzielCF/az-wap/workspace"
+	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain"
+	workspaceRepo "github.com/AzielCF/az-wap/workspace/repository"
+	workspaceUsecaseLayer "github.com/AzielCF/az-wap/workspace/usecase"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -71,6 +75,12 @@ var (
 
 	// Bot Engine
 	botEngine *botengine.Engine
+
+	// Workspace
+	workspaceDB      *sql.DB
+	wkRepo           workspaceRepo.IWorkspaceRepository
+	workspaceManager *workspace.Manager
+	wkUsecase        *workspaceUsecaseLayer.WorkspaceUsecase
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -433,6 +443,56 @@ func initApp() {
 			go chatwoot.ForwardBotReplyFromEvent(ctx, input.InstanceID, phone, output.Text)
 		}
 	})
+
+	// Workspace Initialization
+	// We use a separate DB file for workspaces to keep it clean
+	workspaceDBPath := "storages/workspaces.db"
+	if config.DBURI != "" && strings.Contains(config.DBURI, "postgres") {
+		// If using postgres generally, we might want to use it here too, but for MVP sticking to SQLite file
+		// or parsing the URI. For now, let's force SQLite for workspace MVP to avoid migration complexity.
+	}
+
+	workspaceDB, err = sql.Open("sqlite3", fmt.Sprintf("file:%s?cache=shared&_journal_mode=WAL", workspaceDBPath))
+	if err != nil {
+		logrus.Fatalf("failed to open workspace db: %v", err)
+	}
+
+	wkRepo = workspaceRepo.NewSQLiteRepository(workspaceDB)
+	if err := wkRepo.Init(ctx); err != nil {
+		logrus.Fatalf("failed to init workspace repo: %v", err)
+	}
+
+	workspaceManager = workspace.NewManager(wkRepo, botEngine)
+
+	// Register WhatsApp Adapter Factory
+	workspaceManager.RegisterFactory(workspaceDomain.ChannelTypeWhatsApp, func(conf workspaceDomain.ChannelConfig) (workspace.ChannelAdapter, error) {
+		// Extract instance ID from config
+		instanceID, ok := conf.Settings["instance_id"].(string)
+		if !ok || instanceID == "" {
+			return nil, fmt.Errorf("instance_id missing in channel config")
+		}
+
+		// Get client from existing infrastructure
+		// Note: We might need to ensure the client exists.
+		// For now, we assume standard infrastructure/whatsapp/init.go manages clients map.
+		// We need a way to get it. infrastructure/whatsapp/init.go has GetInstanceClient(id)
+
+		client := whatsapp.GetInstanceClient(instanceID)
+		if client == nil {
+			// Try to init? Or fail?
+			// If it's not in memory, we might need to load it.
+			// Let's try GetOrInitInstanceClient (but it needs chatRepo)
+			var err error
+			client, _, err = whatsapp.GetOrInitInstanceClient(context.Background(), instanceID, chatStorageRepo)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load whatsapp client: %w", err)
+			}
+		}
+
+		return whatsapp.NewAdapter(conf.Settings["channel_id"].(string), conf.Settings["workspace_id"].(string), client), nil
+	})
+
+	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo)
 
 	whatsapp.SetBotEngine(botEngine)
 	whatsapp.SetInstanceUsecase(instanceUsecase)

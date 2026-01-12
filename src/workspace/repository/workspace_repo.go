@@ -7,6 +7,8 @@ import (
 )
 
 type IWorkspaceRepository interface {
+	Init(ctx context.Context) error
+
 	// Workspace CRUD
 	Create(ctx context.Context, ws domain.Workspace) error
 	GetByID(ctx context.Context, id string) (domain.Workspace, error)

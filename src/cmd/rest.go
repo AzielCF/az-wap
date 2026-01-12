@@ -175,6 +175,15 @@ func restServer(_ *cobra.Command, _ []string) {
 		StopApp()
 	}()
 
+	// Register Workspace Handlers
+	if config.AppDebug { // Or always, depending on preference. Usually always.
+		wsHandler := rest.NewWorkspaceHandler(wkUsecase)
+		wsHandler.Register(app)
+	} else {
+		wsHandler := rest.NewWorkspaceHandler(wkUsecase)
+		wsHandler.Register(app)
+	}
+
 	if err := app.Listen(":" + config.AppPort); err != nil {
 		logrus.Fatalln("Failed to start: ", err.Error())
 	}
