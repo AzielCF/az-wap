@@ -83,11 +83,11 @@ export default {
                     <tbody>
                         <tr v-for="ws in workspaces" :key="ws.id">
                             <td>
-                                <i class="building icon"></i> <b>[[ ws.name ]]</b>
-                                <div class="ui label mini">[[ ws.id ]]</div>
+                                <i class="building icon"></i> <b>{{ ws.name }}</b>
+                                <div class="ui label mini">{{ ws.id }}</div>
                             </td>
-                            <td>[[ ws.description ]]</td>
-                            <td>[[ ws.owner_id ]]</td>
+                            <td>{{ ws.description }}</td>
+                            <td>{{ ws.owner_id }}</td>
                             <td>
                                 <div class="ui label green" v-if="ws.enabled">Active</div>
                                 <div class="ui label red" v-else>Disabled</div>

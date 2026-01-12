@@ -90,7 +90,6 @@ export default {
     `,
     mounted() {
         $('#modalWorkspaceEditor').modal({
-            closable: false,
             onHidden: () => {
                 this.$emit('close');
             }

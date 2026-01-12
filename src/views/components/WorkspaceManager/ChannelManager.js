@@ -108,17 +108,14 @@ export default {
                         </div>
                         <i class="large middle aligned icon" :class="ch.type === 'whatsapp' ? 'whatsapp green' : 'globe'"></i>
                         <div class="content">
-                            <div class="header">[[ ch.name ]]</div>
+                            <div class="header">{{ ch.name }}</div>
                             <div class="description">
-                                Status: <b>[[ ch.status ]]</b> | ID: [[ ch.channel_id || ch.id ]]
+                                Status: <b>{{ ch.status }}</b> | ID: {{ ch.channel_id || ch.id }}
                                 <div class="ui label mini" v-if="ch.config && ch.config.settings && ch.config.settings.instance_id">
-                                    Linked: [[ ch.config.settings.instance_id ]]
+                                    Linked: {{ ch.config.settings.instance_id }}
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="item" v-if="channels.length === 0">
-                        <div class="content">No channels found.</div>
                     </div>
                 </div>
             </div>
@@ -130,7 +127,6 @@ export default {
     `,
     mounted() {
         $('#modalChannelManager').modal({
-            closable: false,
             onHidden: () => {
                 this.$emit('close');
             }

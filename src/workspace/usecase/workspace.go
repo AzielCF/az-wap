@@ -128,3 +128,8 @@ func (u *WorkspaceUsecase) DisableChannel(ctx context.Context, channelID string)
 func (u *WorkspaceUsecase) DeleteChannel(ctx context.Context, channelID string) error {
 	return u.repo.DeleteChannel(ctx, channelID)
 }
+
+func (u *WorkspaceUsecase) UpdateChannel(ctx context.Context, ch domain.Channel) error {
+	ch.UpdatedAt = time.Now().UTC()
+	return u.repo.UpdateChannel(ctx, ch)
+}
