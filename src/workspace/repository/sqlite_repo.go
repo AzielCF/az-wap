@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain"
 )
 
@@ -79,7 +78,7 @@ func (r *SQLiteRepository) GetByID(ctx context.Context, id string) (domain.Works
 	var metadata string
 	err := row.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.OwnerID, &ws.Config.Timezone, &ws.Config.DefaultLanguage, &metadata, &ws.Limits.MaxMessagesPerDay, &ws.Limits.MaxChannels, &ws.Limits.MaxBots, &ws.Limits.RateLimitPerMinute, &ws.Enabled, &ws.CreatedAt, &ws.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return domain.Workspace{}, workspace.ErrWorkspaceNotFound
+		return domain.Workspace{}, domain.ErrWorkspaceNotFound
 	}
 	if err != nil {
 		return domain.Workspace{}, err
@@ -118,7 +117,7 @@ func (r *SQLiteRepository) Update(ctx context.Context, ws domain.Workspace) erro
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		return workspace.ErrWorkspaceNotFound
+		return domain.ErrWorkspaceNotFound
 	}
 	return nil
 }
@@ -131,7 +130,7 @@ func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		return workspace.ErrWorkspaceNotFound
+		return domain.ErrWorkspaceNotFound
 	}
 	return nil
 }
@@ -153,7 +152,7 @@ func (r *SQLiteRepository) GetChannel(ctx context.Context, channelID string) (do
 	var config string
 	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &ch.ExternalRef, &ch.LastSeen, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
-			return domain.Channel{}, workspace.ErrChannelNotFound
+			return domain.Channel{}, domain.ErrChannelNotFound
 		}
 		return domain.Channel{}, err
 	}
@@ -191,7 +190,7 @@ func (r *SQLiteRepository) UpdateChannel(ctx context.Context, ch domain.Channel)
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		return workspace.ErrChannelNotFound
+		return domain.ErrChannelNotFound
 	}
 	return nil
 }
@@ -204,7 +203,7 @@ func (r *SQLiteRepository) DeleteChannel(ctx context.Context, channelID string) 
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		return workspace.ErrChannelNotFound
+		return domain.ErrChannelNotFound
 	}
 	return nil
 }
@@ -217,7 +216,7 @@ func (r *SQLiteRepository) GetChannelByExternalRef(ctx context.Context, external
 	var config string
 	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &ch.ExternalRef, &ch.LastSeen, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
-			return domain.Channel{}, workspace.ErrChannelNotFound
+			return domain.Channel{}, domain.ErrChannelNotFound
 		}
 		return domain.Channel{}, err
 	}
