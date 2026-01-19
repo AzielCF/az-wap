@@ -1,0 +1,293 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@layer base {
+  body {
+    @apply bg-[#0b0e14] text-slate-200 selection:bg-primary/30 selection:text-white;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    /* Increase base font size for better readability */
+    font-size: 15px; 
+    line-height: 1.6;
+  }
+}
+
+@layer components {
+  /* Serious Professional Input Style */
+  .input-premium {
+    @apply bg-[#161a23] border border-white/10 focus:border-primary focus:ring-1 focus:ring-primary/20 text-white transition-all duration-200 rounded-lg px-4 py-3 text-sm outline-none;
+  }
+  
+  .select-premium {
+    @apply bg-[#161a23] border border-white/10 focus:border-primary text-white transition-all rounded-lg px-4 py-3 text-sm outline-none;
+  }
+
+  /* Force solid background for select options */
+  select option {
+    background-color: #161a23 !important;
+    color: white;
+  }
+
+  .label-premium {
+    @apply text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 block;
+  }
+  
+  .section-title-premium {
+    @apply text-sm font-bold uppercase tracking-[0.2em] text-primary/80 mb-6 border-l-2 border-primary pl-4;
+  }
+
+  /* Base Premium Button Styles */
+  .btn-premium {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0 1.5rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: none;
+    white-space: nowrap;
+  }
+  .btn-premium:active {
+    transform: scale(0.95);
+  }
+
+  /* Color variants */
+  .btn-premium-primary {
+    background-color: #4f46e5;
+    color: white;
+    box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+  }
+  .btn-premium-primary:hover {
+    background-color: #4338ca;
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.4);
+  }
+
+  .btn-premium-success {
+    background-color: #059669;
+    color: white;
+    box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.2);
+  }
+  .btn-premium-success:hover {
+    background-color: #047857;
+    box-shadow: 0 10px 15px -3px rgba(5, 150, 105, 0.4);
+  }
+
+  .btn-premium-warning {
+    background-color: #d97706;
+    color: white;
+    box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.2);
+  }
+  .btn-premium-warning:hover {
+    background-color: #b45309;
+    box-shadow: 0 10px 15px -3px rgba(217, 119, 6, 0.4);
+  }
+
+  .btn-premium-ghost {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .btn-premium-ghost:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .btn-premium-sm {
+    height: 2.5rem;
+    padding: 0 1rem;
+    font-size: 10px;
+  }
+
+  .btn-premium-square {
+    padding: 0 !important;
+    aspect-ratio: 1 / 1;
+    width: 3rem;
+  }
+  
+  .btn-premium-square.btn-premium-sm {
+    width: 2.5rem;
+  }
+
+  /* Card Action Buttons (Tiny icons) */
+  .btn-card-action {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 cursor-pointer border border-white/5 flex-none;
+    background-color: rgba(255, 255, 255, 0.03);
+    color: #64748b;
+  }
+  .btn-card-action:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    transform: translateY(-2px);
+  }
+  .btn-card-action-red:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.2);
+  }
+
+  /* --- NEW PREMIUM COMPONENTS (Standard CSS to ensure rendering) --- */
+
+  /* Main Card Container */
+  .card-premium {
+    background-color: #161a23;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 2.5rem;
+    padding: 2.5rem;
+    transition: all 0.5s ease-in-out;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+  .card-premium:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+  }
+
+  /* Icon Box with Gradients */
+  .icon-box-premium {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    transition: transform 0.5s;
+    background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+  }
+  .card-premium:hover .icon-box-premium {
+    transform: scale(1.1);
+  }
+
+  .icon-box-primary {
+    --tw-gradient-from: rgba(99, 102, 241, 0.2) var(--tw-gradient-from-position);
+    --tw-gradient-to: rgba(99, 102, 241, 0.05) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+    color: #818cf8;
+  }
+
+  .icon-box-amber {
+    --tw-gradient-from: rgba(245, 158, 11, 0.2) var(--tw-gradient-from-position);
+    --tw-gradient-to: rgba(245, 158, 11, 0.05) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+    color: #f59e0b;
+  }
+
+  /* Premium Badge Styles */
+  .badge-premium {
+    padding: 0.25rem 0.75rem;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 9999px;
+    text-transform: uppercase;
+    font-weight: 900;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: inline-flex;
+    align-items: center;
+  }
+  .badge-indigo { color: #818cf8; border-color: rgba(99, 102, 241, 0.2); }
+  .badge-amber { color: #f59e0b; border-color: rgba(245, 158, 11, 0.2); }
+  .badge-success { color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
+
+  /* Inner Storage Boxes */
+  .storage-box-premium {
+    padding: 1rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 1rem;
+  }
+
+  /* Tab Navigation Buttons */
+  .tab-button-premium {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border-radius: 0.75rem;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+    color: #64748b;
+  }
+  .tab-button-premium:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+    color: #94a3b8;
+  }
+  .tab-button-premium.active {
+    background-color: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Premium Table Styles */
+  .table-premium {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .table-premium th {
+    @apply text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 py-6 px-10 border-b border-white/5 text-left;
+  }
+  .table-premium td {
+    @apply py-6 px-10 border-b border-white/[0.02] text-sm transition-all duration-300;
+  }
+  .table-premium tr:last-child td {
+    border-bottom: none;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+/* Hide scrollbar utility */
+.custom-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.custom-scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

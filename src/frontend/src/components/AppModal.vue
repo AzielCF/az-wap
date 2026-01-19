@@ -1,0 +1,67 @@
+<script setup lang="ts">
+const props = defineProps<{
+  modelValue: boolean
+  title?: string
+  maxWidth?: string
+  noPadding?: boolean
+  noScroll?: boolean
+}>()
+
+const emit = defineEmits(['update:modelValue', 'close'])
+
+function close() {
+  emit('update:modelValue', false)
+  emit('close')
+}
+</script>
+
+<template>
+  <div v-if="modelValue" class="modal modal-open backdrop-blur-md" role="dialog">
+    <div class="modal-box p-0 bg-[#0f1219] border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col w-full max-h-[92vh] transition-all duration-300" :class="maxWidth || 'max-w-md'">
+      <!-- Professional Header -->
+      <div v-if="title" class="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-none">
+        <h3 class="font-bold text-xl uppercase tracking-tight text-white">{{ title }}</h3>
+        <button class="btn btn-ghost btn-sm btn-square text-slate-500 hover:text-white hover:bg-white/5 transition-all" @click="close">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      
+      <!-- Content Area -->
+      <div class="flex-1 overflow-hidden flex flex-col min-h-[300px]" :class="[noPadding ? '' : 'p-8', noScroll ? '' : 'overflow-y-auto scroll-smooth custom-scrollbar']">
+        <slot></slot>
+      </div>
+      
+      <!-- Fixed Footer Area -->
+      <div v-if="$slots.actions" class="px-8 py-6 border-t border-white/5 flex justify-end items-center gap-4 bg-black/20 flex-none">
+        <slot name="actions"></slot>
+      </div>
+    </div>
+    <div class="modal-backdrop bg-black/85" @click="close"></div>
+  </div>
+</template>
+
+<style scoped>
+.modal-box {
+  animation: modal-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-pop {
+  0% { transform: scale(0.98) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+</style>
