@@ -2,142 +2,66 @@ package providers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/AzielCF/az-wap/botengine"
-	"github.com/AzielCF/az-wap/botengine/domain/bot"
+	domain "github.com/AzielCF/az-wap/botengine/domain"
+	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/config"
-	"github.com/AzielCF/az-wap/pkg/botmonitor"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/genai"
 )
 
+type contextCacheEntry struct {
+	Name      string
+	ExpiresAt time.Time
+}
+
+// GeminiProvider es el adaptador para la API de Google Gemini
 type GeminiProvider struct {
-	mcpUsecase  domainMCP.IMCPUsecase
-	memoryStore *botengine.MemoryStore
+	mcpUsecase domainMCP.IMCPUsecase
+	caches     sync.Map // key: fingerprint string, value: contextCacheEntry
 }
 
-func NewGeminiProvider(mcpService domainMCP.IMCPUsecase, memory *botengine.MemoryStore) *GeminiProvider {
+func NewGeminiProvider(mcpService domainMCP.IMCPUsecase) *GeminiProvider {
 	return &GeminiProvider{
-		mcpUsecase:  mcpService,
-		memoryStore: memory,
+		mcpUsecase: mcpService,
 	}
 }
 
-type audioResponse struct {
-	Transcription string `json:"transcription"`
-}
-
-type imageResponse struct {
-	Description string `json:"description"`
-}
-
-func (p *GeminiProvider) GenerateReply(ctx context.Context, b bot.Bot, input botengine.BotInput, tools []domainMCP.Tool) (botengine.BotOutput, error) {
+// Chat implementa la interfaz AIProvider enviando una petición a la API de Gemini
+func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.ChatRequest) (domain.ChatResponse, error) {
 	if b.APIKey == "" {
-		return botengine.BotOutput{}, fmt.Errorf("bot %s has no API key", b.ID)
-	}
-	if b.Model == "" {
-		b.Model = "gemini-flash-latest"
+		return domain.ChatResponse{}, fmt.Errorf("bot %s has no API key", b.ID)
 	}
 
-	memoryKey := ""
-	if b.MemoryEnabled {
-		if input.WorkspaceID != "" {
-			memoryKey = fmt.Sprintf("ws|%s|bot|%s|%s", input.WorkspaceID, b.ID, input.SenderID)
-		} else {
-			// Fallback for legacy/global memory
-			memoryKey = fmt.Sprintf("bot|%s|%s", b.ID, input.SenderID)
-		}
-	}
-
-	traceID := input.TraceID
-	if traceID == "" {
-		traceID = fmt.Sprintf("engine:%s:%d", b.ID, time.Now().UnixNano())
-	}
-
-	if input.Media != nil {
-		if strings.Contains(input.Media.MimeType, "audio") {
-			reply, err := p.generateReplyFromAudio(ctx, b, memoryKey, input.Media.Data, input.Media.MimeType, input.Text, traceID, input.InstanceID, input.ChatID)
-			return botengine.BotOutput{Text: reply}, err
-		}
-		if strings.Contains(input.Media.MimeType, "image") {
-			reply, err := p.generateReplyFromImage(ctx, b, memoryKey, input.Media.Data, input.Media.MimeType, input.Text, traceID, input.InstanceID, input.ChatID)
-			return botengine.BotOutput{Text: reply}, err
-		}
-	}
-
-	reply, err := p.generateReply(ctx, b, memoryKey, input.Text, traceID, input.InstanceID, input.ChatID, tools)
-	return botengine.BotOutput{Text: reply}, err
-}
-
-func (p *GeminiProvider) generateReply(ctx context.Context, b bot.Bot, memoryKey string, input string, traceID, instanceID, chatJID string, mcpTools []domainMCP.Tool) (string, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  b.APIKey,
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return "", err
+		return domain.ChatResponse{}, err
 	}
 
 	var genConfig *genai.GenerateContentConfig
-	systemText := p.buildSystemInstructions(b)
-
-	serverMap := make(map[string]string)
-	var mcpInstructions strings.Builder
-	if b.ID != "" && p.mcpUsecase != nil {
-		if servers, err := p.mcpUsecase.ListServersForBot(ctx, b.ID); err == nil {
-			for _, srv := range servers {
-				if srv.Enabled {
-					if srv.Instructions != "" || srv.BotInstructions != "" {
-						mcpInstructions.WriteString(fmt.Sprintf("\n\n### TOOLSET: %s", srv.Name))
-						if srv.Instructions != "" {
-							mcpInstructions.WriteString(fmt.Sprintf("\nGeneral Purpose: %s", srv.Instructions))
-						}
-						if srv.BotInstructions != "" {
-							mcpInstructions.WriteString(fmt.Sprintf("\nGuidelines: %s", srv.BotInstructions))
-						}
-					}
-					for _, t := range srv.Tools {
-						serverMap[t.Name] = srv.ID
-					}
-				}
-			}
-		}
-	}
-
-	if mcpInstructions.Len() > 0 {
-		systemText += "\n\n## MCP TOOL GUIDELINES" + mcpInstructions.String()
-	}
-
-	if systemText != "" {
+	if req.SystemPrompt != "" {
 		genConfig = &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(systemText, genai.RoleUser),
+			SystemInstruction: genai.NewContentFromText(req.SystemPrompt, genai.RoleUser),
 		}
 	}
 
+	// Herramientas
 	var functionDecls []*genai.FunctionDeclaration
-	if b.MemoryEnabled && strings.TrimSpace(memoryKey) != "" {
-		functionDecls = append(functionDecls, &genai.FunctionDeclaration{
-			Name:        "close_chat",
-			Description: "Ends the conversation.",
-			Parameters: &genai.Schema{
-				Type: "object",
-				Properties: map[string]*genai.Schema{
-					"farewell_message": {Type: "string"},
-				},
-				Required: []string{"farewell_message"},
-			},
-		})
-	}
-
-	for _, t := range mcpTools {
+	for _, t := range req.Tools {
 		functionDecls = append(functionDecls, &genai.FunctionDeclaration{
 			Name:        t.Name,
 			Description: t.Description,
-			Parameters:  p.convertMCPSchemaToGemini(t.InputSchema),
+			Parameters:  p.convertMCPSchemaToAI(t.InputSchema),
 		})
 	}
 
@@ -148,279 +72,426 @@ func (p *GeminiProvider) generateReply(ctx context.Context, b bot.Bot, memoryKey
 		genConfig.Tools = []*genai.Tool{{FunctionDeclarations: functionDecls}}
 	}
 
+	// Historial y Conversión de Turnos (PARIDAD EXACTA)
 	var contents []*genai.Content
-	if b.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && p.memoryStore != nil {
-		history := p.memoryStore.Get(memoryKey)
-		// Añadir input actual al historial temporalmente (ya que se guardará al final)
-		history = append(history, botengine.ChatTurn{Role: "user", Text: input})
-
-		// Guardar el input del usuario en el store real
-		p.memoryStore.Save(memoryKey, botengine.ChatTurn{Role: "user", Text: input}, 10)
-
-		for _, t := range history {
-			role := genai.RoleUser
-			if t.Role == "assistant" {
-				role = genai.RoleModel
+	for _, t := range req.History {
+		// Si hay RawContent (de una iteración previa), usarlo directamente (PARIDAD ORIGINAL)
+		if t.RawContent != nil {
+			if raw, ok := t.RawContent.(*genai.Content); ok {
+				contents = append(contents, raw)
+				continue
 			}
+		}
+
+		role := genai.RoleUser
+		if t.Role == "assistant" {
+			role = genai.RoleModel
+		}
+
+		// Si el turno tiene ToolCalls, es una respuesta del modelo con llamadas a funciones
+		if len(t.ToolCalls) > 0 {
+			parts := []*genai.Part{}
+			if t.Text != "" {
+				parts = append(parts, &genai.Part{Text: t.Text})
+			}
+			for _, tc := range t.ToolCalls {
+				parts = append(parts, &genai.Part{
+					FunctionCall: &genai.FunctionCall{
+						Name: tc.Name,
+						Args: tc.Args,
+					},
+				})
+			}
+			contents = append(contents, &genai.Content{Role: genai.RoleModel, Parts: parts})
+			continue
+		}
+
+		// Si el turno tiene ToolResponses, es una respuesta de herramienta (rol user)
+		if len(t.ToolResponses) > 0 {
+			for _, tr := range t.ToolResponses {
+				contents = append(contents, &genai.Content{
+					Role: "user",
+					Parts: []*genai.Part{{
+						FunctionResponse: &genai.FunctionResponse{
+							Name:     tr.Name,
+							Response: tr.Data.(map[string]any),
+						},
+					}},
+				})
+			}
+			continue
+		}
+
+		// Turno de texto simple
+		if t.Text != "" {
 			contents = append(contents, &genai.Content{
 				Role:  role,
 				Parts: []*genai.Part{{Text: t.Text}},
 			})
 		}
-	} else {
-		contents = []*genai.Content{{Role: genai.RoleUser, Parts: []*genai.Part{{Text: input}}}}
 	}
 
-	closed := false
-	var farewellMsg string
-	var finalResponse string
-
-	for i := 0; i < 10; i++ {
-		botmonitor.Record(botmonitor.Event{
-			TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
-			Provider: string(b.Provider), Stage: "ai_request", Status: "ok",
-			Metadata: map[string]string{
-				"trace_id":            traceID,
-				"system_instructions": systemText,
-				"input":               input,
-			},
+	// Último mensaje del usuario (UserText)
+	if req.UserText != "" {
+		contents = append(contents, &genai.Content{
+			Role:  genai.RoleUser,
+			Parts: []*genai.Part{{Text: req.UserText}},
 		})
+	}
 
-		start := time.Now()
-		result, err := p.generateContentWithRetry(ctx, client, b.Model, contents, genConfig)
-		duration := time.Since(start).Milliseconds()
+	model := req.Model
+	if model == "" {
+		model = domainBot.DefaultGeminiModel
+	}
 
-		if err != nil {
-			botmonitor.Record(botmonitor.Event{
-				TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
-				Provider: string(b.Provider), Stage: "ai_response", Status: "error", Error: err.Error(),
-				DurationMs: duration,
-			})
-			return "", err
+	// CONTEXT CACHING LOGIC
+	// Threshold: 80,000 characters (~26k-32k tokens)
+	totalChars := 0
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			totalChars += len(p.Text)
 		}
+	}
+	totalChars += len(req.SystemPrompt)
 
-		if result != nil && len(result.Candidates) > 0 {
-			botmonitor.Record(botmonitor.Event{
-				TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
-				Provider: string(b.Provider), Stage: "ai_response", Status: "ok",
-				DurationMs: duration,
-				Metadata: map[string]string{
-					"trace_id": traceID,
-					"response": result.Text(),
-				},
-			})
-		}
-		if result == nil || len(result.Candidates) == 0 {
-			break
-		}
+	var cachedContentName string
+	if totalChars > 80000 && len(contents) > 4 {
+		// Cachear el prefijo estable (todo menos los últimos 2 turnos)
+		stablePrefixCount := len(contents) - 2
+		stablePrefix := contents[:stablePrefixCount]
 
-		candidate := result.Candidates[0]
-		contents = append(contents, candidate.Content)
+		fingerprint := p.calculateFingerprint(req.ChatKey, req.SystemPrompt, stablePrefix, functionDecls)
 
-		hasToolCall := false
-		for _, part := range candidate.Content.Parts {
-			if part.FunctionCall != nil {
-				hasToolCall = true
-				toolName := part.FunctionCall.Name
-				args := part.FunctionCall.Args
-
-				var toolResult map[string]any
-				if toolName == "close_chat" {
-					if fw, ok := args["farewell_message"].(string); ok {
-						farewellMsg = strings.TrimSpace(fw)
-					}
-					if p.memoryStore != nil {
-						p.memoryStore.Clear(memoryKey)
-					}
-					closed = true
-					toolResult = map[string]any{"status": "ok"}
-				} else if serverID, ok := serverMap[toolName]; ok {
-					startCall := time.Now()
-					mcpRes, mErr := p.mcpUsecase.CallTool(ctx, b.ID, domainMCP.CallToolRequest{
-						ServerID:  serverID,
-						ToolName:  toolName,
-						Arguments: args,
-					})
-					duration := time.Since(startCall).Milliseconds()
-					if mErr != nil {
-						toolResult = map[string]any{"error": mErr.Error()}
-					} else {
-						toolResult = map[string]any{"content": mcpRes.Content, "is_error": mcpRes.IsError}
-					}
-					argsJS, _ := json.Marshal(args)
-					resJS, _ := json.Marshal(toolResult)
-
-					botmonitor.Record(botmonitor.Event{
-						TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
-						Provider: "mcp", Stage: "mcp_call", Kind: toolName, Status: "ok", DurationMs: duration,
-						Metadata: map[string]string{
-							"trace_id": traceID,
-							"request":  string(argsJS),
-							"response": string(resJS),
-						},
-					})
-				} else {
-					toolResult = map[string]any{"error": "tool not found"}
-				}
-
-				contents = append(contents, &genai.Content{
-					Role: "user",
-					Parts: []*genai.Part{{
-						FunctionResponse: &genai.FunctionResponse{
-							Name:     toolName,
-							Response: toolResult,
-						},
-					}},
-				})
+		if entry, ok := p.caches.Load(fingerprint); ok {
+			e := entry.(contextCacheEntry)
+			if time.Now().Before(e.ExpiresAt) {
+				cachedContentName = e.Name
+				contents = contents[stablePrefixCount:] // Solo enviar lo nuevo
+				logrus.WithFields(logrus.Fields{
+					"chat_key":      req.ChatKey,
+					"cache_name":    cachedContentName,
+					"total_chars":   totalChars,
+					"stable_prefix": stablePrefixCount,
+				}).Info("[CACHE_HIT] Context cache reutilizado")
 			}
 		}
 
-		if !hasToolCall {
-			finalResponse = result.Text()
-			break
+		if cachedContentName == "" {
+			// Crear nuevo cache
+			ttl := 1 * time.Hour
+			cReq := &genai.CreateCachedContentConfig{
+				Contents: stablePrefix,
+				TTL:      ttl,
+			}
+			if req.SystemPrompt != "" {
+				cReq.SystemInstruction = genai.NewContentFromText(req.SystemPrompt, genai.RoleUser)
+			}
+			if len(functionDecls) > 0 {
+				cReq.Tools = []*genai.Tool{{FunctionDeclarations: functionDecls}}
+			}
+
+			cache, cErr := client.Caches.Create(ctx, model, cReq)
+			if cErr == nil {
+				cachedContentName = cache.Name
+				p.caches.Store(fingerprint, contextCacheEntry{
+					Name:      cache.Name,
+					ExpiresAt: time.Now().Add(55 * time.Minute), // Guardar con margen
+				})
+				contents = contents[stablePrefixCount:] // Solo enviar lo nuevo
+				logrus.WithFields(logrus.Fields{
+					"chat_key":        req.ChatKey,
+					"cache_name":      cachedContentName,
+					"total_chars":     totalChars,
+					"cached_turns":    stablePrefixCount,
+					"remaining_turns": len(contents),
+				}).Info("[CACHE_CREATED] Nuevo context cache creado")
+			} else {
+				logrus.WithField("error", cErr.Error()).Warn("[CACHE_ERROR] No se pudo crear context cache")
+			}
 		}
 	}
 
-	if closed && farewellMsg != "" {
-		finalResponse = farewellMsg
+	if genConfig == nil {
+		genConfig = &genai.GenerateContentConfig{}
+	}
+	if cachedContentName != "" {
+		genConfig.CachedContent = cachedContentName
+		// Si usamos cache, el SystemInstruction y Tools ya están en el cache
+		genConfig.SystemInstruction = nil
+		genConfig.Tools = nil
 	}
 
-	if finalResponse != "" && b.MemoryEnabled && strings.TrimSpace(memoryKey) != "" && !closed && p.memoryStore != nil {
-		p.memoryStore.Save(memoryKey, botengine.ChatTurn{Role: "assistant", Text: finalResponse}, 10)
-	}
+	p.applyThinking(genConfig, model, "dynamic")
 
-	return finalResponse, nil
-}
-
-func (p *GeminiProvider) buildSystemInstructions(b bot.Bot) string {
-	var sb strings.Builder
-	if config.GeminiGlobalSystemPrompt != "" {
-		sb.WriteString(config.GeminiGlobalSystemPrompt)
-		sb.WriteString("\n\n")
-	}
-	if b.SystemPrompt != "" {
-		sb.WriteString(b.SystemPrompt)
-		sb.WriteString("\n\n")
-	}
-	if b.KnowledgeBase != "" {
-		sb.WriteString(b.KnowledgeBase)
-		sb.WriteString("\n\n")
-	}
-	tz := b.Timezone
-	if tz == "" {
-		tz = config.GeminiTimezone
-	}
-	if tz == "" {
-		tz = "UTC"
-	}
-	loc, err := time.LoadLocation(tz)
+	result, err := p.generateContentWithRetry(ctx, client, model, contents, genConfig)
 	if err != nil {
-		loc = time.UTC
+		return domain.ChatResponse{}, err
 	}
-	now := time.Now().In(loc)
-	sb.WriteString(fmt.Sprintf("IMPORTANT - Current date and time (%s): %s", tz, now.Format(time.RFC3339)))
-	return sb.String()
+
+	if result == nil || len(result.Candidates) == 0 {
+		return domain.ChatResponse{}, fmt.Errorf("no response from gemini")
+	}
+
+	candidate := result.Candidates[0]
+
+	// Extraer texto manualmente de las partes (más robusto que result.Text())
+	var fullText string
+	for _, part := range candidate.Content.Parts {
+		if part.Text != "" {
+			fullText += part.Text
+		}
+	}
+
+	resp := domain.ChatResponse{
+		Text:       fullText,
+		RawContent: candidate.Content, // PARIDAD ORIGINAL: Preservar el contenido completo
+	}
+
+	// Extraer llamadas a herramientas
+	for _, part := range candidate.Content.Parts {
+		if part.FunctionCall != nil {
+			resp.ToolCalls = append(resp.ToolCalls, domain.ToolCall{
+				Name: part.FunctionCall.Name,
+				Args: part.FunctionCall.Args,
+			})
+		}
+	}
+
+	// Extraer UsageMetadata y calcular costo
+	if result.UsageMetadata != nil {
+		resp.Usage = p.extractUsage(model, result.UsageMetadata)
+
+		logrus.WithFields(logrus.Fields{
+			"chat_key":      req.ChatKey,
+			"model":         model,
+			"input_tokens":  resp.Usage.InputTokens,
+			"output_tokens": resp.Usage.OutputTokens,
+			"cached_tokens": resp.Usage.CachedTokens,
+			"cost_usd":      fmt.Sprintf("$%.6f", resp.Usage.CostUSD),
+		}).Info("[USAGE] Token usage recorded")
+	}
+
+	return resp, nil
 }
 
-func (p *GeminiProvider) generateReplyFromAudio(ctx context.Context, b bot.Bot, memoryKey string, audioBytes []byte, mimeType string, caption string, traceID, instanceID, chatJID string) (string, error) {
+// Interpret implementa la interfaz MultimodalInterpreter para Gemini
+func (p *GeminiProvider) Interpret(ctx context.Context, apiKey string, model string, userText string, medias []*domain.BotMedia) (*domain.MultimodalResult, *domain.UsageStats, error) {
+	if apiKey == "" {
+		return nil, nil, fmt.Errorf("multimodal interpretation requires an API key")
+	}
+
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if model == "" {
+		model = domainBot.DefaultGeminiLiteModel
+	}
+
+	parts := []*genai.Part{{Text: fmt.Sprintf(`Analyze the following media files sent by the user. Their text message was: "%s"
+
+For each media:
+- If it's AUDIO: Transcribe it literally.
+- If it's a STICKER (usually image/webp): Interpret it as an expression, emotion, or meme vibe. Don't be overly literal; describe the "feeling" or "intent" the user is conveying (e.g., 'Sending a funny crying cat to express mock sadness').
+- If it's an IMAGE: Describe what you see in detail.
+- If it's a DOCUMENT: Summarize its content.
+- If it's a VIDEO: Describe what happens in the video and any relevant speech.
+
+Return the results in JSON format.`, userText)}}
+
+	for _, m := range medias {
+		if len(m.Data) > 0 {
+			parts = append(parts, &genai.Part{
+				InlineData: &genai.Blob{MIMEType: m.MimeType, Data: m.Data},
+			})
+		}
+	}
+
+	contents := []*genai.Content{{Role: genai.RoleUser, Parts: parts}}
+
+	cfg := &genai.GenerateContentConfig{
+		ResponseMIMEType: "application/json",
+		ResponseJsonSchema: &genai.Schema{
+			Type: "object",
+			Properties: map[string]*genai.Schema{
+				"transcriptions": {
+					Type:        "array",
+					Items:       &genai.Schema{Type: "string"},
+					Description: "Literal transcriptions of audio files, in order.",
+				},
+				"descriptions": {
+					Type:        "array",
+					Items:       &genai.Schema{Type: "string"},
+					Description: "Visual descriptions of image files, in order.",
+				},
+				"summaries": {
+					Type:        "array",
+					Items:       &genai.Schema{Type: "string"},
+					Description: "Summaries of document files, in order.",
+				},
+				"video_summaries": {
+					Type:        "array",
+					Items:       &genai.Schema{Type: "string"},
+					Description: "Detailed analysis and speech transcription of video files, in order.",
+				},
+			},
+			Required: []string{"transcriptions", "descriptions", "summaries", "video_summaries"},
+		},
+	}
+
+	p.applyThinking(cfg, model, "off")
+
+	result, err := p.generateContentWithRetry(ctx, client, model, contents, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var usage *domain.UsageStats
+	if result.UsageMetadata != nil {
+		usage = p.extractUsage(model, result.UsageMetadata)
+		logrus.WithFields(logrus.Fields{
+			"stage": "multimodal_interpretation",
+			"cost":  usage.CostUSD,
+		}).Info("[USAGE] Multimodal cost recorded")
+	}
+
+	var interpretation struct {
+		Transcriptions []string `json:"transcriptions"`
+		Descriptions   []string `json:"descriptions"`
+		Summaries      []string `json:"summaries"`
+		VideoSummaries []string `json:"video_summaries"`
+	}
+
+	if err := json.Unmarshal([]byte(result.Text()), &interpretation); err != nil {
+		return nil, usage, fmt.Errorf("failed to parse interpretation JSON: %w", err)
+	}
+
+	return &domain.MultimodalResult{
+		Transcriptions: interpretation.Transcriptions,
+		Descriptions:   interpretation.Descriptions,
+		Summaries:      interpretation.Summaries,
+		VideoSummaries: interpretation.VideoSummaries,
+	}, usage, nil
+}
+
+func (p *GeminiProvider) PreAnalyzeMindset(ctx context.Context, b domainBot.Bot, input domain.BotInput, history []domain.ChatTurn) (*domain.Mindset, *domain.UsageStats, error) {
+	if b.APIKey == "" {
+		return &domain.Mindset{Pace: "steady", ShouldRespond: true}, nil, nil
+	}
+
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  b.APIKey,
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 
-	prompt := `Listen to this voice message and transcribe literally. Return JSON with "transcription" field.`
-	if caption != "" {
-		prompt += fmt.Sprintf("\n\nContext: %s", caption)
+	model := b.MindsetModel
+	if model == "" {
+		model = b.Model
+	}
+	if model == "" {
+		model = domainBot.DefaultGeminiLiteModel
 	}
 
-	contents := []*genai.Content{{
-		Role: genai.RoleUser,
-		Parts: []*genai.Part{
-			{Text: prompt},
-			{InlineData: &genai.Blob{MIMEType: mimeType, Data: audioBytes}},
-		},
-	}}
+	isBusy := false
+	if input.LastMindset != nil && input.LastMindset.Work {
+		isBusy = true
+	}
 
-	genCfg := &genai.GenerateContentConfig{
+	var histStr strings.Builder
+	for _, h := range history {
+		histStr.WriteString(fmt.Sprintf("%s: %s\n", h.Role, h.Text))
+	}
+
+	var agendaStr strings.Builder
+	if len(input.PendingTasks) > 0 {
+		agendaStr.WriteString("CURRENT BOT AGENDA (Tasks the bot is planning to do):\n")
+		for _, t := range input.PendingTasks {
+			agendaStr.WriteString(fmt.Sprintf("- %s\n", t))
+		}
+	} else {
+		agendaStr.WriteString("BOT AGENDA: Empty (No pending tasks).")
+	}
+
+	prompt := fmt.Sprintf(`Analyze the following user message and determine the emotional context.
+User message: "%s"
+
+CONTEXT:
+- Recent History:
+%s
+- Is bot busy with a previous task? %v
+- %s
+
+Categorize into:
+- pace: 'fast', 'steady', 'deep'.
+- focus: true if topic is high priority.
+- work: true ONLY if message requires NEW tools or deep analysis.
+- acknowledgement: A short, natural, human phrase. 
+  RULES FOR ACK:
+  1. ONLY provide if WORK is true. Empty otherwise.
+  2. NEVER provide if this message is a direct answer to your previous question or relates to a task in the Agenda.
+- enqueue_task: If NEW task is requested while BUSY, describe it. Empty otherwise.
+- clear_tasks: true if this message RESOLVES current pending tasks.
+- should_respond: Decisions:
+  1. If message contains info for a task in the BOT AGENDA, set should_respond=true.
+  2. If message contains a NEW COMMAND, UPDATE, or CORRECTION, set should_respond=true.
+  3. If WORK is true, set should_respond=true.
+  4. Set should_respond=false ONLY if (IS_BUSY is true) AND (message is Trivial: "ok", "vale", "gracias").
+  5. If IS_BUSY is false, ALWAYS set should_respond=true.
+
+Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, agendaStr.String())
+
+	cfg := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
 		ResponseJsonSchema: &genai.Schema{
 			Type: "object",
 			Properties: map[string]*genai.Schema{
-				"transcription": {Type: "string"},
+				"pace":            {Type: "string", Enum: []string{"fast", "steady", "deep"}},
+				"focus":           {Type: "boolean"},
+				"work":            {Type: "boolean"},
+				"acknowledgement": {Type: "string"},
+				"should_respond":  {Type: "boolean"},
+				"enqueue_task":    {Type: "string"},
+				"clear_tasks":     {Type: "boolean"},
 			},
-			Required: []string{"transcription"},
+			Required: []string{"pace", "focus", "work", "acknowledgement", "should_respond", "enqueue_task", "clear_tasks"},
 		},
 	}
 
-	result, err := p.generateContentWithRetry(ctx, client, b.Model, contents, genCfg)
+	p.applyThinking(cfg, model, "off")
+
+	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: prompt}}}}
+	result, err := p.generateContentWithRetry(ctx, client, model, contents, cfg)
 	if err != nil {
-		return "", err
+		return &domain.Mindset{Pace: "steady"}, nil, nil // Safe fallback
 	}
 
-	var audioResp audioResponse
-	json.Unmarshal([]byte(result.Text()), &audioResp)
-
-	fullInput := audioResp.Transcription
-	if caption != "" {
-		fullInput += "\n\n[Context: " + caption + "]"
+	var usage *domain.UsageStats
+	if result.UsageMetadata != nil {
+		usage = p.extractUsage(model, result.UsageMetadata)
+		logrus.WithFields(logrus.Fields{
+			"stage": "intuition",
+			"cost":  usage.CostUSD,
+		}).Info("[USAGE] Intuition cost recorded")
 	}
 
-	return p.generateReply(ctx, b, memoryKey, fullInput, traceID, instanceID, chatJID, nil)
+	var mindset domain.Mindset
+	if err := json.Unmarshal([]byte(result.Text()), &mindset); err != nil {
+		return &domain.Mindset{Pace: "steady"}, usage, nil
+	}
+
+	return &mindset, usage, nil
 }
 
-func (p *GeminiProvider) generateReplyFromImage(ctx context.Context, b bot.Bot, memoryKey string, imageBytes []byte, mimeType string, caption string, traceID, instanceID, chatJID string) (string, error) {
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  b.APIKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-	if err != nil {
-		return "", err
-	}
+// Privados utilitarios
 
-	prompt := `Look at this image and describe exactly what you see. Return JSON with "description" field.`
-	if caption != "" {
-		prompt += fmt.Sprintf("\n\nContext: %s", caption)
-	}
-
-	contents := []*genai.Content{{
-		Role: genai.RoleUser,
-		Parts: []*genai.Part{
-			{Text: prompt},
-			{InlineData: &genai.Blob{MIMEType: mimeType, Data: imageBytes}},
-		},
-	}}
-
-	genCfg := &genai.GenerateContentConfig{
-		ResponseMIMEType: "application/json",
-		ResponseJsonSchema: &genai.Schema{
-			Type: "object",
-			Properties: map[string]*genai.Schema{
-				"description": {Type: "string"},
-			},
-			Required: []string{"description"},
-		},
-	}
-
-	result, err := p.generateContentWithRetry(ctx, client, b.Model, contents, genCfg)
-	if err != nil {
-		return "", err
-	}
-
-	var imgResp imageResponse
-	json.Unmarshal([]byte(result.Text()), &imgResp)
-
-	fullInput := "Image context: " + imgResp.Description
-	if caption != "" {
-		fullInput += "\n\n[Text: " + caption + "]"
-	}
-
-	return p.generateReply(ctx, b, memoryKey, fullInput, traceID, instanceID, chatJID, nil)
-}
-
-func (p *GeminiProvider) convertMCPSchemaToGemini(input interface{}) *genai.Schema {
+func (p *GeminiProvider) convertMCPSchemaToAI(input interface{}) *genai.Schema {
 	data, _ := json.Marshal(input)
 	var schema genai.Schema
 	json.Unmarshal(data, &schema)
@@ -428,6 +499,26 @@ func (p *GeminiProvider) convertMCPSchemaToGemini(input interface{}) *genai.Sche
 		schema.Type = "object"
 	}
 	return &schema
+}
+
+func (p *GeminiProvider) extractUsage(model string, usage *genai.GenerateContentResponseUsageMetadata) *domain.UsageStats {
+	if usage == nil {
+		return nil
+	}
+	inputTokens := int(usage.PromptTokenCount)
+	outputTokens := int(usage.CandidatesTokenCount)
+	cachedTokens := int(usage.CachedContentTokenCount)
+
+	// Calcular costo usando precios del modelo
+	costUSD := p.calculateCost(model, inputTokens, outputTokens, cachedTokens)
+
+	return &domain.UsageStats{
+		Model:        model,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		CachedTokens: cachedTokens,
+		CostUSD:      costUSD,
+	}
 }
 
 func (p *GeminiProvider) generateContentWithRetry(ctx context.Context, client *genai.Client, model string, contents []*genai.Content, cfg *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
@@ -443,4 +534,87 @@ func (p *GeminiProvider) generateContentWithRetry(ctx context.Context, client *g
 		return nil, err
 	}
 	return nil, fmt.Errorf("max retries exceeded")
+}
+
+func (p *GeminiProvider) applyThinking(cfg *genai.GenerateContentConfig, model string, mode string) {
+	if cfg == nil || model == "" {
+		return
+	}
+
+	isG3 := strings.Contains(model, "gemini-3")
+	isG25 := strings.Contains(model, "gemini-2.5")
+
+	if !isG3 && !isG25 {
+		return
+	}
+
+	if cfg.ThinkingConfig == nil {
+		cfg.ThinkingConfig = &genai.ThinkingConfig{}
+	}
+
+	if mode == "off" {
+		if isG3 {
+			// Para Gemini 3 Flash, minimal es lo más cercano a apagado
+			// Para Gemini 3 Pro no se puede apagar, pero low ahorra recursos
+			lvl := "minimal"
+			if strings.Contains(model, "pro") {
+				lvl = "low"
+			}
+			cfg.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(lvl)
+		} else if isG25 {
+			// Para Gemini 2.5 Flash/Lite, 0 apaga el pensamiento
+			// Pro no permite apagarlo, delegamos a dinámico (-1)
+			if strings.Contains(model, "pro") {
+				budget := int32(-1)
+				cfg.ThinkingConfig.ThinkingBudget = &budget
+			} else {
+				budget := int32(0)
+				cfg.ThinkingConfig.ThinkingBudget = &budget
+			}
+		}
+	} else if mode == "dynamic" {
+		if isG3 {
+			cfg.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel("high")
+		} else if isG25 {
+			budget := int32(-1) // Default dinámico para G2.5
+			cfg.ThinkingConfig.ThinkingBudget = &budget
+		}
+	}
+}
+func (p *GeminiProvider) calculateFingerprint(chatKey, systemPrompt string, contents []*genai.Content, tools []*genai.FunctionDeclaration) string {
+	h := sha256.New()
+	h.Write([]byte(chatKey)) // Usar ChatKey (InstanceID|ChatID) para cache por sesión
+	h.Write([]byte(systemPrompt))
+
+	// Serializar contenido estable para el hash
+	data, _ := json.Marshal(contents)
+	h.Write(data)
+
+	// Serializar herramientas
+	toolData, _ := json.Marshal(tools)
+	h.Write(toolData)
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// calculateCost calcula el costo USD basado en tokens y precios del modelo
+func (p *GeminiProvider) calculateCost(model string, inputTokens, outputTokens, cachedTokens int) float64 {
+	pricing, ok := domainBot.GeminiModelPrices[model]
+	if !ok {
+		// Fallback a precios de gemini-2.5-flash si no se encuentra el modelo
+		pricing = domainBot.GeminiModelPrices[domainBot.DefaultGeminiModel]
+	}
+
+	// Tokens no cacheados (input - cached)
+	regularInputTokens := inputTokens - cachedTokens
+	if regularInputTokens < 0 {
+		regularInputTokens = 0
+	}
+
+	// Costo = (regularInput * inputPrice + cachedInput * cachePrice + output * outputPrice) / 1,000,000
+	inputCost := float64(regularInputTokens) * pricing.InputPerMToken / 1_000_000
+	cachedCost := float64(cachedTokens) * pricing.CacheInputPerMT / 1_000_000
+	outputCost := float64(outputTokens) * pricing.OutputPerMToken / 1_000_000
+
+	return inputCost + cachedCost + outputCost
 }

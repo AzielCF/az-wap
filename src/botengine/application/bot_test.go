@@ -1,40 +1,47 @@
-package usecase
+package application
 
 import (
 	"context"
+	"database/sql"
+	"path/filepath"
 	"testing"
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
-	"github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/botengine/repository"
+	_ "github.com/mattn/go-sqlite3"
 )
 
-// helper to create a fresh BotService using a temporary storages directory
+// helper to create a fresh BotService using a temporary database.
+// No usamos config.GetAppDB() porque internamente tiene un sync.Once que bloquea
+// la redirección de PathStorages si ya fue inicializado.
 func newTestBotService(t *testing.T) *botService {
 	t.Helper()
 
-	// Usamos un directorio temporal para no tocar `storages/instances.db` real.
-	origPathStorages := config.PathStorages
+	// Crear una base de datos SQLite temporal aislada
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_app.db")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("Failed to open test database: %v", err)
+	}
 	t.Cleanup(func() {
-		config.PathStorages = origPathStorages
+		db.Close()
 	})
 
-	config.PathStorages = t.TempDir()
+	// Crear el repositorio con la DB de prueba
+	repo, err := repository.NewBotSQLiteRepositoryWithDB(db)
+	if err != nil {
+		t.Fatalf("Failed to create bot repository: %v", err)
+	}
 
-	svc := NewBotService(nil)
-	// NewBotService siempre devuelve domainBot.IBotUsecase; para los tests sabemos
-	// que es *botService, salvo que falle la inicialización de la DB.
+	// Crear el servicio inyectando el repositorio
+	svc := NewBotServiceWithDeps(repo, nil)
+
 	bs, ok := svc.(*botService)
 	if !ok {
-		t.Fatalf("NewBotService() did not return *botService, got %T", svc)
+		t.Fatalf("NewBotServiceWithDeps() did not return *botService, got %T", svc)
 	}
-	if bs.db == nil {
-		t.Fatalf("NewBotService() returned botService with nil db")
-	}
-	t.Cleanup(func() {
-		if bs.db != nil {
-			_ = bs.db.Close()
-		}
-	})
+
 	return bs
 }
 
@@ -42,11 +49,10 @@ func TestBotService_CreateAndList(t *testing.T) {
 	svc := newTestBotService(t)
 	ctx := context.Background()
 
-	// Creamos un bot básico con provider vacío (debería asumir gemini).
 	created, err := svc.Create(ctx, domainBot.CreateBotRequest{
 		Name:        "Test Bot",
 		Description: "desc",
-		Provider:    "", // se normaliza a ProviderGemini
+		Provider:    "", // se normaliza a ProviderAI
 		APIKey:      "key-123",
 		Model:       "model-1",
 	})
@@ -56,8 +62,8 @@ func TestBotService_CreateAndList(t *testing.T) {
 	if created.ID == "" {
 		t.Fatalf("Create() returned empty ID")
 	}
-	if created.Provider != domainBot.ProviderGemini {
-		t.Fatalf("Create() expected provider %q, got %q", domainBot.ProviderGemini, created.Provider)
+	if created.Provider != domainBot.ProviderAI {
+		t.Fatalf("Create() expected provider %q, got %q", domainBot.ProviderAI, created.Provider)
 	}
 
 	list, err := svc.List(ctx)
@@ -76,12 +82,10 @@ func TestBotService_Create_Validation(t *testing.T) {
 	svc := newTestBotService(t)
 	ctx := context.Background()
 
-	// Nombre vacío
 	if _, err := svc.Create(ctx, domainBot.CreateBotRequest{Name: ""}); err == nil {
 		t.Fatalf("Create() expected error for empty name, got nil")
 	}
 
-	// Provider no soportado
 	if _, err := svc.Create(ctx, domainBot.CreateBotRequest{
 		Name:     "Bot",
 		Provider: domainBot.Provider("other"),
@@ -94,12 +98,10 @@ func TestBotService_GetByID_ValidationAndNotFound(t *testing.T) {
 	svc := newTestBotService(t)
 	ctx := context.Background()
 
-	// id en blanco
 	if _, err := svc.GetByID(ctx, " "); err == nil {
 		t.Fatalf("GetByID() expected error for blank id, got nil")
 	}
 
-	// id inexistente
 	if _, err := svc.GetByID(ctx, "non-existent"); err == nil {
 		t.Fatalf("GetByID() expected error for not found id, got nil")
 	}
@@ -112,7 +114,7 @@ func TestBotService_Update_ChangesFieldsAndValidatesProvider(t *testing.T) {
 	created, err := svc.Create(ctx, domainBot.CreateBotRequest{
 		Name:        "Original",
 		Description: "desc",
-		Provider:    domainBot.ProviderGemini,
+		Provider:    domainBot.ProviderAI,
 		APIKey:      "key-1",
 		Model:       "model-1",
 	})
@@ -120,14 +122,12 @@ func TestBotService_Update_ChangesFieldsAndValidatesProvider(t *testing.T) {
 		t.Fatalf("Create() unexpected error: %v", err)
 	}
 
-	// Provider inválido en Update debe fallar.
 	if _, err := svc.Update(ctx, created.ID, domainBot.UpdateBotRequest{
 		Provider: domainBot.Provider("other"),
 	}); err == nil {
 		t.Fatalf("Update() expected error for unsupported provider, got nil")
 	}
 
-	// Actualización válida: cambiamos nombre y modelo.
 	updated, err := svc.Update(ctx, created.ID, domainBot.UpdateBotRequest{
 		Name:   "Updated",
 		Model:  "model-2",
@@ -151,12 +151,10 @@ func TestBotService_Delete_Validation(t *testing.T) {
 	svc := newTestBotService(t)
 	ctx := context.Background()
 
-	// id en blanco
 	if err := svc.Delete(ctx, " "); err == nil {
 		t.Fatalf("Delete() expected error for blank id, got nil")
 	}
 
-	// id inexistente: debería no fallar (DELETE sobre fila que no existe).
 	if err := svc.Delete(ctx, "non-existent"); err != nil {
 		t.Fatalf("Delete() expected no error for non-existent id, got %v", err)
 	}

@@ -1,4 +1,4 @@
-package botengine
+package infrastructure
 
 import (
 	"context"
@@ -7,12 +7,22 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/AzielCF/az-wap/botengine/domain"
 )
 
 // Humanizer manages human-like behavior simulation for bot responses.
 type Humanizer struct {
 	Enabled bool
-	rng     *rand.Rand
+	Rng     *rand.Rand
+
+	// Configuration
+	CharReadingSpeedMs      int
+	MaxReadingTime          time.Duration
+	BaseQuoteChance         int
+	DelayedQuoteChance      int
+	MultiBubbleQuoteChance  int
+	AdaptiveDebouncePercent int
 }
 
 // TypingProfile defines the bot's typing style.
@@ -73,18 +83,61 @@ var CasualTyperProfile = TypingProfile{
 
 func NewHumanizer(enabled bool) *Humanizer {
 	return &Humanizer{
-		Enabled: enabled,
-		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		Enabled:                 enabled,
+		Rng:                     rand.New(rand.NewSource(time.Now().UnixNano())),
+		CharReadingSpeedMs:      25,
+		MaxReadingTime:          6 * time.Second,
+		BaseQuoteChance:         25,
+		DelayedQuoteChance:      90,
+		MultiBubbleQuoteChance:  100,
+		AdaptiveDebouncePercent: 50,
 	}
 }
 
+// CalculateReadingTime computes how long it takes to read a given text.
+func (h *Humanizer) CalculateReadingTime(text string) time.Duration {
+	t := time.Duration(len(text)) * time.Duration(h.CharReadingSpeedMs) * time.Millisecond
+	if t > h.MaxReadingTime {
+		return h.MaxReadingTime
+	}
+	return t
+}
+
+// GetDebounceDuration returns the grouping time adjusted by variance and user activity.
+func (h *Humanizer) GetDebounceDuration(base time.Duration, msgLen int, textCount int) time.Duration {
+	// 0. Sticky Wait (Patience)
+	// If message is relatively short (common sentence), wait significantly for media or follow-up.
+	if msgLen < 50 {
+		return base + 5000*time.Millisecond
+	}
+
+	// 1. Reading Time
+	reading := h.CalculateReadingTime(string(make([]byte, msgLen))) // dummy string length
+	if reading > base {
+		base = reading
+	}
+
+	// 2. Universal Padding (Always wait a bit more than reading time)
+	// This covers the time it takes to "reach for the record button"
+	base = base + 2000*time.Millisecond
+
+	// 3. Adaptive Economy (if user is spamming)
+	if textCount > 3 {
+		base = base + (base * time.Duration(h.AdaptiveDebouncePercent) / 100)
+	}
+
+	// 4. Human Variance (85% - 115%)
+	variance := time.Duration(h.Rng.Intn(30)-15) * (base / 100)
+	return base + variance
+}
+
 // SimulateTyping simulates human typing behavior using the default profile.
-func (h *Humanizer) SimulateTyping(ctx context.Context, t Transport, chatID string, text string) bool {
+func (h *Humanizer) SimulateTyping(ctx context.Context, t domain.Transport, chatID string, text string) bool {
 	return h.SimulateTypingWithProfile(ctx, t, chatID, text, DefaultProfile)
 }
 
 // SimulateTypingWithProfile simulates human typing using a custom profile.
-func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, chatID string, text string, profile TypingProfile) bool {
+func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Transport, chatID string, text string, profile TypingProfile) bool {
 	if !h.Enabled || t == nil {
 		return true
 	}
@@ -95,14 +148,15 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 	}
 
 	// 1. Initial delay (reading/thinking time)
-	initialDelay := time.Duration(50+h.rng.Intn(100)) * time.Millisecond
+	initialDelay := time.Duration(50+h.Rng.Intn(100)) * time.Millisecond
 	if !h.sleep(ctx, initialDelay) {
 		return false
 	}
 
 	// 2. Start typing effect
-	_ = t.SendPresence(ctx, chatID, true)
-	defer h.stopTyping(ctx, t, chatID)
+	isAudio := h.isAudioText(text)
+	_ = t.SendPresence(ctx, chatID, true, isAudio)
+	defer h.stopTyping(ctx, t, chatID, isAudio)
 
 	// 3. Text analysis
 	charCount := utf8.RuneCountInString(text)
@@ -127,7 +181,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 		consecutiveSpaces = 0
 	)
 
-	nextWordBreak := profile.WordsPerBreak + h.rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
+	nextWordBreak := profile.WordsPerBreak + h.Rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
 	if nextWordBreak < 5 {
 		nextWordBreak = 5
 	}
@@ -136,7 +190,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 		if segmentChars <= 0 {
 			return true
 		}
-		variance := time.Duration(h.rng.Intn(profile.CharDelayVarianceMs+1)) * time.Millisecond
+		variance := time.Duration(h.Rng.Intn(profile.CharDelayVarianceMs+1)) * time.Millisecond
 		perChar := perCharBase + variance
 		delay := time.Duration(segmentChars) * perChar
 
@@ -152,11 +206,11 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 	pauseWithPresence := func(minMs, maxMs int) bool {
 		ms := minMs
 		if maxMs > minMs {
-			ms = minMs + h.rng.Intn(maxMs-minMs+1)
+			ms = minMs + h.Rng.Intn(maxMs-minMs+1)
 		}
 
 		if ms >= 200 {
-			_ = t.SendPresence(ctx, chatID, false)
+			_ = t.SendPresence(ctx, chatID, false, isAudio)
 		}
 
 		if !h.sleep(ctx, time.Duration(ms)*time.Millisecond) {
@@ -164,7 +218,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 		}
 
 		if ms >= 200 {
-			_ = t.SendPresence(ctx, chatID, true)
+			_ = t.SendPresence(ctx, chatID, true, isAudio)
 		}
 		return true
 	}
@@ -188,20 +242,20 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 
 		// Rule 1: Pause every N words (thinking pause)
 		if wordCount >= nextWordBreak {
-			perCharBase = time.Duration(profile.BaseCharDelayMs+h.rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
+			perCharBase = time.Duration(profile.BaseCharDelayMs+h.Rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
 
 			if !flushSegment() {
 				return false
 			}
 
-			if h.rng.Intn(100) < profile.ThinkingPauseChance {
+			if h.Rng.Intn(100) < profile.ThinkingPauseChance {
 				if !pauseWithPresence(profile.ThinkingPauseMinMs, profile.ThinkingPauseMaxMs) {
 					return false
 				}
 			}
 
 			wordCount = 0
-			nextWordBreak = profile.WordsPerBreak + h.rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
+			nextWordBreak = profile.WordsPerBreak + h.Rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
 			if nextWordBreak < 5 {
 				nextWordBreak = 5
 			}
@@ -210,8 +264,8 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 
 		// Rule 2: Strong punctuation pauses (. ! ?)
 		if r == '.' || r == '!' || r == '?' {
-			if i < len(runes)-1 && h.rng.Intn(100) < profile.PunctuationPauseChance {
-				perCharBase = time.Duration(profile.BaseCharDelayMs+h.rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
+			if i < len(runes)-1 && h.Rng.Intn(100) < profile.PunctuationPauseChance {
+				perCharBase = time.Duration(profile.BaseCharDelayMs+h.Rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
 				if !flushSegment() {
 					return false
 				}
@@ -223,7 +277,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 
 		// Rule 3: Newline pauses
 		if r == '\n' {
-			perCharBase = time.Duration(profile.BaseCharDelayMs+h.rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
+			perCharBase = time.Duration(profile.BaseCharDelayMs+h.Rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
 			if !flushSegment() {
 				return false
 			}
@@ -247,11 +301,11 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 
 		// Rule 4: Micro-pauses for commas/colons
 		if r == ',' || r == ':' || r == ';' {
-			if h.rng.Intn(100) < 20 {
+			if h.Rng.Intn(100) < 20 {
 				if !flushSegment() {
 					return false
 				}
-				if !h.sleep(ctx, time.Duration(60+h.rng.Intn(100))*time.Millisecond) {
+				if !h.sleep(ctx, time.Duration(60+h.Rng.Intn(100))*time.Millisecond) {
 					return false
 				}
 			}
@@ -262,29 +316,37 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t Transport, 
 			if !flushSegment() {
 				return false
 			}
-			if !h.sleep(ctx, time.Duration(100+h.rng.Intn(250))*time.Millisecond) {
+			if !h.sleep(ctx, time.Duration(100+h.Rng.Intn(250))*time.Millisecond) {
 				return false
 			}
 		}
 	}
 
 	// 5. Final flush and pre-send pause
-	perCharBase = time.Duration(profile.BaseCharDelayMs+h.rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
+	perCharBase = time.Duration(profile.BaseCharDelayMs+h.Rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
 	if !flushSegment() {
 		return false
 	}
 
-	_ = t.SendPresence(ctx, chatID, false)
-	return h.sleep(ctx, time.Duration(80+h.rng.Intn(180))*time.Millisecond)
+	_ = t.SendPresence(ctx, chatID, false, isAudio)
+	return h.sleep(ctx, time.Duration(80+h.Rng.Intn(180))*time.Millisecond)
 }
 
-func (h *Humanizer) stopTyping(ctx context.Context, t Transport, chatID string) {
+func (h *Humanizer) stopTyping(ctx context.Context, t domain.Transport, chatID string, isAudio bool) {
 	if t == nil {
 		return
 	}
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = t.SendPresence(stopCtx, chatID, false)
+	_ = t.SendPresence(stopCtx, chatID, false, isAudio)
+}
+
+func (h *Humanizer) isAudioText(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "audio") ||
+		strings.Contains(lower, "graba") ||
+		strings.Contains(lower, "escucha") ||
+		strings.Contains(lower, "nota de voz")
 }
 
 func (h *Humanizer) sleep(ctx context.Context, d time.Duration) bool {
@@ -299,6 +361,74 @@ func (h *Humanizer) sleep(ctx context.Context, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+// SplitIntoBubbles breaks a long text into logically separated chunks (paragraphs)
+// to simulate multiple "message bubbles" like a human would.
+func (h *Humanizer) SplitIntoBubbles(text string) []string {
+	if text == "" {
+		return nil
+	}
+
+	// ANTI-BAN & REALISM: 30% chance to NOT split at all, even if it has paragraphs.
+	if h.Rng.Intn(100) < 30 {
+		return []string{text}
+	}
+
+	// 1. Separate by double newlines (paragraphs)
+	paragraphs := strings.Split(text, "\n\n")
+	var bubbles []string
+
+	for _, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		// 2. If a paragraph is still too long (e.g. > 600 chars), split by sentences
+		if len(p) > 600 {
+			sentences := h.splitIntoSentences(p)
+			bubbles = append(bubbles, sentences...)
+		} else {
+			bubbles = append(bubbles, p)
+		}
+	}
+
+	// SAFETY LIMIT: Max 3 bubbles to avoid ban risk on non-official API
+	if len(bubbles) <= 3 {
+		return bubbles
+	}
+
+	// If we have more than 3, we take the first 2 as is,
+	// and merge ALL remaining text into the 3rd bubble.
+	result := []string{bubbles[0], bubbles[1]}
+	remaining := strings.Join(bubbles[2:], "\n\n")
+	result = append(result, remaining)
+
+	return result
+}
+
+func (h *Humanizer) splitIntoSentences(text string) []string {
+	var sentences []string
+	current := ""
+
+	// Basic sentence splitter by . ! ? followed by space or newline
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		current += string(runes[i])
+		if runes[i] == '.' || runes[i] == '!' || runes[i] == '?' {
+			if i+1 < len(runes) && (unicode.IsSpace(runes[i+1]) || runes[i+1] == '\n') {
+				sentences = append(sentences, strings.TrimSpace(current))
+				current = ""
+			}
+		}
+	}
+
+	if strings.TrimSpace(current) != "" {
+		sentences = append(sentences, strings.TrimSpace(current))
+	}
+
+	return sentences
 }
 
 func isEmoji(r rune) bool {
