@@ -22,6 +22,7 @@ var (
 	AppBasicAuthCredential []string
 	AppBasePath            = ""
 	AppTrustedProxies      []string // Trusted proxy IP ranges (e.g., "0.0.0.0/0" for all, or specific CIDRs)
+	AppBaseUrl             = "http://localhost:3000"
 
 	McpPort = "8080"
 	McpHost = "localhost"

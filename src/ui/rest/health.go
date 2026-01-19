@@ -13,7 +13,7 @@ type Health struct {
 func InitRestHealth(app fiber.Router, service health.IHealthUsecase) Health {
 	handler := Health{Service: service}
 
-	group := app.Group("/api/health")
+	group := app.Group("/health")
 	group.Get("/status", handler.GetStatus)
 	group.Post("/check-all", handler.CheckAll)
 	group.Post("/mcp/:id/check", handler.CheckMCP)

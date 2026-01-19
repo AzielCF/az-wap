@@ -49,8 +49,7 @@ import (
 )
 
 var (
-	EmbedIndex embed.FS
-	EmbedViews embed.FS
+	EmbedFrontend embed.FS
 
 	// Whatsapp
 	whatsappCli *whatsmeow.Client
@@ -454,9 +453,8 @@ func GetBotEngine() *botengine.Engine {
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-func Execute(embedIndex embed.FS, embedViews embed.FS) {
-	EmbedIndex = embedIndex
-	EmbedViews = embedViews
+func Execute(embedFrontend embed.FS) {
+	EmbedFrontend = embedFrontend
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

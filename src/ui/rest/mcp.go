@@ -13,7 +13,7 @@ type MCP struct {
 func InitRestMCP(app fiber.Router, service domainMCP.IMCPUsecase) MCP {
 	rest := MCP{Service: service}
 
-	group := app.Group("/api/mcp")
+	group := app.Group("/mcp")
 	group.Get("/servers", rest.ListServers)
 	group.Post("/servers", rest.AddServer)
 	group.Get("/servers/:id", rest.GetServer)

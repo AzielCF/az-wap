@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"fmt"
-
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
@@ -17,9 +15,10 @@ func Recovery() fiber.Handler {
 				var res utils.ResponseData
 				res.Status = 500
 				res.Code = "INTERNAL_SERVER_ERROR"
-				res.Message = fmt.Sprintf("%v", err)
+				// Security: Do not leak internal error details to the client
+				res.Message = "An unexpected error occurred. Please contact support."
 
-				// Log the panic using logrus
+				// Log the panic using logrus with full details for admins
 				logrus.Errorf("Panic recovered in middleware: %v", err)
 
 				errValidation, isValidationError := err.(pkgError.GenericError)
