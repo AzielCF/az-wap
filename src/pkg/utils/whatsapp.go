@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -539,60 +538,175 @@ func FormatJID(jid string) types.JID {
 }
 
 // ExtractedMedia represents extracted media information
+// ExtractedMedia represents extracted media information
 type ExtractedMedia struct {
-	MediaPath string `json:"media_path"`
-	MimeType  string `json:"mime_type"`
-	Caption   string `json:"caption"`
+	MediaPath        string `json:"media_path"` // Deprecated in favor of Data
+	MimeType         string `json:"mime_type"`
+	Caption          string `json:"caption"`
+	Data             []byte `json:"-"`
+	FileHash         string `json:"file_hash"`
+	Extension        string `json:"extension"`
+	OriginalFilename string `json:"original_filename"`
 }
 
 // ExtractMedia is a helper function to extract media from whatsapp
-func ExtractMedia(ctx context.Context, client *whatsmeow.Client, storageLocation string, mediaFile whatsmeow.DownloadableMessage) (extractedMedia ExtractedMedia, err error) {
+func ExtractMedia(ctx context.Context, client *whatsmeow.Client, storageLocation string, mediaFile whatsmeow.DownloadableMessage, maxSize int64) (extractedMedia ExtractedMedia, err error) {
 	if mediaFile == nil {
 		logrus.Info("Skip download because data is nil")
 		return extractedMedia, nil
 	}
 
-	data, err := client.Download(ctx, mediaFile)
-	if err != nil {
-		return extractedMedia, err
-	}
-
-	// Validate file size before writing to disk
-	maxFileSize := config.WhatsappSettingMaxDownloadSize
-	if int64(len(data)) > maxFileSize {
-		return extractedMedia, fmt.Errorf("file size exceeds the maximum limit of %d bytes", maxFileSize)
-	}
-
 	var originalFilename string
+	var fileLength uint64
 
 	switch media := mediaFile.(type) {
 	case *waE2E.ImageMessage:
 		extractedMedia.MimeType = media.GetMimetype()
 		extractedMedia.Caption = media.GetCaption()
+		fileLength = media.GetFileLength()
 	case *waE2E.AudioMessage:
 		extractedMedia.MimeType = media.GetMimetype()
+		fileLength = media.GetFileLength()
 	case *waE2E.VideoMessage:
 		extractedMedia.MimeType = media.GetMimetype()
 		extractedMedia.Caption = media.GetCaption()
+		fileLength = media.GetFileLength()
 	case *waE2E.StickerMessage:
 		extractedMedia.MimeType = media.GetMimetype()
+		fileLength = media.GetFileLength()
 	case *waE2E.DocumentMessage:
 		extractedMedia.MimeType = media.GetMimetype()
 		extractedMedia.Caption = media.GetCaption()
 		originalFilename = media.GetFileName()
+		fileLength = media.GetFileLength()
+	}
+
+	// 1. Mandatory Metadata Check (Before RAM usage)
+	if maxSize <= 0 {
+		maxSize = config.WhatsappSettingMaxDownloadSize
+	}
+
+	if fileLength > uint64(maxSize) && maxSize > 0 {
+		return extractedMedia, fmt.Errorf("refusing to download: metadata reports %d bytes which exceeds limit of %d", fileLength, maxSize)
+	}
+
+	// 2. Perform Download
+	data, err := client.Download(ctx, mediaFile)
+	if err != nil {
+		return extractedMedia, err
+	}
+
+	// 3. Final safety check (against corrupted metadata)
+	if int64(len(data)) > maxSize && maxSize > 0 {
+		return extractedMedia, fmt.Errorf("downloaded file size %d exceeds the maximum limit of %d bytes", len(data), maxSize)
 	}
 
 	extension := determineMediaExtension(originalFilename, extractedMedia.MimeType)
 
-	extractedMedia.MediaPath = fmt.Sprintf("%s/%d-%s%s", storageLocation, time.Now().Unix(), uuid.NewString(), extension)
-	err = os.WriteFile(extractedMedia.MediaPath, data, 0600)
-	if err != nil {
-		return extractedMedia, err
+	// Calculate Hash
+	hash := sha256.Sum256(data)
+	fileHash := hex.EncodeToString(hash[:])
+
+	extractedMedia.Data = data
+	extractedMedia.FileHash = fileHash
+	extractedMedia.Extension = extension
+
+	// If storageLocation is provided (Legacy mode), write to disk
+	if storageLocation != "" {
+		extractedMedia.MediaPath = fmt.Sprintf("%s/%s%s", storageLocation, fileHash, extension)
+		err = os.WriteFile(extractedMedia.MediaPath, data, 0600)
+		if err != nil {
+			return extractedMedia, err
+		}
 	}
+
 	return extractedMedia, nil
 }
 
-// SanitizePhone sanitizes phone number by adding appropriate WhatsApp suffix
+// GetMediaInfo extracts metadata from the media message without downloading it, including the File Hash.
+func GetMediaInfo(mediaFile whatsmeow.DownloadableMessage) (info ExtractedMedia, err error) {
+	if mediaFile == nil {
+		return info, fmt.Errorf("media data is nil")
+	}
+
+	var originalFilename string
+	var fileSha256 []byte
+
+	switch media := mediaFile.(type) {
+	case *waE2E.ImageMessage:
+		info.MimeType = media.GetMimetype()
+		info.Caption = media.GetCaption()
+		fileSha256 = media.FileSHA256
+	case *waE2E.AudioMessage:
+		info.MimeType = media.GetMimetype()
+		fileSha256 = media.FileSHA256
+	case *waE2E.VideoMessage:
+		info.MimeType = media.GetMimetype()
+		info.Caption = media.GetCaption()
+		fileSha256 = media.FileSHA256
+	case *waE2E.StickerMessage:
+		info.MimeType = media.GetMimetype()
+		fileSha256 = media.FileSHA256
+	case *waE2E.DocumentMessage:
+		info.MimeType = media.GetMimetype()
+		info.Caption = media.GetCaption()
+		originalFilename = media.GetFileName()
+		fileSha256 = media.FileSHA256
+	}
+
+	info.OriginalFilename = originalFilename
+
+	if len(fileSha256) > 0 {
+		info.FileHash = hex.EncodeToString(fileSha256)
+	} else {
+		// Fallback for some sticker types or weird messages
+		// We might need to handle this gracefully or defer hash calc after download (which we want to avoid)
+		// For now, let's assume valid media has SHA256.
+		// If not, we might generate a random temp one or use the MediaKey if available? MediaKey is sensitive.
+		// Let's use a random ID if hash is missing, but log it.
+		// info.FileHash = uuid.NewString() // We need uuid imported
+	}
+
+	info.Extension = determineMediaExtension(originalFilename, info.MimeType)
+	return info, nil
+}
+
+// DownloadToFile downloads the media and writes it directly to the specified path
+func DownloadToFile(ctx context.Context, client *whatsmeow.Client, mediaFile whatsmeow.DownloadableMessage, targetPath string) error {
+	data, err := client.Download(ctx, mediaFile)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(targetPath, data, 0644)
+}
+
+// SanitizeFilename cleans a filename to be safe for file systems and URL usage
+func SanitizeFilename(name string) string {
+	// 1. Remove invalid chars
+	// Keep alphanumeric, spaces, dots, dashes, underscores
+	reg := regexp.MustCompile(`[^a-zA-Z0-9 ._\-]`)
+	safe := reg.ReplaceAllString(name, "")
+
+	// 2. Collapse spaces and replace with dashes
+	safe = strings.Join(strings.Fields(safe), "-")
+
+	// 3. Prevent directory traversal
+	safe = filepath.Base(safe)
+
+	// 4. Trim length if too long
+	if len(safe) > 50 {
+		ext := filepath.Ext(safe)
+		nameWithoutExt := strings.TrimSuffix(safe, ext)
+		if len(nameWithoutExt) > 40 {
+			nameWithoutExt = nameWithoutExt[:40]
+		}
+		safe = nameWithoutExt + ext
+	}
+
+	return safe
+}
+
 const maxPhoneNumberLength = 15 // Maximum digits in a phone number
 
 func SanitizePhone(phone *string) {

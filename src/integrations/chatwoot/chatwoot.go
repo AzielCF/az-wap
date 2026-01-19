@@ -3,6 +3,7 @@ package chatwoot
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -37,22 +38,30 @@ const (
 )
 
 var (
-	httpClient          = &http.Client{Timeout: httpTimeout}
+	httpClient         = &http.Client{Timeout: httpTimeout}
+	insecureHttpClient = &http.Client{
+		Timeout: httpTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
 	contactCacheMu      sync.RWMutex
 	contactCache        = make(map[string]cachedContact)
 	conversationCacheMu sync.RWMutex
 	conversationCache   = make(map[string]cachedConversation)
 )
 
-type instanceChatwootConfig struct {
-	InstanceID      string
-	BaseURL         string
-	AccountID       int64
-	InboxID         int64
-	InboxIdentifier string
-	AccountToken    string
-	BotToken        string
-	Enabled         bool
+type Config struct {
+	InstanceID         string
+	BaseURL            string
+	AccountID          int64
+	InboxID            int64
+	InboxIdentifier    string
+	AccountToken       string
+	BotToken           string
+	Enabled            bool
+	InsecureSkipVerify bool
+	CredentialID       string
 }
 
 type cachedContact struct {
@@ -88,13 +97,13 @@ func ForwardWhatsAppMessage(ctx context.Context, instanceID, phone string, evt *
 		return
 	}
 
-	cfg, err := loadInstanceConfig(ctx, instanceID)
+	cfg, err := loadChannelConfig(ctx, instanceID)
 	if err != nil {
 		logrus.WithError(err).Errorf("[CHATWOOT] failed to load config for %s", instanceID)
 		return
 	}
 	if cfg == nil || !cfg.Enabled {
-		return // Instancia no configurada o Chatwoot deshabilitado
+		return // Canal no configurado o Chatwoot deshabilitado
 	}
 
 	// Procesar Texto
@@ -156,8 +165,62 @@ func ForwardBotReplyFromEvent(ctx context.Context, instanceID, phone, reply stri
 	}
 }
 
+// ForwardBotReplyWithConfig allows forwarding a bot reply using an explicit configuration.
+func ForwardBotReplyWithConfig(ctx context.Context, conf *Config, phone, reply string) {
+	if !conf.Enabled || reply == "" || phone == "" {
+		return
+	}
+
+	contactID, sourceID, err := ensureContact(ctx, conf, phone, "")
+	if err != nil {
+		logrus.WithError(err).Error("[CHATWOOT] failed to ensure contact")
+		return
+	}
+
+	// Try cached conversation
+	if convID, ok := getCachedConversation(conf.InstanceID, phone); ok && convID != 0 {
+		if err := sendTextToConversation(ctx, conf, convID, reply, "outgoing", map[string]interface{}{"from_bot": true}); err == nil {
+			return
+		}
+	}
+
+	// Create/Find conversation
+	convID, err := createConversationWithMessage(ctx, conf, contactID, sourceID, reply, nil, 1)
+	if err != nil {
+		logrus.WithError(err).Error("[CHATWOOT] failed to forward bot reply with config")
+		return
+	}
+	setCachedConversation(conf.InstanceID, phone, convID)
+}
+
+// ForwardIncomingMessageWithConfig forwards an incoming message to Chatwoot using an explicit configuration.
+func ForwardIncomingMessageWithConfig(ctx context.Context, cfg *Config, phone, name, text string, mediaItems []chatmedia.Item) {
+	if cfg == nil || !cfg.Enabled {
+		return
+	}
+
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return
+	}
+
+	// Gestionar Contacto y Conversación
+	contactID, sourceID, err := ensureContact(ctx, cfg, phone, name)
+	if err != nil {
+		logrus.WithError(err).Errorf("[CHATWOOT] failed to ensure contact for %s", phone)
+		return
+	}
+
+	convID, err := createConversationWithMessage(ctx, cfg, contactID, sourceID, text, mediaItems, 0)
+	if err != nil {
+		logrus.WithError(err).Errorf("[CHATWOOT] failed to create conversation for %s", phone)
+		return
+	}
+	setCachedConversation(cfg.InstanceID, phone, convID)
+}
+
 // sendTextToConversation envía solo texto a una conversación ya conocida.
-func sendTextToConversation(ctx context.Context, cfg *instanceChatwootConfig, convID int64, text string, messageType string, contentAttrs map[string]interface{}) error {
+func sendTextToConversation(ctx context.Context, cfg *Config, convID int64, text string, messageType string, contentAttrs map[string]interface{}) error {
 	if convID == 0 || text == "" {
 		return fmt.Errorf("missing conversation or text")
 	}
@@ -233,66 +296,106 @@ func sendTextToConversation(ctx context.Context, cfg *instanceChatwootConfig, co
 
 // --- LOGIC: CONFIG LOADING ---
 
-func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceChatwootConfig, error) {
-	dbPath := fmt.Sprintf("%s/instances.db", config.PathStorages)
+func loadChannelConfig(ctx context.Context, externalRef string) (*Config, error) {
+	dbPath := fmt.Sprintf("%s/workspaces.db", config.PathStorages)
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=on", dbPath))
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	var baseUrl, accId, inboxId, inboxIdent, accToken, botToken, botID sql.NullString
-	var enabled sql.NullInt64
-	query := `SELECT chatwoot_base_url, chatwoot_account_id, chatwoot_inbox_id, chatwoot_inbox_identifier, chatwoot_account_token, chatwoot_bot_token, chatwoot_enabled, bot_id FROM instances WHERE id = ?`
-	if err := db.QueryRowContext(ctx, query, instanceID).Scan(&baseUrl, &accId, &inboxId, &inboxIdent, &accToken, &botToken, &enabled, &botID); err != nil {
+	var configJSON sql.NullString
+	query := `SELECT config FROM channels WHERE external_ref = ?`
+	if err := db.QueryRowContext(ctx, query, externalRef).Scan(&configJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	cfg := &instanceChatwootConfig{
-		InstanceID:   instanceID,
-		BaseURL:      strings.TrimRight(strings.TrimSpace(baseUrl.String), "/"),
-		AccountToken: strings.TrimSpace(accToken.String),
-		Enabled:      !enabled.Valid || enabled.Int64 != 0,
-	}
-
-	if cfg.BaseURL == "" || cfg.AccountToken == "" {
-		logrus.Debugf("[CHATWOOT] instance %s incomplete config", instanceID)
+	if !configJSON.Valid || configJSON.String == "" {
 		return nil, nil
 	}
 
-	cfg.AccountID, _ = strconv.ParseInt(strings.TrimSpace(accId.String), 10, 64)
-	cfg.InboxID, _ = strconv.ParseInt(strings.TrimSpace(inboxId.String), 10, 64)
+	var chConfig struct {
+		Chatwoot *struct {
+			Enabled         bool   `json:"enabled"`
+			AccountID       int64  `json:"account_id"`
+			InboxID         int64  `json:"inbox_id"`
+			Token           string `json:"token"`
+			URL             string `json:"url"`
+			BotToken        string `json:"bot_token,omitempty"`
+			InboxIdentifier string `json:"inbox_identifier,omitempty"`
+			CredentialID    string `json:"credential_id,omitempty"`
+		} `json:"chatwoot"`
+		BotID string `json:"bot_id"`
+	}
 
-	if cfg.AccountID <= 0 || cfg.InboxID <= 0 {
+	if err := json.Unmarshal([]byte(configJSON.String), &chConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal channel config: %w", err)
+	}
+
+	if chConfig.Chatwoot == nil || !chConfig.Chatwoot.Enabled {
 		return nil, nil
 	}
 
-	cfg.BotToken = strings.TrimSpace(botToken.String)
-	// Si la instancia tiene un bot asignado, damos prioridad al bot.chatwoot_bot_token o al de su credencial.
-	if botID.Valid && strings.TrimSpace(botID.String) != "" {
+	cw := chConfig.Chatwoot
+	cfg := &Config{
+		InstanceID:   externalRef,
+		BaseURL:      strings.TrimRight(strings.TrimSpace(cw.URL), "/"),
+		AccountToken: strings.TrimSpace(cw.Token),
+		Enabled:      cw.Enabled,
+		AccountID:    cw.AccountID,
+		InboxID:      cw.InboxID,
+		BotToken:     strings.TrimSpace(cw.BotToken),
+	}
+
+	appDB, _ := config.GetAppDB()
+
+	// Resolve Credential if provided
+	if cw.CredentialID != "" && appDB != nil {
+		var credTok sql.NullString
+		var credURL sql.NullString
+		var botToken sql.NullString
+		err := appDB.QueryRowContext(ctx, `SELECT chatwoot_account_token, chatwoot_base_url, chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, cw.CredentialID).
+			Scan(&credTok, &credURL, &botToken)
+		if err == nil {
+			if cfg.AccountToken == "" {
+				cfg.AccountToken = strings.TrimSpace(credTok.String)
+			}
+			if cfg.BaseURL == "" {
+				cfg.BaseURL = strings.TrimRight(strings.TrimSpace(credURL.String), "/")
+			}
+			if cfg.BotToken == "" {
+				cfg.BotToken = strings.TrimSpace(botToken.String)
+			}
+		}
+	}
+
+	// Resolve Bot Token if BotID provided
+	if chConfig.BotID != "" && cfg.BotToken == "" && appDB != nil {
 		var botTok, botCred sql.NullString
-		if err := db.QueryRowContext(ctx, `SELECT chatwoot_bot_token, chatwoot_credential_id FROM bots WHERE id = ?`, strings.TrimSpace(botID.String)).
+		if err := appDB.QueryRowContext(ctx, `SELECT chatwoot_bot_token, chatwoot_credential_id FROM bots WHERE id = ?`, chConfig.BotID).
 			Scan(&botTok, &botCred); err == nil {
 			if strings.TrimSpace(botTok.String) != "" {
 				cfg.BotToken = strings.TrimSpace(botTok.String)
 			}
-			if botCred.Valid && strings.TrimSpace(botCred.String) != "" {
+			if botCred.Valid && strings.TrimSpace(botCred.String) != "" && cfg.BotToken == "" {
 				var credBotTok sql.NullString
-				if err := db.QueryRowContext(ctx, `SELECT chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, strings.TrimSpace(botCred.String)).
-					Scan(&credBotTok); err == nil && strings.TrimSpace(credBotTok.String) != "" {
+				if err := appDB.QueryRowContext(ctx, `SELECT chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, strings.TrimSpace(botCred.String)).
+					Scan(&credBotTok); err == nil {
 					cfg.BotToken = strings.TrimSpace(credBotTok.String)
 				}
 			}
-		} else if err != sql.ErrNoRows {
-			logrus.WithError(err).Warnf("[CHATWOOT] failed to resolve bot Chatwoot token")
 		}
 	}
 
-	if inboxIdent.Valid && strings.TrimSpace(inboxIdent.String) != "" {
-		cfg.InboxIdentifier = strings.TrimSpace(inboxIdent.String)
+	if cfg.BaseURL == "" || cfg.AccountToken == "" {
+		return nil, nil
+	}
+
+	if cw.InboxIdentifier != "" {
+		cfg.InboxIdentifier = cw.InboxIdentifier
 	} else {
 		cfg.InboxIdentifier = resolveInboxIdentifier(ctx, cfg)
 		if cfg.InboxIdentifier == "" {
@@ -303,7 +406,7 @@ func loadInstanceConfig(ctx context.Context, instanceID string) (*instanceChatwo
 	return cfg, nil
 }
 
-func resolveInboxIdentifier(ctx context.Context, cfg *instanceChatwootConfig) string {
+func resolveInboxIdentifier(ctx context.Context, cfg *Config) string {
 	url := fmt.Sprintf("%s/api/v1/accounts/%d/inboxes/%d", cfg.BaseURL, cfg.AccountID, cfg.InboxID)
 	var resp struct {
 		Identifier string `json:"identifier"`
@@ -323,12 +426,12 @@ func resolveInboxIdentifier(ctx context.Context, cfg *instanceChatwootConfig) st
 
 // IsInstanceEnabled devuelve true si la integración de Chatwoot está habilitada y correctamente
 // configurada para la instancia indicada.
-func IsInstanceEnabled(ctx context.Context, instanceID string) bool {
-	instanceID = strings.TrimSpace(instanceID)
-	if instanceID == "" {
+func IsChannelEnabled(ctx context.Context, externalRef string) bool {
+	externalRef = strings.TrimSpace(externalRef)
+	if externalRef == "" {
 		return false
 	}
-	cfg, err := loadInstanceConfig(ctx, instanceID)
+	cfg, err := loadChannelConfig(ctx, externalRef)
 	if err != nil || cfg == nil {
 		return false
 	}
@@ -337,7 +440,7 @@ func IsInstanceEnabled(ctx context.Context, instanceID string) bool {
 
 // --- LOGIC: CONTACT MANAGEMENT ---
 
-func ensureContact(ctx context.Context, cfg *instanceChatwootConfig, phone, name string) (int64, string, error) {
+func ensureContact(ctx context.Context, cfg *Config, phone, name string) (int64, string, error) {
 	// 1. Cache Check
 	if id, src, ok := getCachedContact(cfg.InstanceID, phone); ok {
 		logrus.Infof("[CHATWOOT] contact cache hit: %s", phone)
@@ -430,7 +533,7 @@ func ensureContact(ctx context.Context, cfg *instanceChatwootConfig, phone, name
 	return contact.ID, srcID, nil
 }
 
-func findContactByPhone(ctx context.Context, cfg *instanceChatwootConfig, phone string) (int64, string, error) {
+func findContactByPhone(ctx context.Context, cfg *Config, phone string) (int64, string, error) {
 	searchURL := fmt.Sprintf("%s/api/v1/accounts/%d/contacts/search?q=%s", cfg.BaseURL, cfg.AccountID, url.QueryEscape(phone))
 	var resp struct {
 		Payload []struct {
@@ -467,7 +570,7 @@ func findContactByPhone(ctx context.Context, cfg *instanceChatwootConfig, phone 
 
 // createConversationWithMessage garantiza que exista una conversación para el contacto
 // y envía el mensaje con el messageType indicado (0: incoming, 1: outgoing).
-func createConversationWithMessage(ctx context.Context, cfg *instanceChatwootConfig, contactID int64, sourceID, text string, mediaItems []chatmedia.Item, messageType int) (int64, error) {
+func createConversationWithMessage(ctx context.Context, cfg *Config, contactID int64, sourceID, text string, mediaItems []chatmedia.Item, messageType int) (int64, error) {
 	// A. Find or Create Conversation
 	convID, _ := findExistingConversation(ctx, cfg, contactID) // Ignoramos error, fallback a crear
 	if convID == 0 {
@@ -518,7 +621,7 @@ func forwardBotTextMessage(ctx context.Context, instanceID, phone, text string) 
 		return nil
 	}
 
-	cfg, err := loadInstanceConfig(ctx, instanceID)
+	cfg, err := loadChannelConfig(ctx, instanceID)
 	if err != nil {
 		return err
 	}
@@ -548,7 +651,7 @@ func forwardBotTextMessage(ctx context.Context, instanceID, phone, text string) 
 	return nil
 }
 
-func findExistingConversation(ctx context.Context, cfg *instanceChatwootConfig, contactID int64) (int64, error) {
+func findExistingConversation(ctx context.Context, cfg *Config, contactID int64) (int64, error) {
 	if contactID <= 0 {
 		return 0, nil
 	}
@@ -596,7 +699,7 @@ func findExistingConversation(ctx context.Context, cfg *instanceChatwootConfig, 
 	return fallback, nil
 }
 
-func sendAttachmentMessage(ctx context.Context, cfg *instanceChatwootConfig, convID int64, sourceID string, mediaItems []chatmedia.Item) error {
+func sendAttachmentMessage(ctx context.Context, cfg *Config, convID int64, sourceID string, mediaItems []chatmedia.Item) error {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
@@ -655,6 +758,10 @@ func sendAttachmentMessage(ctx context.Context, cfg *instanceChatwootConfig, con
 
 // jsonRequest unifica la creación, ejecución y decodificación de peticiones API.
 func jsonRequest(ctx context.Context, method, url, token string, body interface{}, dest interface{}) error {
+	return jsonRequestWithConfig(ctx, method, url, &Config{AccountToken: token}, body, dest)
+}
+
+func jsonRequestWithConfig(ctx context.Context, method, url string, cfg *Config, body interface{}, dest interface{}) error {
 	var bodyReader io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -668,11 +775,15 @@ func jsonRequest(ctx context.Context, method, url, token string, body interface{
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if token != "" {
-		req.Header.Set("api_access_token", token)
+	if cfg != nil && cfg.AccountToken != "" {
+		req.Header.Set("api_access_token", cfg.AccountToken)
 	}
 
-	resp, err := httpClient.Do(req)
+	client := httpClient
+	if cfg != nil && cfg.InsecureSkipVerify {
+		client = insecureHttpClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

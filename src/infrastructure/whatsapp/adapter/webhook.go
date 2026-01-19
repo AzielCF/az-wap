@@ -1,4 +1,4 @@
-package whatsapp
+package adapter
 
 import (
 	"bytes"
@@ -11,17 +11,24 @@ import (
 	"time"
 
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 
-func submitWebhook(ctx context.Context, payload map[string]any, url string) error {
-	cfg := getWebhookConfigForContext(ctx)
+// submitWebhook delivers the payload to a single URL
+func (wa *WhatsAppAdapter) submitWebhook(ctx context.Context, payload map[string]any, url string) error {
+	var insecureSkipVerify bool
+	var secret string
 
-	// Configure HTTP client with optional TLS skip verification
+	// Extract webhook config from adapter settings
+	if webhookCfg, ok := wa.config.Settings["webhook"].(map[string]any); ok {
+		insecureSkipVerify, _ = webhookCfg["insecure_skip_verify"].(bool)
+		secret, _ = webhookCfg["secret"].(string)
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: cfg.InsecureSkipVerify,
+			InsecureSkipVerify: insecureSkipVerify,
 		},
 	}
 	client := &http.Client{
@@ -39,21 +46,22 @@ func submitWebhook(ctx context.Context, payload map[string]any, url string) erro
 		return pkgError.WebhookError(fmt.Sprintf("error when create http object %v", err))
 	}
 
-	secretKey := []byte(cfg.Secret)
-	signature, err := utils.GetMessageDigestOrSignature(postBody, secretKey)
+	secretKey := []byte(secret)
+	signature, err := pkgUtils.GetMessageDigestOrSignature(postBody, secretKey)
 	if err != nil {
 		return pkgError.WebhookError(fmt.Sprintf("error when create signature %v", err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Hub-Signature-256", fmt.Sprintf("sha256=%s", signature))
+	if secret != "" {
+		req.Header.Set("X-Hub-Signature-256", fmt.Sprintf("sha256=%s", signature))
+	}
 
 	var attempt int
 	var maxAttempts = 5
 	var sleepDuration = 1 * time.Second
 
 	for attempt = 0; attempt < maxAttempts; attempt++ {
-		// Create new request body for each attempt
 		req.Body = io.NopCloser(bytes.NewBuffer(postBody))
 		resp, err := client.Do(req)
 		if err == nil {
