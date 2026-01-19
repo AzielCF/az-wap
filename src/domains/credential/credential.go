@@ -5,7 +5,10 @@ import "context"
 type Kind string
 
 const (
+	KindAI       Kind = "ai"
 	KindGemini   Kind = "gemini"
+	KindOpenAI   Kind = "openai"
+	KindClaude   Kind = "claude"
 	KindChatwoot Kind = "chatwoot"
 )
 
@@ -13,7 +16,7 @@ type Credential struct {
 	ID                   string `json:"id"`
 	Name                 string `json:"name"`
 	Kind                 Kind   `json:"kind"`
-	GeminiAPIKey         string `json:"gemini_api_key,omitempty"`
+	AIAPIKey             string `json:"ai_api_key,omitempty"`
 	ChatwootBaseURL      string `json:"chatwoot_base_url,omitempty"`
 	ChatwootAccountToken string `json:"chatwoot_account_token,omitempty"`
 	ChatwootBotToken     string `json:"chatwoot_bot_token,omitempty"`
@@ -22,7 +25,7 @@ type Credential struct {
 type CreateCredentialRequest struct {
 	Name                 string `json:"name"`
 	Kind                 Kind   `json:"kind"`
-	GeminiAPIKey         string `json:"gemini_api_key"`
+	AIAPIKey             string `json:"ai_api_key"`
 	ChatwootBaseURL      string `json:"chatwoot_base_url"`
 	ChatwootAccountToken string `json:"chatwoot_account_token"`
 	ChatwootBotToken     string `json:"chatwoot_bot_token"`
@@ -30,7 +33,7 @@ type CreateCredentialRequest struct {
 
 type UpdateCredentialRequest struct {
 	Name                 string `json:"name"`
-	GeminiAPIKey         string `json:"gemini_api_key"`
+	AIAPIKey             string `json:"ai_api_key"`
 	ChatwootBaseURL      string `json:"chatwoot_base_url"`
 	ChatwootAccountToken string `json:"chatwoot_account_token"`
 	ChatwootBotToken     string `json:"chatwoot_bot_token"`

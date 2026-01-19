@@ -8,9 +8,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/AzielCF/az-wap/config"
+	globalConfig "github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/ui/rest"
-	"github.com/AzielCF/az-wap/ui/rest/helpers"
 	"github.com/AzielCF/az-wap/ui/rest/middleware"
 	"github.com/AzielCF/az-wap/ui/websocket"
 	"github.com/dustin/go-humanize"
@@ -43,13 +42,13 @@ func restServer(_ *cobra.Command, _ []string) {
 	fiberConfig := fiber.Config{
 		Views:                   engine,
 		EnableTrustedProxyCheck: true,
-		BodyLimit:               int(config.WhatsappSettingMaxVideoSize),
+		BodyLimit:               int(globalConfig.WhatsappSettingMaxVideoSize),
 		Network:                 "tcp",
 	}
 
 	// Configure proxy settings if trusted proxies are specified
-	if len(config.AppTrustedProxies) > 0 {
-		fiberConfig.TrustedProxies = config.AppTrustedProxies
+	if len(globalConfig.AppTrustedProxies) > 0 {
+		fiberConfig.TrustedProxies = globalConfig.AppTrustedProxies
 		fiberConfig.ProxyHeader = fiber.HeaderXForwardedHost
 	}
 
@@ -57,20 +56,20 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	app.Use(middleware.Recovery())
 	app.Use(middleware.BasicAuth())
-	if config.AppDebug {
+	if globalConfig.AppDebug {
 		app.Use(logger.New())
 	}
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Instance-Token",
 	}))
 
-	if len(config.AppBasicAuthCredential) == 0 {
+	if len(globalConfig.AppBasicAuthCredential) == 0 {
 		logrus.Fatalln("APP_BASIC_AUTH is required. Nothing should be public; please set APP_BASIC_AUTH=<user>:<secret>[,<user2>:<secret2>] and restart.")
 	}
 
 	account := make(map[string]string)
-	for _, basicAuth := range config.AppBasicAuthCredential {
+	for _, basicAuth := range globalConfig.AppBasicAuthCredential {
 		ba := strings.Split(basicAuth, ":")
 		if len(ba) != 2 {
 			logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
@@ -87,7 +86,7 @@ func restServer(_ *cobra.Command, _ []string) {
 			}
 			// Allow Chatwoot webhooks without BasicAuth. They are authenticated at handler-level.
 			path := c.Path()
-			basePath := config.AppBasePath
+			basePath := globalConfig.AppBasePath
 			if basePath != "" && !strings.HasPrefix(basePath, "/") {
 				basePath = "/" + basePath
 			}
@@ -101,13 +100,13 @@ func restServer(_ *cobra.Command, _ []string) {
 	}))
 
 	// Static assets should also be protected by auth. Register them AFTER auth middleware.
-	app.Static(config.AppBasePath+"/statics", "./statics")
-	app.Use(config.AppBasePath+"/components", filesystem.New(filesystem.Config{
+	app.Static(globalConfig.AppBasePath+"/statics", "./statics")
+	app.Use(globalConfig.AppBasePath+"/components", filesystem.New(filesystem.Config{
 		Root:       http.FS(EmbedViews),
 		PathPrefix: "views/components",
 		Browse:     true,
 	}))
-	app.Use(config.AppBasePath+"/assets", filesystem.New(filesystem.Config{
+	app.Use(globalConfig.AppBasePath+"/assets", filesystem.New(filesystem.Config{
 		Root:       http.FS(EmbedViews),
 		PathPrefix: "views/assets",
 		Browse:     true,
@@ -115,8 +114,8 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Create base path group or use app directly
 	var apiGroup fiber.Router = app
-	if config.AppBasePath != "" {
-		apiGroup = app.Group(config.AppBasePath)
+	if globalConfig.AppBasePath != "" {
+		apiGroup = app.Group(globalConfig.AppBasePath)
 	}
 
 	// Rest
@@ -128,7 +127,8 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestGroup(apiGroup, groupUsecase)
 	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase)
-	rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase)
+	// rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase) // DEPRECATED
+	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
 	rest.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
@@ -140,15 +140,16 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Bot monitor endpoint
 	apiGroup.Get("/api/bot-monitor/stats", rest.GetBotMonitorStats)
+	apiGroup.Get("/api/monitoring/typing", rest.GetTypingStatus)
 
 	apiGroup.Get("/", func(c *fiber.Ctx) error {
 		return c.Render("views/index", fiber.Map{
 			"AppHost":        fmt.Sprintf("%s://%s", c.Protocol(), c.Hostname()),
-			"AppVersion":     config.AppVersion,
-			"AppBasePath":    config.AppBasePath,
+			"AppVersion":     globalConfig.AppVersion,
+			"AppBasePath":    globalConfig.AppBasePath,
 			"BasicAuthToken": c.UserContext().Value(middleware.AuthorizationValue("BASIC_AUTH")),
-			"MaxFileSize":    humanize.Bytes(uint64(config.WhatsappSettingMaxFileSize)),
-			"MaxVideoSize":   humanize.Bytes(uint64(config.WhatsappSettingMaxVideoSize)),
+			"MaxFileSize":    humanize.Bytes(uint64(globalConfig.WhatsappSettingMaxFileSize)),
+			"MaxVideoSize":   humanize.Bytes(uint64(globalConfig.WhatsappSettingMaxVideoSize)),
 		})
 	})
 
@@ -156,10 +157,10 @@ func restServer(_ *cobra.Command, _ []string) {
 	go websocket.RunHub()
 
 	// Set auto reconnect to whatsapp server after booting
-	go helpers.SetAutoConnectAfterBooting(appUsecase)
+	// go helpers.SetAutoConnectAfterBooting(appUsecase) // Disabled Legacy AutoConnect
 
 	// Set auto reconnect checking with a guaranteed client instance
-	startAutoReconnectCheckerIfClientAvailable()
+	// startAutoReconnectCheckerIfClientAvailable() // Disabled Legacy AutoCheck
 
 	// Graceful shutdown handler
 	sigChan := make(chan os.Signal, 1)
@@ -176,15 +177,9 @@ func restServer(_ *cobra.Command, _ []string) {
 	}()
 
 	// Register Workspace Handlers
-	if config.AppDebug { // Or always, depending on preference. Usually always.
-		wsHandler := rest.NewWorkspaceHandler(wkUsecase)
-		wsHandler.Register(app)
-	} else {
-		wsHandler := rest.NewWorkspaceHandler(wkUsecase)
-		wsHandler.Register(app)
-	}
+	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
 
-	if err := app.Listen(":" + config.AppPort); err != nil {
+	if err := app.Listen(":" + globalConfig.AppPort); err != nil {
 		logrus.Fatalln("Failed to start: ", err.Error())
 	}
 }

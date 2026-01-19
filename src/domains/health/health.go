@@ -11,6 +11,8 @@ const (
 	EntityMCP        EntityType = "mcp_server"
 	EntityCredential EntityType = "ia_credential"
 	EntityBot        EntityType = "bot"
+	EntityWorkspace  EntityType = "workspace"
+	EntityChannel    EntityType = "channel"
 )
 
 type Status string
@@ -35,6 +37,8 @@ type IHealthUsecase interface {
 	CheckMCP(ctx context.Context, id string) (HealthRecord, error)
 	CheckCredential(ctx context.Context, id string) (HealthRecord, error)
 	CheckBot(ctx context.Context, id string) (HealthRecord, error)
+	CheckWorkspace(ctx context.Context, id string) (HealthRecord, error)
+	CheckChannel(ctx context.Context, id string) (HealthRecord, error)
 	CheckAll(ctx context.Context) ([]HealthRecord, error)
 	GetStatus(ctx context.Context) ([]HealthRecord, error)
 	GetEntityStatus(ctx context.Context, entityType EntityType, entityID string) (HealthRecord, error)
