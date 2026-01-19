@@ -1,9 +1,67 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, RouterLink, RouterView } from 'vue-router'
+import { useApi } from '@/composables/useApi'
+
+const router = useRouter()
+const isReady = ref(false)
+const { get } = useApi()
+
+onMounted(async () => {
+    // Wait for router
+    await router.isReady()
+    
+    // Optional: Validate session if we have a token and are not on public route
+    const token = localStorage.getItem('api_token')
+    if (token && !router.currentRoute.value.meta.isPublic) {
+      try {
+        await get('/health/status')
+      } catch (e: any) {
+        // If 401, clear token and redirect
+        if (e.response && e.response.status === 401) {
+          localStorage.removeItem('api_token')
+          if (router.currentRoute.value.name !== 'login') {
+            router.push('/login')
+          }
+        }
+      }
+    }
+
+    // Small artificial delay for smoothness if loading was too fast
+    await new Promise(r => setTimeout(r, 500))
+    isReady.value = true
+})
 </script>
 
 <template>
-  <div class="drawer lg:drawer-open font-sans">
+  <div v-if="!isReady" class="min-h-screen bg-[#0b0e14] flex flex-col items-center justify-center relative overflow-hidden">
+     <!-- Background Effects -->
+    <div class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+        <div class="absolute top-[30%] left-[30%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px] animate-pulse"></div>
+    </div>
+    
+    <!-- Logo Loader -->
+    <div class="relative z-10 flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-700">
+        <div class="w-24 h-24 rounded-[2rem] bg-[#161a23] border border-white/5 flex items-center justify-center p-6 shadow-2xl relative">
+            <div class="absolute inset-0 rounded-[2rem] border border-primary/20 animate-pulse"></div>
+            <img src="/src/assets/azwap.svg" class="w-full h-full object-contain" alt="Loading..." />
+        </div>
+        <div class="flex flex-col items-center gap-2">
+            <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white">Az-Wap Enterprise</h2>
+            <div class="flex gap-1">
+                <span class="w-1 h-1 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                <span class="w-1 h-1 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                <span class="w-1 h-1 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+            </div>
+        </div>
+    </div>
+  </div>
+  
+  <div v-else-if="$route.meta.isPublic" class="min-h-screen bg-[#0b0e14]">
+    <RouterView />
+  </div>
+
+  <div v-else class="drawer lg:drawer-open font-sans">
     <input id="main-drawer" type="checkbox" class="drawer-toggle" />
     
     <div class="drawer-content flex flex-col bg-[#0b0e14] min-h-screen">
@@ -31,7 +89,7 @@ import { RouterLink, RouterView } from 'vue-router'
       <!-- Footer -->
       <footer class="footer footer-center p-6 bg-[#0b0e14] text-slate-500 text-[10px] font-bold uppercase tracking-widest border-t border-white/5">
         <aside>
-          <p>© 2026 AzielCF - AI WhatsApp Automation Engine</p>
+          <p>© 2026 <a href="https://azielcruzado.com" target="_blank" rel="noopener noreferrer" class="text-primary">AzielCF</a> - AI WhatsApp Automation Engine</p>
         </aside>
       </footer>
     </div>

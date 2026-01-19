@@ -10,6 +10,12 @@ const router = createRouter({
       component: HomeView,
     },
     {
+      path: '/login',
+      name: 'login',
+      component: () => import('../views/LoginView.vue'),
+      meta: { isPublic: true }
+    },
+    {
       path: '/workspaces',
       name: 'workspaces',
       component: () => import('../views/WorkspacesView.vue'),
@@ -50,6 +56,15 @@ const router = createRouter({
       component: () => import('../views/SettingsView.vue'),
     },
   ],
+})
+
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('api_token')
+  if (!token && !to.meta.isPublic) {
+    next({ name: 'login' })
+  } else {
+    next()
+  }
 })
 
 export default router
