@@ -19,6 +19,8 @@ func InitRestHealth(app fiber.Router, service health.IHealthUsecase) Health {
 	group.Post("/mcp/:id/check", handler.CheckMCP)
 	group.Post("/credentials/:id/check", handler.CheckCredential)
 	group.Post("/bot/:id/check", handler.CheckBot)
+	group.Post("/workspace/:id/check", handler.CheckWorkspace)
+	group.Post("/channel/:id/check", handler.CheckChannel)
 
 	return handler
 }
@@ -106,6 +108,42 @@ func (h *Health) CheckBot(c *fiber.Ctx) error {
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Bot health check completed",
+		Results: record,
+	})
+}
+
+func (h *Health) CheckWorkspace(c *fiber.Ctx) error {
+	id := c.Params("id")
+	record, err := h.Service.CheckWorkspace(c.UserContext(), id)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		})
+	}
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Workspace health check completed",
+		Results: record,
+	})
+}
+
+func (h *Health) CheckChannel(c *fiber.Ctx) error {
+	id := c.Params("id")
+	record, err := h.Service.CheckChannel(c.UserContext(), id)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{
+			Status:  500,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		})
+	}
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Channel health check completed",
 		Results: record,
 	})
 }

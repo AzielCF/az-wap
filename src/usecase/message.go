@@ -3,98 +3,49 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/AzielCF/az-wap/config"
-	domainApp "github.com/AzielCF/az-wap/domains/app"
-	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
-	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
-	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
-	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/validations"
-	"github.com/sirupsen/logrus"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/proto/waCommon"
-	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/proto/waSyncAction"
-	"go.mau.fi/whatsmeow/types"
-	"google.golang.org/protobuf/proto"
+	"github.com/AzielCF/az-wap/workspace"
+	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 )
 
 type serviceMessage struct {
-	appService      domainApp.IAppUsecase
-	chatStorageRepo domainChatStorage.IChatStorageRepository
-	instanceService domainInstance.IInstanceUsecase
+	workspaceMgr *workspace.Manager
 }
 
-func NewMessageService(appService domainApp.IAppUsecase, chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainMessage.IMessageUsecase {
+func NewMessageService(workspaceMgr *workspace.Manager) domainMessage.IMessageUsecase {
 	return &serviceMessage{
-		appService:      appService,
-		chatStorageRepo: chatStorageRepo,
-		instanceService: instanceService,
+		workspaceMgr: workspaceMgr,
 	}
 }
 
-// getChatStorageForToken devuelve el repositorio de chatstorage apropiado según el token.
-// Si hay instancia y token válido, utiliza el storage por instancia; en caso contrario, el global.
-func (service serviceMessage) getChatStorageForToken(ctx context.Context, token string) domainChatStorage.IChatStorageRepository {
-	repo := service.chatStorageRepo
-	if token == "" || service.instanceService == nil {
-		return repo
+func (service serviceMessage) getAdapterForToken(ctx context.Context, token string) (wsChannelDomain.ChannelAdapter, error) {
+	if token == "" {
+		return nil, fmt.Errorf("token missing")
 	}
 
-	inst, err := service.instanceService.GetByToken(ctx, token)
-	if err != nil {
-		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to resolve instance for token in message service, falling back to global chatstorage")
-		return repo
+	adapter, ok := service.workspaceMgr.GetAdapter(token)
+	if !ok {
+		return nil, fmt.Errorf("channel adapter %s not found or not active", token)
 	}
 
-	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(inst.ID)
-	if err != nil {
-		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to get instance chatstorage repo in message service, falling back to global chatstorage")
-		return repo
-	}
-
-	return instanceRepo
-}
-
-func (service serviceMessage) ensureClientForToken(ctx context.Context, token string) error {
-	if token == "" || service.appService == nil {
-		return nil
-	}
-	_, err := service.appService.FirstDevice(ctx, token)
-	return err
+	return adapter, nil
 }
 
 func (service serviceMessage) MarkAsRead(ctx context.Context, request domainMessage.MarkAsReadRequest) (response domainMessage.GenericResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateMarkAsRead(ctx, request); err != nil {
 		return response, err
 	}
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	ids := []types.MessageID{request.MessageID}
-	if err = whatsapp.GetClient().MarkRead(ctx, ids, time.Now(), dataWaRecipient, *whatsapp.GetClient().Store.ID); err != nil {
+	if err = adapter.MarkRead(ctx, request.Phone, []string{request.MessageID}); err != nil {
 		return response, err
 	}
-
-	logrus.Info(map[string]any{
-		"phone":      request.Phone,
-		"message_id": request.MessageID,
-		"chat":       dataWaRecipient.String(),
-		"sender":     whatsapp.GetClient().Store.ID.String(),
-	})
 
 	response.MessageID = request.MessageID
 	response.Status = fmt.Sprintf("Mark as read success %s", request.MessageID)
@@ -102,280 +53,100 @@ func (service serviceMessage) MarkAsRead(ctx context.Context, request domainMess
 }
 
 func (service serviceMessage) ReactMessage(ctx context.Context, request domainMessage.ReactionRequest) (response domainMessage.GenericResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateReactMessage(ctx, request); err != nil {
 		return response, err
 	}
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	msg := &waE2E.Message{
-		ReactionMessage: &waE2E.ReactionMessage{
-			Key: &waCommon.MessageKey{
-				FromMe:    proto.Bool(true),
-				ID:        proto.String(request.MessageID),
-				RemoteJID: proto.String(dataWaRecipient.String()),
-			},
-			Text:              proto.String(request.Emoji),
-			SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
-		},
-	}
-	ts, err := whatsapp.GetClient().SendMessage(ctx, dataWaRecipient, msg)
+	msgID, err := adapter.ReactMessage(ctx, request.Phone, request.MessageID, request.Emoji)
 	if err != nil {
 		return response, err
 	}
 
-	response.MessageID = ts.ID
-	response.Status = fmt.Sprintf("Reaction sent to %s (server timestamp: %s)", request.Phone, ts.Timestamp)
+	response.MessageID = msgID
+	response.Status = fmt.Sprintf("Reaction sent to %s", request.Phone)
 	return response, nil
 }
 
 func (service serviceMessage) RevokeMessage(ctx context.Context, request domainMessage.RevokeRequest) (response domainMessage.GenericResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateRevokeMessage(ctx, request); err != nil {
 		return response, err
 	}
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	ts, err := whatsapp.GetClient().SendMessage(context.Background(), dataWaRecipient, whatsapp.GetClient().BuildRevoke(dataWaRecipient, types.EmptyJID, request.MessageID))
+	msgID, err := adapter.RevokeMessage(ctx, request.Phone, request.MessageID)
 	if err != nil {
 		return response, err
 	}
 
-	response.MessageID = ts.ID
-	response.Status = fmt.Sprintf("Revoke success %s (server timestamp: %s)", request.Phone, ts.Timestamp)
+	response.MessageID = msgID
+	response.Status = fmt.Sprintf("Revoke success %s", request.Phone)
 	return response, nil
 }
 
 func (service serviceMessage) DeleteMessage(ctx context.Context, request domainMessage.DeleteRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateDeleteMessage(ctx, request); err != nil {
 		return err
 	}
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	isFromMe := "1"
-	if len(request.MessageID) > 22 {
-		isFromMe = "0"
-	}
-
-	patchInfo := appstate.PatchInfo{
-		Timestamp: time.Now(),
-		Type:      appstate.WAPatchRegularHigh,
-		Mutations: []appstate.MutationInfo{{
-			Index: []string{appstate.IndexDeleteMessageForMe, dataWaRecipient.String(), request.MessageID, isFromMe, whatsapp.GetClient().Store.ID.String()},
-			Value: &waSyncAction.SyncActionValue{
-				DeleteMessageForMeAction: &waSyncAction.DeleteMessageForMeAction{
-					DeleteMedia:      proto.Bool(true),
-					MessageTimestamp: proto.Int64(time.Now().UnixMilli()),
-				},
-			},
-		}},
-	}
-
-	if err = whatsapp.GetClient().SendAppState(ctx, patchInfo); err != nil {
-		return err
-	}
-	return nil
+	return adapter.DeleteMessageForMe(ctx, request.Phone, request.MessageID)
 }
 
 func (service serviceMessage) UpdateMessage(ctx context.Context, request domainMessage.UpdateMessageRequest) (response domainMessage.GenericResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateUpdateMessage(ctx, request); err != nil {
 		return response, err
 	}
 
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
-	if err != nil {
-		return response, err
-	}
-
-	msg := &waE2E.Message{Conversation: proto.String(request.Message)}
-	ts, err := whatsapp.GetClient().SendMessage(context.Background(), dataWaRecipient, whatsapp.GetClient().BuildEdit(dataWaRecipient, request.MessageID, msg))
-	if err != nil {
-		return response, err
-	}
-
-	response.MessageID = ts.ID
-	response.Status = fmt.Sprintf("Update message success %s (server timestamp: %s)", request.Phone, ts.Timestamp)
-	return response, nil
+	// NOTE: Edit/Update message not directly in ChannelAdapter yet for text.
+	// The adapter usually handles SendMessage. WhatsApp Edit is a specific call.
+	// We might need to add it to ChannelAdapter or use SendMessage with edit flag?
+	// For now returns error or unimplemented.
+	return response, fmt.Errorf("UpdateMessage not implemented in adapter yet")
 }
 
-// StarMessage implements message.IMessageService.
 func (service serviceMessage) StarMessage(ctx context.Context, request domainMessage.StarRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateStarMessage(ctx, request); err != nil {
 		return err
 	}
 
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	isFromMe := true
-	if len(request.MessageID) > 22 {
-		isFromMe = false
-	}
-
-	patchInfo := appstate.BuildStar(dataWaRecipient.ToNonAD(), *whatsapp.GetClient().Store.ID, request.MessageID, isFromMe, request.IsStarred)
-
-	if err = whatsapp.GetClient().SendAppState(ctx, patchInfo); err != nil {
-		return err
-	}
-	return nil
+	return adapter.StarMessage(ctx, request.Phone, request.MessageID, request.IsStarred)
 }
 
-// DownloadMedia implements message.IMessageService.
 func (service serviceMessage) DownloadMedia(ctx context.Context, request domainMessage.DownloadMediaRequest) (response domainMessage.DownloadMediaResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateDownloadMedia(ctx, request); err != nil {
 		return response, err
 	}
 
-	dataWaRecipient, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.Phone)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	// Resolver el repositorio de chatstorage adecuado según el token (instancia) o global.
-	repo := service.getChatStorageForToken(ctx, request.Token)
-
-	// Query the message from chat storage
-	message, err := repo.GetMessageByID(request.MessageID)
+	path, err := adapter.DownloadMedia(ctx, request.MessageID, request.Phone)
 	if err != nil {
-		return response, fmt.Errorf("message not found: %v", err)
+		return response, err
 	}
 
-	if message == nil {
-		return response, fmt.Errorf("message with ID %s not found", request.MessageID)
-	}
-
-	// Check if message has media
-	if message.MediaType == "" || message.URL == "" {
-		return response, fmt.Errorf("message %s does not contain downloadable media", request.MessageID)
-	}
-
-	// Verify the message is from the specified chat
-	if message.ChatJID != dataWaRecipient.String() {
-		return response, fmt.Errorf("message %s does not belong to chat %s", request.MessageID, dataWaRecipient.String())
-	}
-
-	// Create directory structure for organized storage outside statics/media
-	baseDir := filepath.Join(config.PathStorages, "downloads")
-	chatDir := filepath.Join(baseDir, utils.ExtractPhoneNumber(message.ChatJID))
-	dateDir := filepath.Join(chatDir, message.Timestamp.Format("2006-01-02"))
-
-	err = os.MkdirAll(dateDir, 0755)
-	if err != nil {
-		return response, fmt.Errorf("failed to create directory: %v", err)
-	}
-
-	// Create a downloadable message interface based on media type
-	var downloadableMsg interface{}
-
-	switch message.MediaType {
-	case "image":
-		downloadableMsg = &waE2E.ImageMessage{
-			URL:           proto.String(message.URL),
-			MediaKey:      message.MediaKey,
-			FileSHA256:    message.FileSHA256,
-			FileEncSHA256: message.FileEncSHA256,
-			FileLength:    proto.Uint64(message.FileLength),
-		}
-	case "video":
-		downloadableMsg = &waE2E.VideoMessage{
-			URL:           proto.String(message.URL),
-			MediaKey:      message.MediaKey,
-			FileSHA256:    message.FileSHA256,
-			FileEncSHA256: message.FileEncSHA256,
-			FileLength:    proto.Uint64(message.FileLength),
-		}
-	case "audio":
-		downloadableMsg = &waE2E.AudioMessage{
-			URL:           proto.String(message.URL),
-			MediaKey:      message.MediaKey,
-			FileSHA256:    message.FileSHA256,
-			FileEncSHA256: message.FileEncSHA256,
-			FileLength:    proto.Uint64(message.FileLength),
-		}
-	case "document":
-		downloadableMsg = &waE2E.DocumentMessage{
-			URL:           proto.String(message.URL),
-			MediaKey:      message.MediaKey,
-			FileSHA256:    message.FileSHA256,
-			FileEncSHA256: message.FileEncSHA256,
-			FileLength:    proto.Uint64(message.FileLength),
-			FileName:      proto.String(message.Filename),
-		}
-	case "sticker":
-		downloadableMsg = &waE2E.StickerMessage{
-			URL:           proto.String(message.URL),
-			MediaKey:      message.MediaKey,
-			FileSHA256:    message.FileSHA256,
-			FileEncSHA256: message.FileEncSHA256,
-			FileLength:    proto.Uint64(message.FileLength),
-		}
-	default:
-		return response, fmt.Errorf("unsupported media type: %s", message.MediaType)
-	}
-
-	// Download the media using existing utils.ExtractMedia function
-	extractedMedia, err := utils.ExtractMedia(ctx, whatsapp.GetClient(), dateDir, downloadableMsg.(whatsmeow.DownloadableMessage))
-	if err != nil {
-		return response, fmt.Errorf("failed to download media: %v", err)
-	}
-
-	// Get file size
-	fileInfo, err := os.Stat(extractedMedia.MediaPath)
-	if err != nil {
-		logrus.Warnf("Could not get file size for %s: %v", extractedMedia.MediaPath, err)
-	}
-
-	// Build response
 	response.MessageID = request.MessageID
-	response.Status = fmt.Sprintf("Media downloaded successfully to %s", extractedMedia.MediaPath)
-	response.MediaType = message.MediaType
-	response.Filename = filepath.Base(extractedMedia.MediaPath)
-	response.FilePath = extractedMedia.MediaPath
-	if fileInfo != nil {
-		response.FileSize = fileInfo.Size()
-	}
-
-	logrus.Info(map[string]any{
-		"message_id": request.MessageID,
-		"phone":      request.Phone,
-		"chat":       dataWaRecipient.String(),
-		"media_type": response.MediaType,
-		"file_path":  response.FilePath,
-		"file_size":  response.FileSize,
-	})
-
+	response.Status = "Media downloaded successfully"
+	response.FilePath = path
 	return response, nil
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -40,8 +39,11 @@ func (h *AppHandler) toolConnectionStatus() mcp.Tool {
 	)
 }
 
-func (h *AppHandler) handleConnectionStatus(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	isConnected, isLoggedIn, deviceID := whatsapp.GetConnectionStatus()
+func (h *AppHandler) handleConnectionStatus(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	isConnected, isLoggedIn, deviceID, err := h.appService.GetConnectionStatus(ctx, "")
+	if err != nil {
+		// return nil, err // Optional: fail or return disconnected
+	}
 
 	structured := map[string]any{
 		"is_connected": isConnected,
