@@ -1,4 +1,4 @@
-package domain
+package workspace
 
 import "time"
 
@@ -27,7 +27,7 @@ type WorkspaceLimits struct {
 	RateLimitPerMinute int `json:"rate_limit_per_minute"`
 }
 
-// DefaultLimits for new workspaces
+// DefaultLimits para nuevos workspaces
 var DefaultLimits = WorkspaceLimits{
 	MaxMessagesPerDay:  10000,
 	MaxChannels:        5,

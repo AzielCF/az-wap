@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/AzielCF/az-wap/workspace/domain"
+	"github.com/AzielCF/az-wap/workspace/domain/channel"
+	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/AzielCF/az-wap/workspace/usecase"
 	_ "github.com/mattn/go-sqlite3"
@@ -25,7 +26,7 @@ func setupTestDB(t *testing.T) *repository.SQLiteRepository {
 
 func TestCreateWorkspace(t *testing.T) {
 	repo := setupTestDB(t)
-	uc := usecase.NewWorkspaceUsecase(repo)
+	uc := usecase.NewWorkspaceUsecase(repo, nil)
 
 	ws, err := uc.CreateWorkspace(context.Background(), "Test Workspace", "Description", "owner123")
 
@@ -37,7 +38,7 @@ func TestCreateWorkspace(t *testing.T) {
 		t.Errorf("expected name 'Test Workspace', got %s", ws.Name)
 	}
 
-	if ws.Limits.MaxChannels != domain.DefaultLimits.MaxChannels {
+	if ws.Limits.MaxChannels != wsDomain.DefaultLimits.MaxChannels {
 		t.Errorf("expected default limits")
 	}
 
@@ -53,21 +54,21 @@ func TestCreateWorkspace(t *testing.T) {
 
 func TestCreateChannel(t *testing.T) {
 	repo := setupTestDB(t)
-	uc := usecase.NewWorkspaceUsecase(repo)
+	uc := usecase.NewWorkspaceUsecase(repo, nil)
 
 	ws, _ := uc.CreateWorkspace(context.Background(), "WS1", "Desc", "owner")
 
-	ch, err := uc.CreateChannel(context.Background(), ws.ID, domain.ChannelTypeWhatsApp, "My WhatsApp")
+	ch, err := uc.CreateChannel(context.Background(), ws.ID, channel.ChannelTypeWhatsApp, "My WhatsApp")
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if ch.Type != domain.ChannelTypeWhatsApp {
+	if ch.Type != channel.ChannelTypeWhatsApp {
 		t.Errorf("expected type whatsapp, got %s", ch.Type)
 	}
 
-	if ch.Status != domain.ChannelStatusPending {
+	if ch.Status != channel.ChannelStatusPending {
 		t.Errorf("expected status pending, got %s", ch.Status)
 	}
 
@@ -83,7 +84,7 @@ func TestCreateChannel(t *testing.T) {
 
 func TestGetWorkspaceNotFound(t *testing.T) {
 	repo := setupTestDB(t)
-	uc := usecase.NewWorkspaceUsecase(repo)
+	uc := usecase.NewWorkspaceUsecase(repo, nil)
 
 	_, err := uc.GetWorkspace(context.Background(), "non-existent")
 	if err == nil {

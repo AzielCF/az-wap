@@ -1,4 +1,4 @@
-package repository
+package workspace
 
 import (
 	"context"
@@ -6,17 +6,16 @@ import (
 
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
-	"github.com/AzielCF/az-wap/workspace/domain/workspace"
 )
 
 type IWorkspaceRepository interface {
 	Init(ctx context.Context) error
 
 	// Workspace CRUD
-	Create(ctx context.Context, ws workspace.Workspace) error
-	GetByID(ctx context.Context, id string) (workspace.Workspace, error)
-	List(ctx context.Context) ([]workspace.Workspace, error)
-	Update(ctx context.Context, ws workspace.Workspace) error
+	Create(ctx context.Context, ws Workspace) error
+	GetByID(ctx context.Context, id string) (Workspace, error)
+	List(ctx context.Context) ([]Workspace, error)
+	Update(ctx context.Context, ws Workspace) error
 	Delete(ctx context.Context, id string) error
 
 	// Channel CRUD

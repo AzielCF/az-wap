@@ -2,151 +2,282 @@ package workspace
 
 import (
 	"context"
-	"fmt"
-	"sync"
+	"os"
+	"time"
 
-	"github.com/AzielCF/az-wap/botengine"
-	"github.com/AzielCF/az-wap/workspace/domain"
-	"github.com/AzielCF/az-wap/workspace/repository"
+	botengine "github.com/AzielCF/az-wap/botengine"
+	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
+	globalConfig "github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/workspace/application"
+	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
+	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
+	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
+	"github.com/AzielCF/az-wap/workspace/infrastructure"
 	"github.com/sirupsen/logrus"
 )
 
-type AdapterFactory func(config domain.ChannelConfig) (ChannelAdapter, error)
+type AdapterFactory = application.AdapterFactory
 
 type Manager struct {
-	repo      repository.IWorkspaceRepository
+	repo      workspaceDomain.IWorkspaceRepository
 	botEngine *botengine.Engine
-
-	adaptersMu sync.RWMutex
-	adapters   map[string]ChannelAdapter // key: channelID
-
-	factoriesMu sync.RWMutex
-	factories   map[domain.ChannelType]AdapterFactory
+	channels  *application.ChannelService
+	sessions  *application.SessionOrchestrator
+	processor *application.MessageProcessor
+	presence  *application.PresenceManager
 }
 
-func NewManager(repo repository.IWorkspaceRepository, engine *botengine.Engine) *Manager {
-	return &Manager{
+func NewManager(repo workspaceDomain.IWorkspaceRepository, botEngine *botengine.Engine) *Manager {
+	m := &Manager{
 		repo:      repo,
-		botEngine: engine,
-		adapters:  make(map[string]ChannelAdapter),
-		factories: make(map[domain.ChannelType]AdapterFactory),
+		botEngine: botEngine,
 	}
+
+	// 1. Initialize Presence Manager
+	m.presence = application.NewPresenceManager()
+
+	// 2. Initialize Session Orchestrator
+	m.sessions = application.NewSessionOrchestrator(botEngine)
+
+	// 3. Initialize Message Processor
+	m.processor = application.NewMessageProcessor(repo, m.sessions)
+
+	// 4. Initialize Channel Service
+	m.channels = application.NewChannelService(repo, botEngine, func(adapter channelDomain.ChannelAdapter) botengineDomain.Transport {
+		return &infrastructure.BotTransportAdapter{Adapter: adapter}
+	})
+
+	// 5. Wire up Callbacks
+	m.sessions.OnProcessFinal = m.processFinalBridge
+	m.sessions.OnInactivityWarn = m.sendInactivityWarning
+	m.sessions.OnCleanupFiles = m.cleanupSessionFiles
+	m.sessions.OnChannelIdle = func(channelID string) {
+		m.presence.CheckChannelPresence(channelID)
+		m.presence.CheckChannelSocket(channelID)
+	}
+
+	m.presence.IsChannelActive = func(channelID string) bool {
+		return len(m.GetActiveChats(channelID)) > 0
+	}
+
+	m.channels.OnAdapterRegistered = func(adapter channelDomain.ChannelAdapter) {
+		m.presence.RegisterAdapter(adapter.ID(), adapter)
+	}
+
+	m.sessions.OnWaitIdle = func(ctx context.Context, channelID, chatID string) {
+		if adapter, ok := m.channels.GetAdapter(channelID); ok {
+			waitIdle := time.Duration(globalConfig.AIWaitContactIdleMs) * time.Millisecond
+			if waitIdle > 0 {
+				_ = adapter.WaitIdle(ctx, chatID, waitIdle)
+			}
+		}
+	}
+
+	// 6. Start Internal Loops
+	m.StartPresenceLoop(context.Background())
+
+	return m
 }
 
-// RegisterFactory registers a factory function for a specific channel type
-func (m *Manager) RegisterFactory(chType domain.ChannelType, factory AdapterFactory) {
-	m.factoriesMu.Lock()
-	defer m.factoriesMu.Unlock()
-	m.factories[chType] = factory
+func (m *Manager) RegisterFactory(chType channelDomain.ChannelType, factory AdapterFactory) {
+	m.channels.RegisterFactory(chType, factory)
 }
 
-// RegisterAdapter adds an active adapter to the manager
-func (m *Manager) RegisterAdapter(adapter ChannelAdapter) {
-	m.adaptersMu.Lock()
-	defer m.adaptersMu.Unlock()
-	m.adapters[adapter.ID()] = adapter
-
-	// Wire up the message handler
-	adapter.OnMessage(m.handleIncomingMessage)
+func (m *Manager) RegisterAdapter(adapter channelDomain.ChannelAdapter) {
+	m.channels.RegisterAdapter(adapter, m.handleIncomingMessage)
+	m.presence.RegisterAdapter(adapter.ID(), adapter)
 }
 
-// UnregisterAdapter removes an adapter
 func (m *Manager) UnregisterAdapter(channelID string) {
-	m.adaptersMu.Lock()
-	defer m.adaptersMu.Unlock()
-	if adapter, ok := m.adapters[channelID]; ok {
-		// Best effort stop
-		_ = adapter.Stop(context.Background())
-		delete(m.adapters, channelID)
-	}
+	m.channels.UnregisterAdapter(channelID)
+	m.presence.UnregisterAdapter(channelID)
 }
 
-// GetAdapter returns an active adapter by ID
-func (m *Manager) GetAdapter(channelID string) (ChannelAdapter, bool) {
-	m.adaptersMu.RLock()
-	defer m.adaptersMu.RUnlock()
-	adapter, ok := m.adapters[channelID]
-	return adapter, ok
+func (m *Manager) GetAdapter(channelID string) (channelDomain.ChannelAdapter, bool) {
+	return m.channels.GetAdapter(channelID)
 }
 
-// StartChannel initializes and starts a channel by its ID
 func (m *Manager) StartChannel(ctx context.Context, channelID string) error {
-	// 1. Check if already running
-	if _, ok := m.GetAdapter(channelID); ok {
-		return nil
+	return m.channels.StartChannel(ctx, channelID, m.handleIncomingMessage)
+}
+
+func (m *Manager) UpdateChannelConfig(channelID string, config channelDomain.ChannelConfig) {
+	m.channels.UpdateChannelConfig(channelID, config)
+}
+
+func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, msg messageDomain.IncomingMessage) {
+	if msg.IsStatus {
+		logrus.Debug("[WS_MANAGER] Skipping bot processing for status update")
+		return
 	}
 
-	// 2. Get Channel info from DB
-	ch, err := m.repo.GetChannel(ctx, channelID)
+	// Notify presence of activity
+	m.presence.HandleIncomingActivity(msg.ChannelID)
+
+	logrus.Infof("[WorkspaceManager] Processing incoming message from channel %s (Sender: %s, Text: %s)", msg.ChannelID, msg.SenderID, msg.Text)
+
+	ctx := context.Background()
+	ch, err := m.repo.GetChannel(ctx, msg.ChannelID)
 	if err != nil {
-		return fmt.Errorf("failed to get channel: %w", err)
+		logrus.WithError(err).WithField("channel_id", msg.ChannelID).Error("[WorkspaceManager] Failed to get channel for incoming message")
+		return
 	}
 
-	// 3. Find factory
-	m.factoriesMu.RLock()
-	factory, ok := m.factories[ch.Type]
-	m.factoriesMu.RUnlock()
-	if !ok {
-		return fmt.Errorf("no factory registered for channel type %s", ch.Type)
+	botID := ch.Config.BotID
+	if botID == "" && (ch.Config.Chatwoot == nil || !ch.Config.Chatwoot.Enabled) {
+		logrus.WithField("channel_id", msg.ChannelID).Warn("[WorkspaceManager] Message ignored: No BotID assigned to channel")
+		return
 	}
 
-	// 4. Create adapter
-	adapter, err := factory(ch.Config)
-	if err != nil {
-		return fmt.Errorf("failed to create adapter: %w", err)
+	// Access Control Check
+	if !m.processor.IsAccessAllowed(ctx, ch, msg.SenderID) {
+		logrus.WithFields(logrus.Fields{
+			"channel_id": msg.ChannelID,
+			"sender_id":  msg.SenderID,
+			"mode":       ch.Config.AccessMode,
+		}).Warn("[WorkspaceManager] Access denied for sender")
+		return
 	}
 
-	// 5. Start adapter
-	if err := adapter.Start(ctx, ch.Config); err != nil {
-		return fmt.Errorf("failed to start adapter: %w", err)
+	// Enqueue for debouncing
+	m.sessions.EnqueueDebounced(ctx, ch, msg, botID, func(chatID string, ids []string) {
+		_ = adapter.MarkRead(ctx, chatID, ids)
+	})
+}
+
+func (m *Manager) processFinalBridge(ctx context.Context, ch channelDomain.Channel, msg messageDomain.IncomingMessage, botID string) (botengineDomain.BotOutput, error) {
+	return m.processor.ProcessFinal(ctx, ch, msg, botID, m.botEngine.Process, func(ctx context.Context, chatID string, ids []string) {
+		if adapter, ok := m.channels.GetAdapter(ch.ID); ok {
+			_ = adapter.MarkRead(ctx, chatID, ids)
+		}
+	}, m.CloseSession)
+}
+
+func (m *Manager) GetActiveSessions() []application.ActiveSessionInfo {
+	return m.sessions.GetActiveSessions()
+}
+
+func (m *Manager) ClearBotMemory(botID string) {
+	for _, s := range m.sessions.GetActiveSessions() {
+		if entry, ok := m.sessions.GetEntry(s.Key); ok {
+			if entry.BotID == botID {
+				entry.Memory.History = nil
+			}
+		}
+	}
+	logrus.Infof("[WS_MANAGER] Cleared memory for bot %s across all sessions", botID)
+}
+
+func (m *Manager) ClearWorkspaceBotMemory(workspaceID, botID string) {
+	for _, s := range m.sessions.GetActiveSessions() {
+		if entry, ok := m.sessions.GetEntry(s.Key); ok {
+			if entry.Msg.WorkspaceID == workspaceID && entry.BotID == botID {
+				entry.Memory.History = nil
+			}
+		}
+	}
+	logrus.Infof("[WS_MANAGER] Cleared memory for bot %s in workspace %s", botID, workspaceID)
+}
+
+func (m *Manager) GetActiveChats(channelID string) []string {
+	var chats []string
+	for _, s := range m.sessions.GetActiveSessions() {
+		if s.ChannelID == channelID {
+			chats = append(chats, s.ChatID)
+		}
+	}
+	return chats
+}
+
+func (m *Manager) PrepareSessionFile(workspaceID, channelID, sessionKey string, fileName string, friendlyName string, mimeType string, fileHash string) (string, error) {
+	return m.processor.PrepareSessionFile(workspaceID, channelID, sessionKey, fileName, friendlyName, mimeType, fileHash)
+}
+
+func (m *Manager) IsAccessAllowed(ctx context.Context, ch channelDomain.Channel, senderID string) bool {
+	return m.processor.IsAccessAllowed(ctx, ch, senderID)
+}
+
+func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
+	entry, ok := m.sessions.GetEntry(key)
+	if !ok || entry.State != application.StateWaiting {
+		return
 	}
 
-	// 6. Register
-	m.RegisterAdapter(adapter)
+	templates := map[string]string{
+		"en": "Are you still there? I'll be finishing the session in one minute if you don't need anything else.",
+		"es": "¿Sigues ahí? Cerraré la sesión en un minuto si no necesitas nada más.",
+		"fr": "Êtes-vous toujours là? Je fermerai la session dans une minute si vous n'avez besoin de rien d'autre.",
+	}
 
-	// Update status
-	ch.Status = domain.ChannelStatusConnected
-	_ = m.repo.UpdateChannel(ctx, ch)
+	cfg := ch.Config.InactivityWarning
+	lang := "en"
+	enabled := true
 
+	if cfg != nil {
+		enabled = cfg.Enabled
+		if cfg.DefaultLang != "" {
+			lang = cfg.DefaultLang
+		}
+		for k, v := range cfg.Templates {
+			if v != "" {
+				templates[k] = v
+			}
+		}
+	}
+
+	if !enabled {
+		return
+	}
+
+	text := templates[lang]
+	if text == "" {
+		text = templates["en"]
+	}
+
+	if adapter, ok := m.channels.GetAdapter(ch.ID); ok {
+		logrus.Infof("[WS_MANAGER] Sending inactivity warning to %s", entry.Msg.ChatID)
+		_, _ = adapter.SendMessage(context.Background(), entry.Msg.ChatID, text, "")
+	}
+}
+
+func (m *Manager) cleanupSessionFiles(e *application.SessionEntry) {
+	if e.SessionPath == "" {
+		return
+	}
+	_ = os.RemoveAll(e.SessionPath)
+	logrus.Infof("[WS_MANAGER] Cleaned up session files at %s", e.SessionPath)
+	e.DownloadedFiles = nil
+	e.SessionPath = ""
+}
+
+func (m *Manager) CloseSession(ctx context.Context, channelID, chatID string) error {
+	if adapter, ok := m.channels.GetAdapter(channelID); ok {
+		_ = adapter.CloseSession(ctx, chatID)
+	}
+
+	for _, s := range m.sessions.GetActiveSessions() {
+		if s.ChannelID == channelID && s.ChatID == chatID {
+			m.sessions.CloseSession(s.Key)
+		}
+	}
 	return nil
 }
 
-// handleIncomingMessage is the central point for all incoming messages from all channels
-func (m *Manager) handleIncomingMessage(msg IncomingMessage) {
-	logrus.WithFields(logrus.Fields{
-		"workspace_id": msg.WorkspaceID,
-		"channel_id":   msg.ChannelID,
-		"sender_id":    msg.SenderID,
-	}).Info("[WorkspaceManager] Received message")
-
-	// 1. Convert to BotInput
-	// Note: In a real implementation, we would fetch the BotID from the Workspace configuration or a "Router"
-	// For now, we assume the workspace might have a "default_bot_id" in its metadata, or we pass a placeholder.
-
-	// Try to get default bot from context or similar?
-	// Since we don't have the context here easily, we'll placeholder it.
-	// In the future: BotID = m.ResolveBotID(msg.WorkspaceID)
-
-	botID := "default_bot" // Placeholder
-
-	botInput := botengine.BotInput{
-		TraceID:     "",            // Engine will generate if empty
-		InstanceID:  msg.ChannelID, // Use ChannelID as InstanceID
-		WorkspaceID: msg.WorkspaceID,
-		SenderID:    msg.SenderID,
-		ChatID:      msg.ChatID,
-		BotID:       botID,
-		Platform:    botengine.PlatformWhatsApp, // TODO: Map dynamically from channel type
-		Text:        msg.Text,
-		Media:       nil, // msg.Media needs conversion
-		Metadata:    msg.Metadata,
-	}
-
-	// 2. Process
-	// We need a context here. Ideally handleIncomingMessage should take a context or creating a background one.
-	ctx := context.Background()
-	_, err := m.botEngine.Process(ctx, botInput)
-	if err != nil {
-		logrus.WithError(err).Error("[WorkspaceManager] Bot message processing failed")
-	}
+func (m *Manager) StartPresenceLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				adapters := m.channels.GetAdapters()
+				for _, adapter := range adapters {
+					m.presence.CheckChannelPresence(adapter.ID())
+					m.presence.CheckChannelSocket(adapter.ID())
+				}
+			}
+		}
+	}()
 }
