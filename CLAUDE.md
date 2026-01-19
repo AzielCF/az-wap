@@ -29,20 +29,46 @@ This is a Go-based WhatsApp Web API server supporting both REST API and MCP (Mod
 
 ### Core Architecture Pattern
 
-- **Domain-Driven Design**: Business logic separated into domain packages (`domains/`)
-- **Clean Architecture**: Clear separation between UI, use cases, and infrastructure layers
+- **Hexagonal Architecture**: Applied in `botengine/` and `workspace/` modules with clear layer separation
+- **Domain-Driven Design**: Business logic separated into domain packages
+- **Clean Architecture**: Clear separation between domain, application, infrastructure, and repository layers
 - **Cobra CLI**: Command pattern with separate commands for `rest` and `mcp` modes
+
+### Hexagonal Architecture Structure
+
+The `botengine/` and `workspace/` modules follow hexagonal architecture:
+
+```
+module/
+├── domain/           # Core business entities, interfaces, and domain logic
+├── application/      # Use cases and application services
+├── infrastructure/   # External adapters (APIs, external services)
+└── repository/       # Data persistence implementations
+```
 
 ### Key Directories
 
 - `src/`: Main source code directory
 - `src/cmd/`: CLI commands (root, rest, mcp)
-- `src/domains/`: Business domain logic (app, chat, group, message, send, user, newsletter)
-- `src/infrastructure/`: External integrations (WhatsApp, database)
-- `src/ui/`: User interface layers (REST API, MCP server, WebSocket)
-- `src/usecase/`: Application use cases bridging domains and UI
+- `src/botengine/`: Bot engine module (hexagonal architecture)
+  - `domain/`: Bot domain entities and interfaces
+  - `application/`: Bot services and use cases
+  - `infrastructure/`: External integrations (AI providers)
+  - `repository/`: Bot data persistence
+  - `providers/`: AI provider implementations (Gemini, etc.)
+  - `tools/`: Bot tool definitions
+- `src/workspace/`: Workspace management module (hexagonal architecture)
+  - `domain/`: Workspace entities and interfaces
+  - `application/`: Workspace services
+  - `infrastructure/`: External workspace integrations
+  - `repository/`: Workspace data persistence
+- `src/domains/`: Shared business domain logic (app, chat, group, message, send, user, newsletter)
+- `src/infrastructure/`: Core external integrations (WhatsApp adapter, database)
+- `src/frontend/`: Vue.js frontend application (UI)
+- `src/usecase/`: Application use cases bridging domains and REST/MCP interfaces
 - `src/validations/`: Input validation logic
 - `src/pkg/`: Shared utilities and helpers
+- `src/views/`: HTML templates for REST mode
 
 ### Configuration
 
