@@ -1,3 +1,13 @@
+<!--
+AZ-WAP - Open Source WhatsApp Web API
+Copyright (C) 2025-2026 Aziel Cruzado <contacto@azielcruzado.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+-->
+
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, RouterLink, RouterView } from 'vue-router'
@@ -89,7 +99,7 @@ onMounted(async () => {
       <!-- Footer -->
       <footer class="footer footer-center p-6 bg-[#0b0e14] text-slate-500 text-[10px] font-bold uppercase tracking-widest border-t border-white/5">
         <aside>
-          <p>© 2026 <a href="https://azielcruzado.com" target="_blank" rel="noopener noreferrer" class="text-primary">AzielCF</a> - AI WhatsApp Automation Engine</p>
+          <p>© 2026 <a href="https://azielcruzado.com" target="_blank" rel="noopener noreferrer" class="text-primary">AzielCF</a> - AI WhatsApp Automation Engine - <a href="https://github.com/AzielCF/az-wap" target="_blank" rel="noopener noreferrer" class="hover:text-primary transition-colors">Source Code</a></p>
         </aside>
       </footer>
     </div>

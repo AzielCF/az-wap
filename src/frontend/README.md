@@ -1,48 +1,51 @@
-# vue
+# AZ-WAP Frontend (Enterprise UI)
 
-This template should help get you started developing with Vue 3 in Vite.
+This is the official Vue.js 3 frontend application for **AZ-WAP**, a high-performance AI-driven WhatsApp Web Automation Engine. Built for modern enterprises, it provides a sleek, high-end dashboard for managing multi-tenant WhatsApp nodes, workspaces, and AI bot interactions.
 
-## Recommended IDE Setup
+## 🚀 Key Features
+- **Modern Dashboard**: Real-time monitoring of WhatsApp bot status and active sessions.
+- **Hexagonal Architecture**: Clean and maintainable frontend structure that integrates seamlessly with the Go backend.
+- **Enterprise Design**: Premium UI built with Vue 3, Vite, and DaisyUI, featuring dark mode, glassmorphism, and smooth micro-animations.
+- **Multi-Tenant Support**: Exclusive "Clients" view for managing global subscriptions and tiers (VIP, Premium, Enterprise).
+- **Control Center**: Manage workspaces, bots, AI credentials, and platform health from a single interface.
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## 🛠 Technology Stack
+- **Framework**: [Vue 3](https://vuejs.org/) (Composition API)
+- **Tooling**: [Vite](https://vite.dev/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/)
+- **Store**: [Pinia](https://pinia.vuejs.org/)
+- **Routing**: [Vue Router 4](https://router.vuejs.org/)
+- **Icons**: [Lucide Vue Next](https://lucide.dev/)
+- **API**: Custom Axios-based composables for secure backend interaction.
 
-## Recommended Browser Setup
+## 📖 Recommended Setup
+- **IDE**: [VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
+- **Formatter**: [Prettier](https://prettier.io/) (configured for the project)
+- **Node Version**: Check `.nvmrc` or `package.json` engines (>= 20.x).
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## 🚀 Project Execution
 
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
+### Install Dependencies
 ```sh
 bun install
 ```
 
-### Compile and Hot-Reload for Development
-
+### Hot-Reload for Development
 ```sh
 bun dev
 ```
 
-### Type-Check, Compile and Minify for Production
-
+### Build for Production
 ```sh
 bun run build
 ```
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
-
+### Unit Testing (Vitest)
 ```sh
 bun test:unit
 ```
+
+## ⚖️ License
+This frontend is part of the **AZ-WAP** project and is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. A proprietary license is required for commercial use exceeding $20,000 USD gross annual revenue. See the root `LICENSE` file for full details.
+
+Developed with ❤️ by [AzielCF](https://azielcruzado.com).
