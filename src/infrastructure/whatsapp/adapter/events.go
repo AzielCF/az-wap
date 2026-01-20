@@ -153,6 +153,9 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 				"message_id": v.Info.ID,
 				"timestamp":  v.Info.Timestamp.Unix(),
 				"push_name":  v.Info.PushName,
+				"sender_jid": v.Info.Sender.String(),
+				"chat_jid":   v.Info.Chat.String(),
+				"sender_pn":  wa.getPNForLID(v.Info.Sender),
 			},
 		}
 
@@ -410,14 +413,49 @@ func (wa *WhatsAppAdapter) resolveAndCacheLID(jid types.JID) {
 
 	rawLID := jid.ToNonAD().String()
 
-	// We want to force conversion FROM Phone Number TO LID.
-	// So we need to ensure the mapping exists in the direction PN -> LID
+	// Resolve PN (Phone Number) for this LID
 	pn, err := wa.client.Store.LIDs.GetPNForLID(context.Background(), jid)
 	if err == nil && !pn.IsEmpty() {
 		pnStr := pn.ToNonAD().String()
 		logrus.Infof("[WHATSAPP] Linked LID %s to PN %s. Forcing identity to LID.", rawLID, pnStr)
-		// ALWAYS map PN to LID to ensure stable identity
+
+		// Map PN -> LID (for getUnifiedID to keep LID as primary)
 		wa.identityMap.Store(pnStr, rawLID)
-		// We can also store LID -> LID to optimize subsequent calls, but it's already handled in getUnifiedID
+
+		// Map LID -> PN (for metadata and fallback resolution)
+		wa.identityMap.Store("REV:"+rawLID, pnStr)
 	}
+}
+
+// getPNForLID returns the Phone Number JID for a LID JID if cached or resolvable
+func (wa *WhatsAppAdapter) getPNForLID(jid types.JID) string {
+	if jid.IsEmpty() {
+		return ""
+	}
+	rawID := jid.ToNonAD().String()
+
+	if strings.HasSuffix(rawID, "@s.whatsapp.net") {
+		return rawID
+	}
+
+	if !strings.HasSuffix(rawID, "@lid") {
+		return ""
+	}
+
+	// 1. Check cache
+	if linked, ok := wa.identityMap.Load("REV:" + rawID); ok {
+		return linked.(string)
+	}
+
+	// 2. Try sync resolve from store
+	if wa.client != nil && wa.client.Store != nil && wa.client.Store.LIDs != nil {
+		pn, err := wa.client.Store.LIDs.GetPNForLID(context.Background(), jid.ToNonAD())
+		if err == nil && !pn.IsEmpty() {
+			pnStr := pn.ToNonAD().String()
+			wa.identityMap.Store("REV:"+rawID, pnStr)
+			return pnStr
+		}
+	}
+
+	return ""
 }
