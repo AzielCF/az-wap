@@ -1,4 +1,4 @@
-package tools
+package onlyclients
 
 import (
 	"context"
@@ -21,6 +21,7 @@ func NewGroupTools(workspaceMgr *workspace.Manager) *GroupTools {
 
 func (t *GroupTools) ListGroupsTool() *domain.NativeTool {
 	return &domain.NativeTool{
+		IsVisible: IsClientRegistered,
 		Tool: domainMCP.Tool{
 			Name:        "list_my_groups_and_chats",
 			Description: "Lists the available WhatsApp Groups where the bot is an admin. Use this to check available alias names for scheduling.",
