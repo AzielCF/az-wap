@@ -40,6 +40,7 @@ const (
 	ChannelStatusPending      ChannelStatus = "pending"
 	ChannelStatusConnected    ChannelStatus = "connected"
 	ChannelStatusDisconnected ChannelStatus = "disconnected"
+	ChannelStatusHibernating  ChannelStatus = "hibernating"
 	ChannelStatusError        ChannelStatus = "error"
 )
 
@@ -48,6 +49,7 @@ type ChannelConfig struct {
 	WebhookURL          string                   `json:"webhook_url,omitempty"`
 	WebhookSecret       string                   `json:"webhook_secret,omitempty"`
 	BotID               string                   `json:"bot_id,omitempty"`
+	DefaultLanguage     string                   `json:"default_language,omitempty"`
 	SkipTLSVerification bool                     `json:"skip_tls_verification"`
 	AutoReconnect       bool                     `json:"auto_reconnect"`
 	Chatwoot            *ChatwootConfig          `json:"chatwoot,omitempty"`
