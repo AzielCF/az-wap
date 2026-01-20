@@ -221,8 +221,14 @@ onMounted(loadData)
                             </td>
                             <td>
                                 <div class="flex items-center gap-3">
-                                    <div class="w-2.5 h-2.5 rounded-full" :class="ch.enabled ? 'bg-success shadow-[0_0_10px_rgba(var(--su),0.5)] animate-pulse' : 'bg-warning shadow-[0_0_10px_rgba(var(--wa),0.5)]'"></div>
-                                    <span class="text-[10px] font-black uppercase tracking-widest" :class="ch.enabled ? 'text-slate-200' : 'text-slate-500'">{{ ch.enabled ? 'ACTIVE' : 'ON HOLD' }}</span>
+                                    <template v-if="ch.status === 'hibernating'">
+                                        <div class="w-2.5 h-2.5 rounded-full bg-primary/40 shadow-[0_0_10px_rgba(var(--p),0.3)]"></div>
+                                        <span class="text-[10px] font-black uppercase tracking-widest text-primary/60 italic">Hibernating</span>
+                                    </template>
+                                    <template v-else>
+                                        <div class="w-2.5 h-2.5 rounded-full" :class="ch.enabled ? 'bg-success shadow-[0_0_10px_rgba(var(--su),0.5)] animate-pulse' : 'bg-warning shadow-[0_0_10px_rgba(var(--wa),0.5)]'"></div>
+                                        <span class="text-[10px] font-black uppercase tracking-widest" :class="ch.enabled ? 'text-slate-200' : 'text-slate-500'">{{ ch.enabled ? 'ACTIVE' : 'ON HOLD' }}</span>
+                                    </template>
                                 </div>
                             </td>
                             <td>

@@ -275,7 +275,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 }
 
 // Interpret implementa la interfaz MultimodalInterpreter para Gemini
-func (p *GeminiProvider) Interpret(ctx context.Context, apiKey string, model string, userText string, medias []*domain.BotMedia) (*domain.MultimodalResult, *domain.UsageStats, error) {
+func (p *GeminiProvider) Interpret(ctx context.Context, apiKey string, model string, userText string, language string, medias []*domain.BotMedia) (*domain.MultimodalResult, *domain.UsageStats, error) {
 	if apiKey == "" {
 		return nil, nil, fmt.Errorf("multimodal interpretation requires an API key")
 	}
@@ -301,7 +301,8 @@ For each media:
 - If it's a DOCUMENT: Summarize its content.
 - If it's a VIDEO: Describe what happens in the video and any relevant speech.
 
-Return the results in JSON format.`, userText)}}
+Return the results in JSON format.
+Your PRIMARY language for descriptions and summaries is: %s.`, userText, language)}}
 
 	for _, m := range medias {
 		if len(m.Data) > 0 {
@@ -419,6 +420,11 @@ func (p *GeminiProvider) PreAnalyzeMindset(ctx context.Context, b domainBot.Bot,
 		agendaStr.WriteString("BOT AGENDA: Empty (No pending tasks).")
 	}
 
+	langCtx := ""
+	if input.Language != "" {
+		langCtx = fmt.Sprintf("\n- PRIMARY LANGUAGE: %s. Use ONLY this language for the acknowledgement.", input.Language)
+	}
+
 	prompt := fmt.Sprintf(`Analyze the following user message and determine the emotional context.
 User message: "%s"
 
@@ -426,7 +432,7 @@ CONTEXT:
 - Recent History:
 %s
 - Is bot busy with a previous task? %v
-- %s
+- %s%s
 
 Categorize into:
 - pace: 'fast', 'steady', 'deep'.
@@ -434,18 +440,22 @@ Categorize into:
 - work: true ONLY if message requires NEW tools or deep analysis.
 - acknowledgement: A short, natural, human phrase. 
   RULES FOR ACK:
-  1. ONLY provide if WORK is true. Empty otherwise.
-  2. NEVER provide if this message is a direct answer to your previous question or relates to a task in the Agenda.
+  1. If PRIMARY LANGUAGE is provided, YOU MUST strictly use it for the acknowledgement.
+     - Example (ES): "Un momento, estoy analizando los archivos..."
+     - Example (EN): "One moment, I'm analyzing the files..."
+     - Example (FR): "Un instant, j'analyse les fichiers..."
+  2. ONLY provide if WORK is true. Empty otherwise.
+  3. NEVER provide if this message is a direct answer to your previous question or relates to a task in the Agenda.
 - enqueue_task: If NEW task is requested while BUSY, describe it. Empty otherwise.
 - clear_tasks: true if this message RESOLVES current pending tasks.
 - should_respond: Decisions:
   1. If message contains info for a task in the BOT AGENDA, set should_respond=true.
   2. If message contains a NEW COMMAND, UPDATE, or CORRECTION, set should_respond=true.
   3. If WORK is true, set should_respond=true.
-  4. Set should_respond=false ONLY if (IS_BUSY is true) AND (message is Trivial: "ok", "vale", "gracias").
+  4. Set should_respond=false ONLY if (IS_BUSY is true) AND (message is Trivial: "ok", "vale", "gracias", "merci", "cool", "thanks", "ça marche").
   5. If IS_BUSY is false, ALWAYS set should_respond=true.
 
-Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, agendaStr.String())
+Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, agendaStr.String(), langCtx)
 
 	cfg := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",

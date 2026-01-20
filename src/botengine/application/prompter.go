@@ -39,6 +39,22 @@ func (p *Prompter) BuildSystemInstructions(b domainBot.Bot, input domain.BotInpu
 		sb.WriteString("\n\n")
 	}
 
+	// 3.5 Client Context (if registered client)
+	if input.ClientContext != nil && input.ClientContext.IsRegistered {
+		clientPrompt := input.ClientContext.ForPrompt()
+		if clientPrompt != "" {
+			sb.WriteString("### CLIENT CONTEXT\n")
+			sb.WriteString(clientPrompt)
+			sb.WriteString("\n\n")
+		}
+		// Additional custom prompt from subscription
+		if input.ClientContext.CustomSystemPrompt != "" {
+			sb.WriteString("### CLIENT-SPECIFIC INSTRUCTIONS\n")
+			sb.WriteString(input.ClientContext.CustomSystemPrompt)
+			sb.WriteString("\n\n")
+		}
+	}
+
 	// 4. Timezone & Current Time
 	tz := b.Timezone
 	if tz == "" {
@@ -106,7 +122,12 @@ func (p *Prompter) BuildSystemInstructions(b domainBot.Bot, input domain.BotInpu
 		sb.WriteString("\nIf current conversation is idle, consider mentioning or starting one of these tasks.")
 	}
 
-	// 9. Toolset Guidelines (MCP) - IDENTIDAD ORIGINAL: Al final de todo
+	// 9. Language Constraints - CRITICAL AUTHORITY
+	if input.Language != "" {
+		sb.WriteString(fmt.Sprintf("\n\n### LANGUAGE REQUIREMENT (CRITICAL)\nYour MANDATORY language for this entire conversation is: %s. \n- You MUST ignore any language hints from the general system prompt or bot instructions if they differ from this requirement.\n- ALWAYS respond in %s.\n- If the user switches languages, you may acknowledge it but you MUST continue or quickly revert your main response to %s.", input.Language, input.Language, input.Language))
+	}
+
+	// 10. Toolset Guidelines (MCP) - IDENTIDAD ORIGINAL: Al final de todo
 	if mcpInstructions != "" {
 		sb.WriteString("\n\n## MCP TOOL GUIDELINES")
 		sb.WriteString(mcpInstructions)

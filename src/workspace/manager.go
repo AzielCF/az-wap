@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	botengine "github.com/AzielCF/az-wap/botengine"
@@ -18,19 +19,26 @@ import (
 
 type AdapterFactory = application.AdapterFactory
 
-type Manager struct {
-	repo      workspaceDomain.IWorkspaceRepository
-	botEngine *botengine.Engine
-	channels  *application.ChannelService
-	sessions  *application.SessionOrchestrator
-	processor *application.MessageProcessor
-	presence  *application.PresenceManager
+// ClientResolver es una interfaz para resolver el contexto del cliente
+type ClientResolver interface {
+	Resolve(ctx context.Context, platformID, secondaryID string, platformType string, channelID string) (*botengineDomain.ClientContext, string, error)
 }
 
-func NewManager(repo workspaceDomain.IWorkspaceRepository, botEngine *botengine.Engine) *Manager {
+type Manager struct {
+	repo           workspaceDomain.IWorkspaceRepository
+	botEngine      *botengine.Engine
+	channels       *application.ChannelService
+	sessions       *application.SessionOrchestrator
+	processor      *application.MessageProcessor
+	presence       *application.PresenceManager
+	clientResolver ClientResolver
+}
+
+func NewManager(repo workspaceDomain.IWorkspaceRepository, botEngine *botengine.Engine, clientResolver ClientResolver) *Manager {
 	m := &Manager{
-		repo:      repo,
-		botEngine: botEngine,
+		repo:           repo,
+		botEngine:      botEngine,
+		clientResolver: clientResolver,
 	}
 
 	// 1. Initialize Presence Manager
@@ -106,8 +114,8 @@ func (m *Manager) UpdateChannelConfig(channelID string, config channelDomain.Cha
 }
 
 func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, msg messageDomain.IncomingMessage) {
-	if msg.IsStatus {
-		logrus.Debug("[WS_MANAGER] Skipping bot processing for status update")
+	if msg.IsStatus || strings.HasSuffix(msg.ChatID, "@newsletter") || strings.HasSuffix(msg.ChatID, "@broadcast") {
+		logrus.Debugf("[WorkspaceManager] Skipping bot processing for system/newsletter/status: %s", msg.ChatID)
 		return
 	}
 
@@ -124,19 +132,138 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 	}
 
 	botID := ch.Config.BotID
+	var clientCtx *botengineDomain.ClientContext
+
+	// Resolve Global Client Context
+	if m.clientResolver != nil {
+		pType := string(adapter.Type()) // Use adapter type (e.g., "whatsapp")
+
+		// Use full SenderID for resolution to support LID
+		platformID := msg.SenderID
+
+		// Normalization for WhatsApp (JID and LID)
+		// Remove @s.whatsapp.net if present
+		platformID = strings.TrimSuffix(platformID, "@s.whatsapp.net")
+
+		// Remove device index suffix if present (e.g. 12345:1@lid -> 12345@lid)
+		if idx := strings.Index(platformID, ":"); idx != -1 {
+			atIdx := strings.Index(platformID, "@")
+			if atIdx != -1 && atIdx > idx {
+				platformID = platformID[:idx] + platformID[atIdx:]
+			} else if atIdx == -1 {
+				platformID = platformID[:idx]
+			}
+		}
+
+		// JID de respaldo (original de la plataforma o número de teléfono)
+		secondaryID := ""
+		if pn, ok := msg.Metadata["sender_pn"].(string); ok && pn != "" {
+			secondaryID = pn
+		} else if jid, ok := msg.Metadata["sender_jid"].(string); ok {
+			secondaryID = jid
+		}
+
+		// Normalize secondaryID too
+		secondaryID = strings.TrimSuffix(secondaryID, "@s.whatsapp.net")
+		if idx := strings.Index(secondaryID, ":"); idx != -1 {
+			atIdx := strings.Index(secondaryID, "@")
+			if atIdx != -1 && atIdx > idx {
+				secondaryID = secondaryID[:idx] + secondaryID[atIdx:]
+			} else if atIdx == -1 {
+				secondaryID = secondaryID[:idx]
+			}
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"platform_id":   platformID,
+			"secondary_id":  secondaryID,
+			"platform_type": pType,
+			"channel_id":    msg.ChannelID,
+			"raw_sender":    msg.SenderID,
+		}).Infof("[WorkspaceManager] Attempting to resolve global client")
+
+		resolvedCtx, overrideBotID, err := m.clientResolver.Resolve(ctx, platformID, secondaryID, pType, msg.ChannelID)
+		if err == nil && resolvedCtx != nil {
+			clientCtx = resolvedCtx
+			logrus.WithFields(logrus.Fields{
+				"client_id":        clientCtx.ClientID,
+				"is_registered":    clientCtx.IsRegistered,
+				"has_subscription": clientCtx.HasSubscription,
+			}).Infof("[WorkspaceManager] Resolved client context")
+
+			if overrideBotID != "" {
+				logrus.Infof("[WorkspaceManager] Overriding BotID from subscription: %s -> %s", botID, overrideBotID)
+				botID = overrideBotID
+			}
+
+			// Operational check: Allowed Bots
+			if len(clientCtx.AllowedBots) > 0 {
+				allowed := false
+				for _, bID := range clientCtx.AllowedBots {
+					if bID == botID {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					logrus.Warnf("[WorkspaceManager] Client %s (%s) is NOT allowed to use bot %s. Operational restriction applied.", clientCtx.DisplayName, clientCtx.ClientID, botID)
+					// If not allowed, we stop processing or return an error message
+					// For now, let's just log and block the bot interaction by returning
+					return
+				}
+			}
+		} else if err != nil {
+			logrus.WithError(err).Warn("[WorkspaceManager] Client resolution failed")
+		} else {
+			logrus.Debug("[WorkspaceManager] No global client found for this sender")
+		}
+	}
+
+	// Resolve Language: Client Priority > Channel Default
+	if clientCtx != nil && clientCtx.Language != "" {
+		msg.Language = clientCtx.Language
+	} else if ch.Config.DefaultLanguage != "" {
+		msg.Language = ch.Config.DefaultLanguage
+	}
+
+	if msg.Language == "" {
+		msg.Language = "en"
+	}
+
 	if botID == "" && (ch.Config.Chatwoot == nil || !ch.Config.Chatwoot.Enabled) {
 		logrus.WithField("channel_id", msg.ChannelID).Warn("[WorkspaceManager] Message ignored: No BotID assigned to channel")
 		return
 	}
 
-	// Access Control Check
-	if !m.processor.IsAccessAllowed(ctx, ch, msg.SenderID) {
-		logrus.WithFields(logrus.Fields{
-			"channel_id": msg.ChannelID,
-			"sender_id":  msg.SenderID,
-			"mode":       ch.Config.AccessMode,
-		}).Warn("[WorkspaceManager] Access denied for sender")
-		return
+	// Attach Client Context to Message Metadata (consumed by Processor)
+	if clientCtx != nil {
+		if msg.Metadata == nil {
+			msg.Metadata = make(map[string]any)
+		}
+		msg.Metadata["client_context"] = clientCtx
+	}
+
+	// Access Control Check - Skip if client is registered (exclusive)
+	if clientCtx == nil || !clientCtx.IsRegistered {
+		// For access control, use original JID or Phone if available as it's more likely to match phone-based rules
+		accessIdentity := msg.SenderID
+		if pn, ok := msg.Metadata["sender_pn"].(string); ok && pn != "" {
+			accessIdentity = pn
+		} else if jid, ok := msg.Metadata["sender_jid"].(string); ok {
+			accessIdentity = jid
+		}
+
+		if !m.processor.IsAccessAllowed(ctx, ch, accessIdentity) {
+			logrus.WithFields(logrus.Fields{
+				"channel_id":      msg.ChannelID,
+				"sender_id":       msg.SenderID,
+				"access_identity": accessIdentity,
+				"mode":            ch.Config.AccessMode,
+			}).Warn("[WorkspaceManager] Access denied for sender")
+			return
+		}
+	} else {
+		logrus.Infof("[WorkspaceManager] Bypassing access control for registered client: %s", clientCtx.ClientID)
 	}
 
 	// Enqueue for debouncing
@@ -215,7 +342,9 @@ func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
 
 	if cfg != nil {
 		enabled = cfg.Enabled
-		if cfg.DefaultLang != "" {
+		if entry.Language != "" {
+			lang = entry.Language
+		} else if cfg.DefaultLang != "" {
 			lang = cfg.DefaultLang
 		}
 		for k, v := range cfg.Templates {
@@ -232,6 +361,25 @@ func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
 	text := templates[lang]
 	if text == "" {
 		text = templates["en"]
+	}
+
+	// Try Personalization
+	clientName := ""
+	if ctxRaw, ok := entry.Msg.Metadata["client_context"]; ok {
+		if clientCtx, ok := ctxRaw.(*botengineDomain.ClientContext); ok && clientCtx.SocialName != "" {
+			clientName = clientCtx.SocialName
+		}
+	}
+
+	if clientName != "" {
+		switch lang {
+		case "es":
+			text = strings.Replace(text, "¿Sigues ahí?", "¿Sigues ahí, "+clientName+"?", 1)
+		case "en":
+			text = strings.Replace(text, "Are you still there?", "Are you still there, "+clientName+"?", 1)
+		case "fr":
+			text = strings.Replace(text, "Êtes-vous toujours là?", "Êtes-vous toujours là, "+clientName+"?", 1)
+		}
 	}
 
 	if adapter, ok := m.channels.GetAdapter(ch.ID); ok {

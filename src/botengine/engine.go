@@ -74,9 +74,13 @@ func (e *Engine) RegisterNativeTool(t *domain.NativeTool) {
 	e.nativeTools[t.Name] = t
 }
 
-func (e *Engine) GetNativeTools() []domainMCP.Tool {
+func (e *Engine) GetNativeTools(input domain.BotInput) []domainMCP.Tool {
 	var tools []domainMCP.Tool
 	for _, t := range e.nativeTools {
+		// Check visibility condition if present
+		if t.IsVisible != nil && !t.IsVisible(input) {
+			continue
+		}
 		tools = append(tools, t.Tool)
 	}
 	return tools
@@ -90,12 +94,13 @@ func (e *Engine) CallNativeTool(ctx context.Context, name string, input domain.B
 
 	// Prepare generic context
 	ctxData := map[string]interface{}{
-		"metadata":     input.Metadata,
-		"text":         input.Text,
-		"sender_id":    input.SenderID,
-		"chat_id":      input.ChatID,
-		"instance_id":  input.InstanceID,
-		"workspace_id": input.WorkspaceID,
+		"metadata":       input.Metadata,
+		"text":           input.Text,
+		"sender_id":      input.SenderID,
+		"chat_id":        input.ChatID,
+		"instance_id":    input.InstanceID,
+		"workspace_id":   input.WorkspaceID,
+		"client_context": input.ClientContext,
 	}
 
 	return t.Handler(ctx, ctxData, args)
@@ -220,8 +225,8 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	if e.mcpUsecase != nil {
 		tools, _ = e.mcpUsecase.GetBotTools(ctx, b.ID)
 	}
-	// Agregar herramientas nativas
-	tools = append(tools, e.GetNativeTools()...)
+	// Agregar herramientas nativas (filtered by visibility)
+	tools = append(tools, e.GetNativeTools(input)...)
 
 	// 5. INTUITION PHASE: Pre-analyze mindset before presence
 	// Prepare history for intuition

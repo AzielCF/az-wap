@@ -13,6 +13,7 @@ const status = ref({
   connected: false,
   loggedIn: false,
   isPaused: false,
+  isHibernating: false,
   qr: null as string | null,
   loading: true
 })
@@ -69,11 +70,13 @@ async function loginWithCode() {
   }
 }
 
-async function fetchStatus() {
+async function fetchStatus(manual = false) {
   try {
-    const data = await api.get(`/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/status`)
+    const query = manual ? '?resume=true' : ''
+    const data = await api.get(`/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/status${query}`)
     status.value.connected = data.is_connected
     status.value.loggedIn = data.is_logged_in
+    status.value.isHibernating = data.is_hibernating || false
     status.value.isPaused = data.is_paused || false
     status.value.loading = false
   } catch (err) {
@@ -108,7 +111,7 @@ async function logout() {
 
 function refresh() {
     status.value.loading = true
-    fetchStatus()
+    fetchStatus(true) // Manual sync triggers resume if hibernating
 }
 
 onMounted(() => {
@@ -130,7 +133,10 @@ onBeforeUnmount(() => {
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] font-mono">NODE: {{ channel.id.substring(0,12) }}</p>
         </div>
         <div class="flex gap-3">
-            <div v-if="status.isPaused && status.loggedIn" class="badge-premium badge-amber animate-pulse">
+            <div v-if="status.isHibernating" class="badge-premium border-primary/20 text-primary animate-pulse">
+                SLEEPING / HIBERNATING
+            </div>
+            <div v-if="status.isPaused && status.loggedIn" class="badge-premium badge-amber">
                 MOTOR PAUSED
             </div>
             <div class="badge-premium" :class="status.connected ? 'badge-success' : 'badge-ghost opacity-40'">
