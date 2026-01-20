@@ -43,7 +43,7 @@ func (i *Interpreter) EnrichInput(ctx context.Context, model string, input domai
 	}
 
 	if len(toAnalyze) > 0 && i.provider != nil {
-		res, usage, err := i.provider.Interpret(ctx, i.apiKey, model, input.Text, toAnalyze)
+		res, usage, err := i.provider.Interpret(ctx, i.apiKey, model, input.Text, input.Language, toAnalyze)
 		if err != nil {
 			return input.Text, nil, err
 		}

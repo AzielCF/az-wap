@@ -73,6 +73,10 @@ type BotInput struct {
 	LastMindset   *Mindset       `json:"last_mindset,omitempty"`
 	PendingTasks  []string       `json:"pending_tasks,omitempty"`
 	LastReplyTime time.Time      `json:"last_reply_time,omitempty"`
+	Language      string         `json:"language,omitempty"` // Idioma resuelto para la respuesta (es, en, etc.)
+
+	// Client Context - Información del cliente registrado (si existe)
+	ClientContext *ClientContext `json:"client_context,omitempty"`
 }
 
 // Mindset representa la mentalidad situacional de la IA para una respuesta
