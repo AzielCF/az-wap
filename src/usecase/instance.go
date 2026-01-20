@@ -424,6 +424,18 @@ func (service *instanceService) List(ctx context.Context) ([]domainInstance.Inst
 	return result, nil
 }
 
+func (service *instanceService) GetByID(_ context.Context, id string) (domainInstance.Instance, error) {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+
+	for _, inst := range service.instancesByToken {
+		if inst.ID == id {
+			return inst, nil
+		}
+	}
+	return domainInstance.Instance{}, pkgError.ValidationError("id: instance not found.")
+}
+
 func (service *instanceService) GetByToken(_ context.Context, token string) (domainInstance.Instance, error) {
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {

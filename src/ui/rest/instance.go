@@ -11,7 +11,6 @@ import (
 	"github.com/AzielCF/az-wap/config"
 	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
-	integrationGemini "github.com/AzielCF/az-wap/integrations/gemini"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -1206,7 +1205,9 @@ func (handler *Instance) ClearInstanceGeminiMemory(c *fiber.Ctx) error {
 		})
 	}
 
-	integrationGemini.ClearInstanceMemory(id)
+	if engine != nil {
+		engine.ClearBotMemory("instance-" + id)
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

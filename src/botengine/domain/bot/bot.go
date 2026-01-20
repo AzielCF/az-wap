@@ -29,6 +29,7 @@ type Bot struct {
 	ChatwootBotToken     string `json:"chatwoot_bot_token,omitempty"`
 	// New fields added
 	ChatwootCredential ChatwootCredential `json:"chatwoot_credential,omitempty"`
+	Whitelist          []string           `json:"whitelist,omitempty"`
 }
 
 type ChatwootCredential struct {
@@ -51,8 +52,9 @@ type CreateBotRequest struct {
 	MemoryEnabled bool   `json:"memory_enabled"`
 	CredentialID  string `json:"credential_id"`
 	// Optional Chatwoot config for this Bot AI
-	ChatwootCredentialID string `json:"chatwoot_credential_id"`
-	ChatwootBotToken     string `json:"chatwoot_bot_token"`
+	ChatwootCredentialID string   `json:"chatwoot_credential_id"`
+	ChatwootBotToken     string   `json:"chatwoot_bot_token"`
+	Whitelist            []string `json:"whitelist"`
 }
 
 type UpdateBotRequest struct {
@@ -70,14 +72,16 @@ type UpdateBotRequest struct {
 	MemoryEnabled bool   `json:"memory_enabled"`
 	CredentialID  string `json:"credential_id"`
 	// Optional Chatwoot config for this Bot AI
-	ChatwootCredentialID string `json:"chatwoot_credential_id"`
-	ChatwootBotToken     string `json:"chatwoot_bot_token"`
+	ChatwootCredentialID string   `json:"chatwoot_credential_id"`
+	ChatwootBotToken     string   `json:"chatwoot_bot_token"`
+	Whitelist            []string `json:"whitelist"`
 }
 
 type IBotUsecase interface {
 	Create(ctx context.Context, req CreateBotRequest) (Bot, error)
 	List(ctx context.Context) ([]Bot, error)
 	GetByID(ctx context.Context, id string) (Bot, error)
+	GetByInstanceID(ctx context.Context, instanceID string) (Bot, error)
 	Update(ctx context.Context, id string, req UpdateBotRequest) (Bot, error)
 	Delete(ctx context.Context, id string) error
 }

@@ -1,7 +1,7 @@
 package rest
 
 import (
-	domainMCP "github.com/AzielCF/az-wap/domains/mcp"
+	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
