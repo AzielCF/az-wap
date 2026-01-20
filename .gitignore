@@ -17,3 +17,13 @@ bin
 .cursor/mcp.json
 planificaciones/
 az-wap.exe
+
+# Static Media (WhatsApp downloads)
+src/statics/workspaces/
+statics/workspaces/
+!src/statics/workspaces/.gitkeep
+
+# Frontend
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/.bun/
