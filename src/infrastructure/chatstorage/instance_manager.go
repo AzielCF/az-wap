@@ -84,10 +84,12 @@ func CleanupInstanceRepository(instanceID string) error {
 	}
 
 	dbPath := fmt.Sprintf("%s/chat-%s.db", config.PathStorages, trimmed)
-	if err := os.Remove(dbPath); err != nil {
-		if !os.IsNotExist(err) {
-			logrus.Errorf("[CHATSTORAGE_INSTANCE] failed to remove DB file for instance %s: %v", trimmed, err)
-			return err
+	files := []string{dbPath, dbPath + "-shm", dbPath + "-wal"}
+	for _, f := range files {
+		if err := os.Remove(f); err != nil {
+			if !os.IsNotExist(err) {
+				logrus.Errorf("[CHATSTORAGE_INSTANCE] failed to remove file %s for instance %s: %v", f, trimmed, err)
+			}
 		}
 	}
 

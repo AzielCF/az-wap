@@ -53,7 +53,7 @@ func IsComposing(instanceID, chatJID string) bool {
 		mu.Unlock()
 		return false
 	}
-	if time.Since(e.updatedAt) > 12*time.Second {
+	if time.Since(e.updatedAt) > 7*time.Second {
 		delete(store, key(instanceID, chatJID))
 		mu.Unlock()
 		return false
@@ -72,7 +72,7 @@ func Media(instanceID, chatJID string) types.ChatPresenceMedia {
 
 	mu.Lock()
 	e, ok := store[key(instanceID, chatJID)]
-	if !ok || time.Since(e.updatedAt) > 12*time.Second {
+	if !ok || time.Since(e.updatedAt) > 6*time.Second {
 		if ok {
 			delete(store, key(instanceID, chatJID))
 		}
@@ -105,4 +105,42 @@ func WaitIdle(ctx context.Context, instanceID, chatJID string, timeout time.Dura
 		case <-poll.C:
 		}
 	}
+}
+func (e *entry) isExpired() bool {
+	return time.Since(e.updatedAt) > 7*time.Second
+}
+
+type TypingState struct {
+	InstanceID string    `json:"instance_id"`
+	ChatJID    string    `json:"chat_jid"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Media      string    `json:"media"` // audio or text
+}
+
+func GetActiveTyping() []TypingState {
+	mu.Lock()
+	defer mu.Unlock()
+
+	var active []TypingState
+	for k, e := range store {
+		if e.composing && !e.isExpired() {
+			parts := strings.Split(k, "|")
+			if len(parts) < 2 {
+				continue
+			}
+
+			mediaStr := "text"
+			if e.media == types.ChatPresenceMediaAudio {
+				mediaStr = "audio"
+			}
+
+			active = append(active, TypingState{
+				InstanceID: parts[0],
+				ChatJID:    parts[1],
+				UpdatedAt:  e.updatedAt,
+				Media:      mediaStr,
+			})
+		}
+	}
+	return active
 }

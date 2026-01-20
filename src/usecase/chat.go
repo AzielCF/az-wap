@@ -7,46 +7,34 @@ import (
 
 	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
-	domainInstance "github.com/AzielCF/az-wap/domains/instance"
 	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
-	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/workspace"
 	"github.com/sirupsen/logrus"
-	"go.mau.fi/whatsmeow/appstate"
 )
 
 type serviceChat struct {
-	chatStorageRepo domainChatStorage.IChatStorageRepository
-	instanceService domainInstance.IInstanceUsecase
+	workspaceMgr *workspace.Manager
 }
 
-func NewChatService(chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainChat.IChatUsecase {
+func NewChatService(workspaceMgr *workspace.Manager) domainChat.IChatUsecase {
 	return &serviceChat{
-		chatStorageRepo: chatStorageRepo,
-		instanceService: instanceService,
+		workspaceMgr: workspaceMgr,
 	}
 }
 
-func (service serviceChat) getChatStorageForToken(ctx context.Context, token string) domainChatStorage.IChatStorageRepository {
-	repo := service.chatStorageRepo
-	if token == "" || service.instanceService == nil {
-		return repo
+func (service serviceChat) getChatStorageForToken(ctx context.Context, token string) (domainChatStorage.IChatStorageRepository, error) {
+	if token == "" || service.workspaceMgr == nil {
+		return nil, fmt.Errorf("invalid token or workspace manager")
 	}
 
-	inst, err := service.instanceService.GetByToken(ctx, token)
+	channelID := token
+	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(channelID)
 	if err != nil {
-		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to resolve instance for token, falling back to global chatstorage")
-		return repo
+		return nil, fmt.Errorf("failed to get channel chatstorage repo: %w", err)
 	}
 
-	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(inst.ID)
-	if err != nil {
-		logrus.WithError(err).Warn("[CHATSTORAGE_INSTANCE] failed to get instance chatstorage repo, falling back to global chatstorage")
-		return repo
-	}
-
-	return instanceRepo
+	return instanceRepo, nil
 }
 
 func (service serviceChat) ListChats(ctx context.Context, request domainChat.ListChatsRequest) (response domainChat.ListChatsResponse, err error) {
@@ -62,7 +50,10 @@ func (service serviceChat) ListChats(ctx context.Context, request domainChat.Lis
 		HasMedia:   request.HasMedia,
 	}
 
-	repo := service.getChatStorageForToken(ctx, request.Token)
+	repo, err := service.getChatStorageForToken(ctx, request.Token)
+	if err != nil {
+		return response, err
+	}
 
 	// Get chats from storage
 	chats, err := repo.GetChats(filter)
@@ -117,7 +108,10 @@ func (service serviceChat) GetChatMessages(ctx context.Context, request domainCh
 		return response, err
 	}
 
-	repo := service.getChatStorageForToken(ctx, request.Token)
+	repo, err := service.getChatStorageForToken(ctx, request.Token)
+	if err != nil {
+		return response, err
+	}
 
 	// Get chat info first
 	chat, err := repo.GetChat(request.ChatJID)
@@ -237,21 +231,20 @@ func (service serviceChat) PinChat(ctx context.Context, request domainChat.PinCh
 		return response, err
 	}
 
-	// Validate JID and ensure connection
-	targetJID, err := utils.ValidateJidWithLogin(whatsapp.GetClient(), request.ChatJID)
-	if err != nil {
-		return response, err
+	// In the new architecture, request.Token is the ChannelID
+	adapter, ok := service.workspaceMgr.GetAdapter(request.Token)
+	if !ok {
+		// Fallback for global client if appropriate, or error out
+		logrus.WithField("channel_id", request.Token).Warn("Channel adapter not found, operation might fail if not using global client")
+		return response, fmt.Errorf("channel adapter %s not found or not active", request.Token)
 	}
 
-	// Build pin patch using whatsmeow's BuildPin
-	patchInfo := appstate.BuildPin(targetJID, request.Pinned)
-
-	// Send app state update
-	if err = whatsapp.GetClient().SendAppState(ctx, patchInfo); err != nil {
+	// Use adapter to pin chat
+	if err = adapter.PinChat(ctx, request.ChatJID, request.Pinned); err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"chat_jid": request.ChatJID,
 			"pinned":   request.Pinned,
-		}).Error("Failed to send pin chat app state")
+		}).Error("Failed to pin chat via adapter")
 		return response, err
 	}
 

@@ -47,11 +47,13 @@ type CallToolRequest struct {
 }
 
 type CallToolResult struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	IsError bool `json:"is_error"`
+	Content []CallToolContent `json:"content"`
+	IsError bool              `json:"is_error"`
+}
+
+type CallToolContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type BotMCPConfig struct {
@@ -61,6 +63,13 @@ type BotMCPConfig struct {
 	DisabledTools []string          `json:"disabled_tools"` // List of tool names to hide from this bot
 	CustomHeaders map[string]string `json:"custom_headers"` // Bot-specific headers (auth, etc)
 	Instructions  string            `json:"instructions"`   // Bot-specific instructions for this MCP server
+}
+
+// BotMCPConfigJSON define el esquema exacto de config_json en la BD.
+type BotMCPConfigJSON struct {
+	DisabledTools []string          `json:"disabled_tools"`
+	CustomHeaders map[string]string `json:"custom_headers"`
+	Instructions  string            `json:"instructions"`
 }
 
 type IMCPUsecase interface {
@@ -83,4 +92,5 @@ type IMCPUsecase interface {
 	Validate(ctx context.Context, id string) error
 	ListBotsUsingServer(ctx context.Context, serverID string) ([]string, error)
 	SetHealthUsecase(health domainHealth.IHealthUsecase)
+	Shutdown()
 }

@@ -12,12 +12,12 @@ type Cache struct {
 
 func InitRestCache(app fiber.Router, service domainCache.ICacheUsecase) Cache {
 	rest := Cache{Service: service}
-	app.Get("/api/cache/stats", rest.GetGlobalStats)
-	app.Post("/api/cache/clear", rest.ClearGlobalCache)
-	app.Get("/api/cache/settings", rest.GetSettings)
-	app.Put("/api/cache/settings", rest.UpdateSettings)
-	app.Get("/api/instances/:id/cache/stats", rest.GetInstanceStats)
-	app.Post("/api/instances/:id/cache/clear", rest.ClearInstanceCache)
+	app.Get("/cache/stats", rest.GetGlobalStats)
+	app.Post("/cache/clear", rest.ClearGlobalCache)
+	app.Get("/cache/settings", rest.GetSettings)
+	app.Put("/cache/settings", rest.UpdateSettings)
+	app.Get("/instances/:id/cache/stats", rest.GetInstanceStats)
+	app.Post("/instances/:id/cache/clear", rest.ClearInstanceCache)
 
 	return rest
 }

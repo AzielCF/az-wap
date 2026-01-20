@@ -1,19 +1,13 @@
 package rest
 
 import (
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/gofiber/fiber/v2"
 )
 
 // GetWorkerPoolStats returns real-time worker pool statistics
 func GetWorkerPoolStats(c *fiber.Ctx) error {
-	stats := whatsapp.GetMessageWorkerPoolStats()
-	if stats == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": "Worker pool not initialized",
-		})
-	}
-
+	stats := msgworker.GetGlobalStats()
 	return c.JSON(stats)
 }
 

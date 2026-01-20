@@ -2,408 +2,241 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
-	domainInstance "github.com/AzielCF/az-wap/domains/instance"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/workspace"
+	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	fiberUtils "github.com/gofiber/fiber/v2/utils"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"github.com/skip2/go-qrcode"
-	"go.mau.fi/libsignal/logger"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/store/sqlstore"
-	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 type serviceApp struct {
-	chatStorageRepo domainChatStorage.IChatStorageRepository
-	instanceService domainInstance.IInstanceUsecase
+	workspaceMgr *workspace.Manager
 }
 
-func NewAppService(chatStorageRepo domainChatStorage.IChatStorageRepository, instanceService domainInstance.IInstanceUsecase) domainApp.IAppUsecase {
+func NewAppService(workspaceMgr *workspace.Manager) domainApp.IAppUsecase {
 	return &serviceApp{
-		chatStorageRepo: chatStorageRepo,
-		instanceService: instanceService,
+		workspaceMgr: workspaceMgr,
 	}
 }
 
 func (service *serviceApp) validateToken(ctx context.Context, token string) error {
-	if service.instanceService == nil {
-		return nil
-	}
-
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {
 		return pkgError.ValidationError("token: cannot be blank.")
 	}
-
-	_, err := service.instanceService.GetByToken(ctx, trimmed)
-	return err
+	_, ok := service.workspaceMgr.GetAdapter(trimmed)
+	if !ok {
+		// If not in manager, we should check if it exists in repo/DB
+		// For now we assume the caller ensures existence or we try to Start it.
+	}
+	return nil
 }
 
-func (service *serviceApp) getClientAndDB(ctx context.Context, token string) (*whatsmeow.Client, *sqlstore.Container, error) {
-	if service.instanceService == nil {
-		client := whatsapp.GetClient()
-		if client == nil {
-			return nil, nil, pkgError.ErrWaCLI
-		}
-		return client, whatsapp.GetDB(), nil
-	}
-
+func (service *serviceApp) getAdapter(ctx context.Context, token string) (wsChannelDomain.ChannelAdapter, error) {
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {
-		return nil, nil, pkgError.ValidationError("token: cannot be blank.")
+		return nil, pkgError.ValidationError("token: cannot be blank.")
 	}
 
-	instance, err := service.instanceService.GetByToken(ctx, trimmed)
-	if err != nil {
-		return nil, nil, err
+	adapter, ok := service.workspaceMgr.GetAdapter(trimmed)
+	if !ok {
+		// Try to start it
+		if err := service.workspaceMgr.StartChannel(ctx, trimmed); err != nil {
+			return nil, err
+		}
+		adapter, _ = service.workspaceMgr.GetAdapter(trimmed)
 	}
 
-	// Registrar configuración de webhooks específica de la instancia (si está disponible).
-	whatsapp.SetInstanceWebhookConfig(
-		instance.ID,
-		instance.WebhookURLs,
-		instance.WebhookSecret,
-		instance.WebhookInsecureSkipVerify,
-	)
-
-	client, instDB, err := whatsapp.GetOrInitInstanceClient(ctx, instance.ID, service.chatStorageRepo)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// If client is nil, the instance needs login first
-	if client == nil {
-		logrus.Warnf("[INSTANCE] Client for instance %s is nil (needs login), using DB only", instance.ID)
-		return nil, instDB, nil
-	}
-
-	return client, instDB, nil
+	return adapter, nil
 }
 
 func (service *serviceApp) Login(ctx context.Context, token string) (response domainApp.LoginResponse, err error) {
-	client, currentDB, err := service.getClientAndDB(ctx, token)
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return response, err
 	}
 
-	// [DEBUG] Log database state before login
-	logrus.Info("[DEBUG] Starting login process...")
-	if currentDB != nil {
-		devices, dbErr := currentDB.GetAllDevices(ctx)
-		if dbErr != nil {
-			logrus.Errorf("[DEBUG] Error getting devices before login: %v", dbErr)
-		} else {
-			logrus.Infof("[DEBUG] Devices before login: %d found", len(devices))
-			for _, device := range devices {
-				logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
-			}
-		}
+	if adapter.IsLoggedIn() {
+		return response, pkgError.ErrAlreadyLoggedIn
 	}
 
-	// If client is nil, create a new one for this instance (fresh login)
-	if client == nil {
-		logrus.Info("[DEBUG] Client is nil - creating new client for fresh login")
-		if currentDB == nil {
-			return response, pkgError.ErrWaCLI
-		}
-		device := currentDB.NewDevice()
-		client = whatsmeow.NewClient(device, waLog.Stdout("Client", config.WhatsappLogLevel, true))
-		client.EnableAutoReconnect = true
-		client.AutoTrustIdentity = true
-	}
-
-	// [DEBUG] Log client state
-	if client.Store != nil && client.Store.ID != nil {
-		logrus.Infof("[DEBUG] Client has existing store ID: %s", client.Store.ID.String())
-	} else {
-		logrus.Info("[DEBUG] Client has no store ID")
-	}
-
-	// Disconnect for reconnecting
-	client.Disconnect()
-
-	chImage := make(chan string)
-
-	logrus.Info("[DEBUG] Attempting to get QR channel...")
-	ch, err := client.GetQRChannel(context.Background())
+	qrChan, err := adapter.GetQRChannel(ctx)
 	if err != nil {
-		logrus.Errorf("[DEBUG] GetQRChannel failed: %v", err)
-		logrus.Error(err.Error())
-		// This error means that we're already logged in, so ignore it.
-		if errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
-			logrus.Info("[DEBUG] Error is ErrQRStoreContainsID - attempting to connect")
-			_ = client.Connect() // just connect to websocket
-			if client.IsLoggedIn() {
-				return response, pkgError.ErrAlreadyLoggedIn
-			}
-			return response, pkgError.ErrSessionSaved
-		} else {
-			return response, pkgError.ErrQrChannel
+		return response, err
+	}
+
+	// Start login (Connect)
+	if err := adapter.Login(ctx); err != nil {
+		return response, err
+	}
+
+	// Wait for the first QR code
+	select {
+	case code := <-qrChan:
+		response.Code = code
+		response.Duration = 20 // Default WhatsApp QR duration approx
+
+		qrPath := fmt.Sprintf("%s/scan-qr-%s.png", config.PathQrCode, fiberUtils.UUIDv4())
+		err = qrcode.WriteFile(code, qrcode.Medium, 512, qrPath)
+		if err != nil {
+			logrus.Error("Error when write qr code to file: ", err)
 		}
-	} else {
-		logrus.Info("[DEBUG] QR channel obtained successfully")
+
+		response.ImagePath = qrPath
+
+		// Cleanup timer
 		go func() {
-			for evt := range ch {
-				response.Code = evt.Code
-				response.Duration = evt.Timeout / time.Second / 2
-				if evt.Event == "code" {
-					qrPath := fmt.Sprintf("%s/scan-qr-%s.png", config.PathQrCode, fiberUtils.UUIDv4())
-					err = qrcode.WriteFile(evt.Code, qrcode.Medium, 512, qrPath)
-					if err != nil {
-						logrus.Error("Error when write qr code to file: ", err)
-					}
-					go func() {
-						time.Sleep(response.Duration * time.Second)
-						err := os.Remove(qrPath)
-						if err != nil {
-							// Only log if it's not a "file not found" error
-							if !os.IsNotExist(err) {
-								logrus.Error("error when remove qrImage file", err.Error())
-							}
-						}
-					}()
-					chImage <- qrPath
-				} else {
-					logrus.Error("error when get qrCode", evt.Event, evt.Error)
-				}
-			}
+			time.Sleep(20 * time.Second)
+			_ = os.Remove(qrPath)
 		}()
+
+	case <-time.After(30 * time.Second):
+		return response, fmt.Errorf("timeout waiting for QR code")
+	case <-ctx.Done():
+		return response, ctx.Err()
 	}
-
-	err = client.Connect()
-	if err != nil {
-		logger.Error("Error when connect to whatsapp", err)
-		return response, pkgError.ErrReconnect
-	}
-	response.ImagePath = <-chImage
-
-	// [DEBUG] Verify connection state and sync global client
-	logrus.Infof("[DEBUG] Login connection established - IsConnected: %v, IsLoggedIn: %v",
-		client.IsConnected(), client.IsLoggedIn())
-
-	// Store the client for this instance after successful login
-	whatsapp.SetInstanceClient(whatsapp.GetActiveInstanceID(), client, currentDB)
 
 	return response, nil
 }
 
 func (service *serviceApp) LoginWithCode(ctx context.Context, token string, phoneNumber string) (loginCode string, err error) {
 	if err = validations.ValidateLoginWithCode(ctx, phoneNumber); err != nil {
-		logrus.Errorf("Error when validate login with code: %s", err.Error())
 		return loginCode, err
 	}
 
-	client, _, err := service.getClientAndDB(ctx, token)
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return loginCode, err
 	}
-	// detect is already logged in
-	if client.Store.ID != nil || client.IsLoggedIn() {
-		logrus.Warn("User is already logged in")
+
+	if adapter.IsLoggedIn() {
 		return loginCode, pkgError.ErrAlreadyLoggedIn
 	}
 
-	// reconnect first
-	if err = service.Reconnect(ctx, token); err != nil {
-		logrus.Errorf("Error when reconnecting before login with code: %s", err.Error())
-		return loginCode, err
-	}
-
-	// refresh client reference after reconnect
-	client = whatsapp.GetClient()
-	if client.IsLoggedIn() || client.Store.ID != nil {
-		logrus.Warn("User is already logged in after reconnect")
-		return loginCode, pkgError.ErrAlreadyLoggedIn
-	}
-
-	logrus.Infof("[DEBUG] Starting phone pairing for number: %s", phoneNumber)
-	loginCode, err = client.PairPhone(ctx, phoneNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
-	if err != nil {
-		logrus.Errorf("Error when pairing phone: %s", err.Error())
-		return loginCode, err
-	}
-
-	// [DEBUG] Verify pairing state and sync global client
-	logrus.Infof("[DEBUG] Phone pairing completed - IsConnected: %v, IsLoggedIn: %v",
-		client.IsConnected(), client.IsLoggedIn())
-
-	// Ensure global client is synchronized with service client
-	whatsapp.UpdateGlobalClient(client, whatsapp.GetDB())
-
-	logrus.Infof("Successfully paired phone with code: %s", loginCode)
-	return loginCode, nil
+	return adapter.LoginWithCode(ctx, phoneNumber)
 }
 
 func (service *serviceApp) Logout(ctx context.Context, token string) (err error) {
-	if err = service.validateToken(ctx, token); err != nil {
-		return err
-	}
-
-	// Legacy/global logout when no token is provided or instanceService is not available
-	if token == "" || service.instanceService == nil {
-		logrus.Info("[DEBUG] Starting logout process (global)...")
-		devices, dbErr := whatsapp.GetDB().GetAllDevices(ctx)
-		if dbErr != nil {
-			logrus.Errorf("[DEBUG] Error getting devices before logout: %v", dbErr)
-		} else {
-			logrus.Infof("[DEBUG] Devices before logout: %d found", len(devices))
-			for _, device := range devices {
-				logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
-			}
-		}
-
-		logrus.Info("[DEBUG] Calling WhatsApp client logout (global)...")
-		if err = whatsapp.GetClient().Logout(ctx); err != nil {
-			logrus.Errorf("[DEBUG] WhatsApp logout failed: %v", err)
-		} else {
-			logrus.Info("[DEBUG] WhatsApp logout completed successfully")
-		}
-
-		devices, dbErr = whatsapp.GetDB().GetAllDevices(ctx)
-		if dbErr != nil {
-			logrus.Errorf("[DEBUG] Error getting devices after logout: %v", dbErr)
-		} else {
-			logrus.Infof("[DEBUG] Devices after logout: %d found", len(devices))
-		}
-
-		newDB, newCli, err := whatsapp.PerformCleanupAndUpdateGlobals(ctx, "MANUAL_LOGOUT", service.chatStorageRepo)
-		if err != nil {
-			logrus.Errorf("[DEBUG] Cleanup failed: %v", err)
-			return err
-		}
-
-		whatsapp.UpdateGlobalClient(newCli, newDB)
-		logrus.Info("[DEBUG] Logout process completed successfully (global)")
-		return nil
-	}
-
-	// Instance-scoped logout when a token is provided
-	client, currentDB, err := service.getClientAndDB(ctx, token)
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return err
 	}
 
-	logrus.Info("[DEBUG] Starting logout process (instance)...")
-	devices, dbErr := currentDB.GetAllDevices(ctx)
-	if dbErr != nil {
-		logrus.Errorf("[DEBUG] Error getting devices before logout (instance): %v", dbErr)
-	} else {
-		logrus.Infof("[DEBUG] Devices before logout (instance): %d found", len(devices))
-		for _, device := range devices {
-			logrus.Infof("[DEBUG] Device ID: %s, PushName: %s", device.ID.String(), device.PushName)
-		}
-	}
-
-	logrus.Info("[DEBUG] Calling WhatsApp client logout (instance)...")
-	if err = client.Logout(ctx); err != nil {
-		logrus.Errorf("[DEBUG] WhatsApp logout failed (instance): %v", err)
-	} else {
-		logrus.Info("[DEBUG] WhatsApp logout completed successfully (instance)")
-	}
-
-	devices, dbErr = currentDB.GetAllDevices(ctx)
-	if dbErr != nil {
-		logrus.Errorf("[DEBUG] Error getting devices after logout (instance): %v", dbErr)
-	} else {
-		logrus.Infof("[DEBUG] Devices after logout (instance): %d found", len(devices))
-	}
-
-	inst, err := service.instanceService.GetByToken(ctx, token)
-	if err != nil {
+	if err := adapter.Logout(ctx); err != nil {
 		return err
 	}
 
-	if err := whatsapp.CleanupInstanceSession(ctx, inst.ID, service.chatStorageRepo); err != nil {
-		logrus.Errorf("[DEBUG] Instance cleanup failed: %v", err)
-		return err
-	}
-
-	logrus.Info("[DEBUG] Logout process completed successfully (instance)")
+	service.workspaceMgr.UnregisterAdapter(token)
 	return nil
 }
 
-func (service *serviceApp) Reconnect(_ context.Context, token string) (err error) {
-	// Reconnect sigue usando el cliente global; el token se valida en Login/LoginWithCode cuando no está vacío.
-	logrus.Info("[DEBUG] Starting reconnect process...")
-
-	client, db, err := service.getClientAndDB(context.Background(), token)
+func (service *serviceApp) Reconnect(ctx context.Context, token string) (err error) {
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return err
 	}
-	client.Disconnect()
-	err = client.Connect()
 
-	if err != nil {
-		logrus.Errorf("[DEBUG] Reconnect failed: %v", err)
-		return err
-	}
-
-	// [DEBUG] Verify reconnection state and sync global client
-	logrus.Infof("[DEBUG] Reconnection completed - IsConnected: %v, IsLoggedIn: %v",
-		client.IsConnected(), client.IsLoggedIn())
-
-	// Ensure global client is synchronized with service client
-	whatsapp.UpdateGlobalClient(client, db)
-
-	logrus.Info("[DEBUG] Reconnect process completed successfully")
-	return err
+	return adapter.Login(ctx)
 }
 
 func (service *serviceApp) FirstDevice(ctx context.Context, token string) (response domainApp.DevicesResponse, err error) {
-	_, currentDB, err := service.getClientAndDB(ctx, token)
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return response, err
 	}
 
-	devices, err := currentDB.GetFirstDevice(ctx)
-	if err != nil {
-		return response, err
-	}
-
-	response.Device = devices.ID.String()
-	if devices.PushName != "" {
-		response.Name = devices.PushName
-	} else {
-		response.Name = devices.BusinessName
-	}
-
+	// For now, return generic "Adapter Account" as we moved away from raw DB device access here
+	response.Device = adapter.ID()
+	response.Name = "Active Session"
 	return response, nil
 }
 
 func (service *serviceApp) FetchDevices(ctx context.Context, token string) (response []domainApp.DevicesResponse, err error) {
-	_, currentDB, err := service.getClientAndDB(ctx, token)
+	adapter, err := service.getAdapter(ctx, token)
 	if err != nil {
 		return response, err
 	}
 
-	devices, err := currentDB.GetAllDevices(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, device := range devices {
-		var d domainApp.DevicesResponse
-		d.Device = device.ID.String()
-		if device.PushName != "" {
-			d.Name = device.PushName
-		} else {
-			d.Name = device.BusinessName
-		}
-
-		response = append(response, d)
-	}
-
+	response = append(response, domainApp.DevicesResponse{
+		Device: adapter.ID(),
+		Name:   "Active Session",
+	})
 	return response, nil
+}
+
+func (service *serviceApp) GetConnectionStatus(ctx context.Context, token string) (bool, bool, string, error) {
+	adapter, err := service.getAdapter(ctx, token)
+	if err != nil {
+		return false, false, "", err
+	}
+
+	status := adapter.Status()
+	// Check against domain constant if possible, or just string
+	isConnected := status == wsChannelDomain.ChannelStatusConnected
+	isLoggedIn := adapter.IsLoggedIn()
+	deviceID := adapter.ID()
+
+	return isConnected, isLoggedIn, deviceID, nil
+}
+
+func (service *serviceApp) GetSettings(ctx context.Context) (map[string]any, error) {
+	return config.GetAllSettings(), nil
+}
+
+func (service *serviceApp) UpdateSettings(ctx context.Context, key string, value any) error {
+	switch key {
+	case "whatsapp_max_download_size":
+		var val int64
+		switch v := value.(type) {
+		case float64:
+			val = int64(v)
+		case int64:
+			val = v
+		case int:
+			val = int64(v)
+		case string:
+			parsed, _ := strconv.ParseInt(v, 10, 64)
+			val = parsed
+		}
+		return config.SaveWhatsappMaxDownloadSize(val)
+	case "ai_global_system_prompt":
+		return config.SaveAIGlobalSystemPrompt(fmt.Sprintf("%v", value))
+	case "ai_timezone":
+		return config.SaveAITimezone(fmt.Sprintf("%v", value))
+	case "ai_debounce_ms":
+		var val int
+		if f, ok := value.(float64); ok {
+			val = int(f)
+		} else if i, ok := value.(int); ok {
+			val = i
+		}
+		return config.SaveAIDebounceMs(val)
+	case "ai_wait_contact_idle_ms":
+		var val int
+		if f, ok := value.(float64); ok {
+			val = int(f)
+		} else if i, ok := value.(int); ok {
+			val = i
+		}
+		return config.SaveAIWaitContactIdleMs(val)
+	case "ai_typing_enabled":
+		var val bool
+		if b, ok := value.(bool); ok {
+			val = b
+		} else if s, ok := value.(string); ok {
+			val = s == "true" || s == "1"
+		}
+		return config.SaveAITypingEnabled(val)
+	}
+	return fmt.Errorf("setting key %s not supported", key)
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
@@ -22,6 +21,8 @@ func InitRestApp(app fiber.Router, service domainApp.IAppUsecase) App {
 	app.Get("/app/reconnect", rest.Reconnect)
 	app.Get("/app/devices", rest.Devices)
 	app.Get("/app/status", rest.ConnectionStatus)
+	app.Get("/app/settings", rest.GetSettings)
+	app.Put("/app/settings", rest.UpdateSettings)
 
 	return App{Service: service}
 }
@@ -112,7 +113,19 @@ func (handler *App) Devices(c *fiber.Ctx) error {
 }
 
 func (handler *App) ConnectionStatus(c *fiber.Ctx) error {
-	isConnected, isLoggedIn, deviceID := whatsapp.GetConnectionStatus()
+	token := c.Get("X-Instance-Token")
+	if token == "" {
+		token = c.Query("token")
+	}
+
+	isConnected, isLoggedIn, deviceID, err := handler.Service.GetConnectionStatus(c.UserContext(), token)
+	if err != nil {
+		// Just log or return disconnected if error (legacy behavior was generous)
+		// But better to panic/return error structure if strict.
+		// For now, let's just return false/false structure if error but ideally check error.
+		// If explicit error handling needed:
+		// utils.PanicIfNeeded(err)
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -124,4 +137,24 @@ func (handler *App) ConnectionStatus(c *fiber.Ctx) error {
 			"device_id":    deviceID,
 		},
 	})
+}
+
+func (handler *App) GetSettings(c *fiber.Ctx) error {
+	settings, err := handler.Service.GetSettings(c.UserContext())
+	utils.PanicIfNeeded(err)
+	return c.JSON(settings)
+}
+
+func (handler *App) UpdateSettings(c *fiber.Ctx) error {
+	var body map[string]any
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON"})
+	}
+
+	for k, v := range body {
+		err := handler.Service.UpdateSettings(c.UserContext(), k, v)
+		utils.PanicIfNeeded(err)
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
 }

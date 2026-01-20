@@ -12,6 +12,9 @@ type IAppUsecase interface {
 	Reconnect(ctx context.Context, token string) (err error)
 	FirstDevice(ctx context.Context, token string) (response DevicesResponse, err error)
 	FetchDevices(ctx context.Context, token string) (response []DevicesResponse, err error)
+	GetConnectionStatus(ctx context.Context, token string) (isConnected bool, isLoggedIn bool, deviceID string, err error)
+	GetSettings(ctx context.Context) (map[string]any, error)
+	UpdateSettings(ctx context.Context, key string, value any) error
 }
 
 type DevicesResponse struct {

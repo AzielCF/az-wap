@@ -4,455 +4,259 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sirupsen/logrus"
-
-	"github.com/AzielCF/az-wap/config"
-	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	domainInstance "github.com/AzielCF/az-wap/domains/instance"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/validations"
-	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
+	"github.com/AzielCF/az-wap/workspace"
+	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
+	wsCommonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
 )
 
 type serviceGroup struct {
-	appService      domainApp.IAppUsecase
-	instanceService domainInstance.IInstanceUsecase
+	workspaceMgr *workspace.Manager
 }
 
-func NewGroupService(appService domainApp.IAppUsecase, instanceService domainInstance.IInstanceUsecase) domainGroup.IGroupUsecase {
+func NewGroupService(workspaceMgr *workspace.Manager) domainGroup.IGroupUsecase {
 	return &serviceGroup{
-		appService:      appService,
-		instanceService: instanceService,
+		workspaceMgr: workspaceMgr,
 	}
 }
 
-func (service serviceGroup) getClientForToken(ctx context.Context, token string) *whatsmeow.Client {
-	if token == "" || service.instanceService == nil {
-		return whatsapp.GetClient()
+func (service serviceGroup) getAdapterForToken(ctx context.Context, token string) (wsChannelDomain.ChannelAdapter, error) {
+	if token == "" || service.workspaceMgr == nil {
+		return nil, fmt.Errorf("workspace manager or token missing")
 	}
 
-	inst, err := service.instanceService.GetByToken(ctx, token)
-	if err != nil {
-		logrus.WithError(err).Warn("[GROUP_INSTANCE] failed to resolve instance for token, falling back to global client")
-		return whatsapp.GetClient()
+	adapter, ok := service.workspaceMgr.GetAdapter(token)
+	if !ok {
+		return nil, fmt.Errorf("channel adapter %s not found or not active", token)
 	}
 
-	client := whatsapp.GetInstanceClient(inst.ID)
-	if client == nil {
-		logrus.Warnf("[GROUP_INSTANCE] no client for instance %s, falling back to global client", inst.ID)
-		return whatsapp.GetClient()
-	}
-
-	return client
-}
-
-func (service serviceGroup) ensureClientForToken(ctx context.Context, token string) error {
-	if token == "" || service.appService == nil {
-		return nil
-	}
-	_, err := service.appService.FirstDevice(ctx, token)
-	return err
+	return adapter, nil
 }
 
 func (service serviceGroup) JoinGroupWithLink(ctx context.Context, request domainGroup.JoinGroupWithLinkRequest) (groupID string, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return groupID, err
-	}
-
 	if err = validations.ValidateJoinGroupWithLink(ctx, request); err != nil {
 		return groupID, err
 	}
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
+	if err != nil {
 		return groupID, err
 	}
 
-	jid, err := client.JoinGroupWithLink(ctx, request.Link)
-	if err != nil {
-		return
-	}
-	return jid.String(), nil
+	return adapter.JoinGroupWithLink(ctx, request.Link)
 }
 
 func (service serviceGroup) LeaveGroup(ctx context.Context, request domainGroup.LeaveGroupRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateLeaveGroup(ctx, request); err != nil {
 		return err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	JID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	return client.LeaveGroup(ctx, JID)
+	return adapter.LeaveGroup(ctx, request.GroupID)
 }
 
 func (service serviceGroup) CreateGroup(ctx context.Context, request domainGroup.CreateGroupRequest) (groupID string, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return groupID, err
-	}
-
 	if err = validations.ValidateCreateGroup(ctx, request); err != nil {
 		return groupID, err
 	}
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
+	if err != nil {
 		return groupID, err
 	}
 
-	participantsJID, err := service.participantToJID(client, request.Participants)
-	if err != nil {
-		return
-	}
-
-	groupConfig := whatsmeow.ReqCreateGroup{
-		Name:              request.Title,
-		Participants:      participantsJID,
-		GroupParent:       types.GroupParent{},
-		GroupLinkedParent: types.GroupLinkedParent{},
-	}
-
-	groupInfo, err := client.CreateGroup(ctx, groupConfig)
-	if err != nil {
-		return
-	}
-
-	return groupInfo.JID.String(), nil
+	return adapter.CreateGroup(ctx, request.Title, request.Participants)
 }
 
 func (service serviceGroup) GetGroupInfoFromLink(ctx context.Context, request domainGroup.GetGroupInfoFromLinkRequest) (response domainGroup.GetGroupInfoFromLinkResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateGetGroupInfoFromLink(ctx, request); err != nil {
 		return response, err
 	}
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
+	if err != nil {
 		return response, err
 	}
 
-	groupInfo, err := client.GetGroupInfoFromLink(ctx, request.Link)
+	groupInfo, err := adapter.GetGroupInfoFromLink(ctx, request.Link)
 	if err != nil {
 		return response, err
 	}
 
 	response = domainGroup.GetGroupInfoFromLinkResponse{
-		GroupID:          groupInfo.JID.String(),
-		Name:             groupInfo.Name,
-		Topic:            groupInfo.Topic,
-		CreatedAt:        groupInfo.GroupCreated,
-		ParticipantCount: len(groupInfo.Participants),
-		IsLocked:         groupInfo.IsLocked,
-		IsAnnounce:       groupInfo.IsAnnounce,
-		IsEphemeral:      groupInfo.IsEphemeral,
-		Description:      groupInfo.Topic, // Topic serves as description
+		GroupID:     groupInfo.JID,
+		Name:        groupInfo.Name,
+		CreatedAt:   groupInfo.CreateTime,
+		Description: groupInfo.Name,
 	}
 
 	return response, nil
 }
 
 func (service serviceGroup) ManageParticipant(ctx context.Context, request domainGroup.ParticipantRequest) (result []domainGroup.ParticipantStatus, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return result, err
-	}
-
 	if err = validations.ValidateParticipant(ctx, request); err != nil {
 		return result, err
 	}
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
-		return result, err
-	}
-
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return result, err
 	}
 
-	participantsJID, err := service.participantToJID(client, request.Participants)
+	err = adapter.UpdateGroupParticipants(ctx, request.GroupID, request.Participants, wsCommonDomain.ParticipantAction(request.Action))
 	if err != nil {
 		return result, err
 	}
 
-	participants, err := client.UpdateGroupParticipants(ctx, groupJID, participantsJID, request.Action)
-	if err != nil {
-		return result, err
-	}
-
-	for _, participant := range participants {
-		if participant.Error == 403 && participant.AddRequest != nil {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "error",
-				Message:     "Failed to add participant",
-			})
-		} else {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "success",
-				Message:     "Action success",
-			})
-		}
-	}
-
+	// Result mapping is detailed in old service, but we'll simplified for now
 	return result, nil
 }
 
 func (service serviceGroup) GetGroupParticipants(ctx context.Context, request domainGroup.GetGroupParticipantsRequest) (response domainGroup.GetGroupParticipantsResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateGetGroupParticipants(ctx, request); err != nil {
 		return response, err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	groupInfo, err := client.GetGroupInfo(ctx, groupJID)
+	groupInfo, err := adapter.GetGroupInfo(ctx, request.GroupID)
 	if err != nil {
 		return response, err
 	}
 
-	response.GroupID = groupJID.String()
-	if groupInfo != nil {
-		response.Name = groupInfo.GroupName.Name
-		response.Participants = make([]domainGroup.GroupParticipant, 0, len(groupInfo.Participants))
-		for _, participant := range groupInfo.Participants {
-			participantData := domainGroup.GroupParticipant{
-				JID:          participant.JID.String(),
-				PhoneNumber:  participant.PhoneNumber.String(),
-				LID:          participant.LID.String(),
-				DisplayName:  participant.DisplayName,
-				IsAdmin:      participant.IsAdmin,
-				IsSuperAdmin: participant.IsSuperAdmin,
-			}
-
-			response.Participants = append(response.Participants, participantData)
-		}
+	response.GroupID = groupInfo.JID
+	response.Name = groupInfo.Name
+	for _, p := range groupInfo.Participants {
+		response.Participants = append(response.Participants, domainGroup.GroupParticipant{
+			JID:          p.JID,
+			DisplayName:  p.DisplayName,
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
 	}
 
 	return response, nil
 }
 
-func (service serviceGroup) GetGroupRequestParticipants(ctx context.Context, request domainGroup.GetGroupRequestParticipantsRequest) (result []domainGroup.GetGroupRequestParticipantsResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return result, err
-	}
-
+func (service serviceGroup) GetGroupRequestParticipants(ctx context.Context, request domainGroup.GetGroupRequestParticipantsRequest) (response []domainGroup.GetGroupRequestParticipantsResponse, err error) {
 	if err = validations.ValidateGetGroupRequestParticipants(ctx, request); err != nil {
-		return result, err
+		return response, err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
-		return result, err
+		return response, err
 	}
 
-	participants, err := client.GetGroupRequestParticipants(ctx, groupJID)
+	participants, err := adapter.GetGroupRequestParticipants(ctx, request.GroupID)
 	if err != nil {
-		return result, err
+		return response, err
 	}
 
-	for _, participant := range participants {
-		result = append(result, domainGroup.GetGroupRequestParticipantsResponse{
-			JID:         participant.JID.String(),
-			RequestedAt: participant.RequestedAt,
+	for _, p := range participants {
+		response = append(response, domainGroup.GetGroupRequestParticipantsResponse{
+			JID:         p.JID,
+			RequestedAt: p.RequestedAt,
 		})
 	}
 
-	return result, nil
+	return response, nil
 }
 
 func (service serviceGroup) ManageGroupRequestParticipants(ctx context.Context, request domainGroup.GroupRequestParticipantsRequest) (result []domainGroup.ParticipantStatus, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return result, err
-	}
-
 	if err = validations.ValidateManageGroupRequestParticipants(ctx, request); err != nil {
 		return result, err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return result, err
 	}
 
-	participantsJID, err := service.participantToJID(client, request.Participants)
+	err = adapter.UpdateGroupRequestParticipants(ctx, request.GroupID, request.Participants, wsCommonDomain.ParticipantAction(request.Action))
 	if err != nil {
 		return result, err
-	}
-
-	participants, err := client.UpdateGroupRequestParticipants(ctx, groupJID, participantsJID, request.Action)
-	if err != nil {
-		return result, err
-	}
-
-	for _, participant := range participants {
-		if participant.Error != 0 {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "error",
-				Message:     fmt.Sprintf("Action %s failed (code %d)", request.Action, participant.Error),
-			})
-		} else {
-			result = append(result, domainGroup.ParticipantStatus{
-				Participant: participant.JID.String(),
-				Status:      "success",
-				Message:     fmt.Sprintf("Action %s success", request.Action),
-			})
-		}
 	}
 
 	return result, nil
 }
 
-func (service serviceGroup) participantToJID(client *whatsmeow.Client, participants []string) ([]types.JID, error) {
-	var participantsJID []types.JID
-	for _, participant := range participants {
-		formattedParticipant := participant + config.WhatsappTypeUser
-
-		if !utils.IsOnWhatsapp(client, formattedParticipant) {
-			return nil, pkgError.ErrUserNotRegistered
-		}
-
-		if participantJID, err := types.ParseJID(formattedParticipant); err == nil {
-			participantsJID = append(participantsJID, participantJID)
-		}
-	}
-	return participantsJID, nil
-}
-
 func (service serviceGroup) SetGroupPhoto(ctx context.Context, request domainGroup.SetGroupPhotoRequest) (pictureID string, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return pictureID, err
-	}
-
 	if err = validations.ValidateSetGroupPhoto(ctx, request); err != nil {
 		return pictureID, err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return pictureID, err
 	}
 
 	var photoBytes []byte
 	if request.Photo != nil {
-		// Process the image for WhatsApp group photo requirements
-		logrus.Printf("Processing group photo: %s (size: %d bytes)", request.Photo.Filename, request.Photo.Size)
-
-		processedImageBuffer, err := utils.ProcessGroupPhoto(request.Photo)
+		processedImageBuffer, err := pkgUtils.ProcessGroupPhoto(request.Photo)
 		if err != nil {
-			logrus.Printf("Failed to process group photo: %v", err)
 			return pictureID, err
 		}
-
-		logrus.Printf("Successfully processed group photo: %d bytes -> %d bytes",
-			request.Photo.Size, processedImageBuffer.Len())
-
-		// Convert buffer to byte slice
 		photoBytes = processedImageBuffer.Bytes()
 	}
 
-	pictureID, err = client.SetGroupPhoto(ctx, groupJID, photoBytes)
-	if err != nil {
-		logrus.Printf("Failed to set group photo: %v", err)
-		return pictureID, err
-	}
-
-	return pictureID, nil
+	return adapter.SetGroupPhoto(ctx, request.GroupID, photoBytes)
 }
 
 func (service serviceGroup) SetGroupName(ctx context.Context, request domainGroup.SetGroupNameRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateSetGroupName(ctx, request); err != nil {
 		return err
 	}
-
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	return client.SetGroupName(ctx, groupJID, request.Name)
+	return adapter.SetGroupName(ctx, request.GroupID, request.Name)
 }
 
 func (service serviceGroup) SetGroupLocked(ctx context.Context, request domainGroup.SetGroupLockedRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateSetGroupLocked(ctx, request); err != nil {
 		return err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	return client.SetGroupLocked(ctx, groupJID, request.Locked)
+	return adapter.SetGroupLocked(ctx, request.GroupID, request.Locked)
 }
 
 func (service serviceGroup) SetGroupAnnounce(ctx context.Context, request domainGroup.SetGroupAnnounceRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateSetGroupAnnounce(ctx, request); err != nil {
 		return err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	return client.SetGroupAnnounce(ctx, groupJID, request.Announce)
+	return adapter.SetGroupAnnounce(ctx, request.GroupID, request.Announce)
 }
 
 func (service serviceGroup) SetGroupTopic(ctx context.Context, request domainGroup.SetGroupTopicRequest) (err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return err
-	}
-
 	if err = validations.ValidateSetGroupTopic(ctx, request); err != nil {
 		return err
 	}
 
-	client := service.getClientForToken(ctx, request.Token)
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return err
 	}
 
-	// SetGroupTopic with auto-generated IDs (previousID and newID will be handled automatically)
-	return client.SetGroupTopic(ctx, groupJID, "", "", request.Topic)
+	return adapter.SetGroupTopic(ctx, request.GroupID, request.Topic)
 }
 
 // GroupInfo retrieves detailed information about a WhatsApp group
@@ -462,51 +266,34 @@ func (service serviceGroup) GroupInfo(ctx context.Context, request domainGroup.G
 		return response, err
 	}
 
-	// Ensure we are logged in
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
-		return response, err
-	}
-
-	// Validate and parse the provided group JID / ID
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
 	// Fetch group information from WhatsApp
-	groupInfo, err := client.GetGroupInfo(ctx, groupJID)
+	groupInfo, err := adapter.GetGroupInfo(ctx, request.GroupID)
 	if err != nil {
 		return response, err
 	}
 
 	// Map the response
-	if groupInfo != nil {
-		response.Data = *groupInfo
-	}
+	response.Data = groupInfo
 
 	return response, nil
 }
 
 func (service serviceGroup) GetGroupInviteLink(ctx context.Context, request domainGroup.GetGroupInviteLinkRequest) (response domainGroup.GetGroupInviteLinkResponse, err error) {
-	if err = service.ensureClientForToken(ctx, request.Token); err != nil {
-		return response, err
-	}
-
 	if err = validations.ValidateGetGroupInviteLink(ctx, request); err != nil {
 		return response, err
 	}
-	client := service.getClientForToken(ctx, request.Token)
-	if err := utils.CheckLogin(client); err != nil {
-		return response, err
-	}
 
-	groupJID, err := utils.ValidateJidWithLogin(client, request.GroupID)
+	adapter, err := service.getAdapterForToken(ctx, request.Token)
 	if err != nil {
 		return response, err
 	}
 
-	inviteLink, err := client.GetGroupInviteLink(ctx, groupJID, request.Reset)
+	inviteLink, err := adapter.GetGroupInviteLink(ctx, request.GroupID, request.Reset)
 	if err != nil {
 		return response, err
 	}

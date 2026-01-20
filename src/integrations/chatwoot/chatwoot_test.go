@@ -17,7 +17,7 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestSendTextToConversation_UsesBotTokenWhenFromBot(t *testing.T) {
 	ctx := context.Background()
-	cfg := &instanceChatwootConfig{
+	cfg := &Config{
 		InstanceID:   "inst-1",
 		BaseURL:      "https://chatwoot.test",
 		AccountID:    1,
@@ -97,7 +97,7 @@ func TestSendTextToConversation_UsesBotTokenWhenFromBot(t *testing.T) {
 // y se marca como message_type=incoming.
 func TestBotAIFlow_InboundUsesAccountToken(t *testing.T) {
 	ctx := context.Background()
-	cfg := &instanceChatwootConfig{
+	cfg := &Config{
 		InstanceID:   "inst-flow",
 		BaseURL:      "https://chatwoot.flow",
 		AccountID:    10,
@@ -151,7 +151,7 @@ func TestBotAIFlow_InboundUsesAccountToken(t *testing.T) {
 // la respuesta de la IA que se envía a Chatwoot debe usar el BotToken y marcar from_bot=true.
 func TestBotAIFlow_OutboundUsesBotToken(t *testing.T) {
 	ctx := context.Background()
-	cfg := &instanceChatwootConfig{
+	cfg := &Config{
 		InstanceID:   "inst-flow",
 		BaseURL:      "https://chatwoot.flow",
 		AccountID:    10,
@@ -212,7 +212,7 @@ func TestBotAIFlow_OutboundUsesBotToken(t *testing.T) {
 
 func TestSendTextToConversation_OutgoingSetsFromBotAndBotToken(t *testing.T) {
 	ctx := context.Background()
-	cfg := &instanceChatwootConfig{
+	cfg := &Config{
 		InstanceID:   "inst-1",
 		BaseURL:      "https://chatwoot.test",
 		AccountID:    1,

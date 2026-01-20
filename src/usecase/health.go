@@ -9,9 +9,12 @@ import (
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/config"
+	globalConfig "github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/domains/health"
+	"github.com/AzielCF/az-wap/workspace"
+	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
+	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -21,13 +24,17 @@ type healthService struct {
 	mcpUsecase        domainMCP.IMCPUsecase
 	credentialUsecase domainCredential.ICredentialUsecase
 	botUsecase        domainBot.IBotUsecase
+	workspaceManager  *workspace.Manager
+	workspaceUsecase  interface {
+		ListWorkspaces(ctx context.Context) ([]wsDomain.Workspace, error)
+		GetWorkspace(ctx context.Context, id string) (wsDomain.Workspace, error)
+		ListChannels(ctx context.Context, workspaceID string) ([]wsChannelDomain.Channel, error)
+		GetChannel(ctx context.Context, id string) (wsChannelDomain.Channel, error)
+	}
 }
 
 func initHealthStorageDB() (*sql.DB, error) {
-	dbPath := fmt.Sprintf("%s/instances.db", config.PathStorages)
-	connStr := fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=on", dbPath)
-
-	db, err := sql.Open("sqlite3", connStr)
+	db, err := globalConfig.GetAppDB()
 	if err != nil {
 		return nil, err
 	}
@@ -52,17 +59,24 @@ func initHealthStorageDB() (*sql.DB, error) {
 	return db, nil
 }
 
-func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredentialUsecase, bot domainBot.IBotUsecase) health.IHealthUsecase {
+func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredentialUsecase, bot domainBot.IBotUsecase, wm *workspace.Manager, wu interface {
+	ListWorkspaces(ctx context.Context) ([]wsDomain.Workspace, error)
+	GetWorkspace(ctx context.Context, id string) (wsDomain.Workspace, error)
+	ListChannels(ctx context.Context, workspaceID string) ([]wsChannelDomain.Channel, error)
+	GetChannel(ctx context.Context, id string) (wsChannelDomain.Channel, error)
+}) health.IHealthUsecase {
 	db, err := initHealthStorageDB()
 	if err != nil {
 		logrus.WithError(err).Error("[Health] failed to initialize storage")
-		return &healthService{db: nil}
 	}
+
 	return &healthService{
 		db:                db,
 		mcpUsecase:        mcp,
 		credentialUsecase: cred,
 		botUsecase:        bot,
+		workspaceManager:  wm,
+		workspaceUsecase:  wu,
 	}
 }
 
@@ -166,11 +180,17 @@ func (s *healthService) ReportFailure(ctx context.Context, entityType health.Ent
 
 	// Dependency propagation: If an MCP fails, check all bots using it
 	if entityType == health.EntityMCP {
-		if bots, err := s.mcpUsecase.ListBotsUsingServer(ctx, entityID); err == nil {
-			for _, botID := range bots {
-				go s.CheckBot(ctx, botID)
+		go func() {
+			// Use a fresh context for async loop
+			asyncCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			if bots, err := s.mcpUsecase.ListBotsUsingServer(asyncCtx, entityID); err == nil {
+				for _, botID := range bots {
+					// Don't leak too many goroutines, check them sequentially or with a worker pool if many
+					_, _ = s.CheckBot(asyncCtx, botID)
+				}
 			}
-		}
+		}()
 	}
 }
 
@@ -185,11 +205,15 @@ func (s *healthService) ReportSuccess(ctx context.Context, entityType health.Ent
 
 	// If an MCP is back up, bots using it might be OK now
 	if entityType == health.EntityMCP {
-		if bots, err := s.mcpUsecase.ListBotsUsingServer(ctx, entityID); err == nil {
-			for _, botID := range bots {
-				go s.CheckBot(ctx, botID)
+		go func() {
+			asyncCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			if bots, err := s.mcpUsecase.ListBotsUsingServer(asyncCtx, entityID); err == nil {
+				for _, botID := range bots {
+					_, _ = s.CheckBot(asyncCtx, botID)
+				}
 			}
-		}
+		}()
 	}
 }
 
@@ -238,7 +262,7 @@ func (s *healthService) CheckBot(ctx context.Context, id string) (health.HealthR
 		Status:     health.StatusOk,
 	}
 
-	// Check if any of the MCP servers for this bot are down
+	// Check status of MCP servers for this bot
 	servers, err := s.mcpUsecase.ListServersForBot(ctx, id)
 	if err != nil {
 		record.Status = health.StatusError
@@ -247,8 +271,8 @@ func (s *healthService) CheckBot(ctx context.Context, id string) (health.HealthR
 		var failingServers []string
 		for _, srv := range servers {
 			if srv.Enabled {
-				// Proactively check MCP dependency during bot check
-				status, _ := s.CheckMCP(ctx, srv.ID)
+				// Use CACHED status instead of re-triggering network check
+				status, _ := s.GetEntityStatus(ctx, health.EntityMCP, srv.ID)
 				if status.Status == health.StatusError {
 					failingServers = append(failingServers, srv.Name)
 				}
@@ -267,28 +291,116 @@ func (s *healthService) CheckBot(ctx context.Context, id string) (health.HealthR
 	return record, err
 }
 
+func (s *healthService) CheckWorkspace(ctx context.Context, id string) (health.HealthRecord, error) {
+	record := health.HealthRecord{
+		EntityType: health.EntityWorkspace,
+		EntityID:   id,
+		Status:     health.StatusOk,
+	}
+
+	ws, err := s.workspaceUsecase.GetWorkspace(ctx, id)
+	if err != nil {
+		record.Status = health.StatusError
+		record.LastMessage = fmt.Sprintf("failed to get workspace: %v", err)
+	} else if !ws.Enabled {
+		record.Status = health.StatusError
+		record.LastMessage = "Workspace is disabled"
+	} else {
+		// Check channels
+		channels, err := s.workspaceUsecase.ListChannels(ctx, id)
+		if err != nil {
+			record.Status = health.StatusError
+			record.LastMessage = fmt.Sprintf("failed to list channels: %v", err)
+		} else {
+			failing := 0
+			for _, ch := range channels {
+				if ch.Enabled {
+					cStatus, _ := s.CheckChannel(ctx, ch.ID)
+					if cStatus.Status == health.StatusError {
+						failing++
+					}
+				}
+			}
+			if failing > 0 {
+				record.Status = health.StatusError
+				record.LastMessage = fmt.Sprintf("%d channels failing", failing)
+			} else {
+				record.LastMessage = "All channels healthy"
+			}
+		}
+	}
+
+	err = s.upsertStatus(ctx, record)
+	return record, err
+}
+
+func (s *healthService) CheckChannel(ctx context.Context, id string) (health.HealthRecord, error) {
+	record := health.HealthRecord{
+		EntityType: health.EntityChannel,
+		EntityID:   id,
+		Status:     health.StatusOk,
+	}
+
+	ch, err := s.workspaceUsecase.GetChannel(ctx, id)
+	if err != nil {
+		record.Status = health.StatusError
+		record.LastMessage = fmt.Sprintf("failed to get channel: %v", err)
+	} else if !ch.Enabled {
+		record.Status = health.StatusError
+		record.LastMessage = "Channel is disabled"
+	} else {
+		// Check active adapter
+		if adapter, ok := s.workspaceManager.GetAdapter(id); ok {
+			status := adapter.Status()
+			if status != wsChannelDomain.ChannelStatusConnected {
+				record.Status = health.StatusError
+				record.LastMessage = fmt.Sprintf("Adapter status: %s", status)
+			} else {
+				record.LastMessage = "Connected"
+			}
+		} else {
+			record.Status = health.StatusError
+			record.LastMessage = "Adapter not found (not running)"
+		}
+	}
+
+	err = s.upsertStatus(ctx, record)
+	return record, err
+}
+
 func (s *healthService) CheckAll(ctx context.Context) ([]health.HealthRecord, error) {
 	var results []health.HealthRecord
 
-	// Check MCP Servers
+	// Check MCP Servers (network heavy)
 	servers, err := s.mcpUsecase.ListServers(ctx)
 	if err == nil {
 		for _, srv := range servers {
 			res, _ := s.CheckMCP(ctx, srv.ID)
 			results = append(results, res)
+			// Wait 2 seconds between servers to be extremely gentle
+			select {
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return results, ctx.Err()
+			}
 		}
 	}
 
-	// Check Credentials
+	// Check Credentials (network heavy)
 	creds, err := s.credentialUsecase.List(ctx, nil)
 	if err == nil {
 		for _, cred := range creds {
 			res, _ := s.CheckCredential(ctx, cred.ID)
 			results = append(results, res)
+			select {
+			case <-time.After(200 * time.Millisecond):
+			case <-ctx.Done():
+				return results, ctx.Err()
+			}
 		}
 	}
 
-	// Check Bots (last, so they pick up potentially new MCP status)
+	// Check Bots (CPU/DB heavy)
 	bots, err := s.botUsecase.List(ctx)
 	if err == nil {
 		for _, b := range bots {
@@ -297,12 +409,20 @@ func (s *healthService) CheckAll(ctx context.Context) ([]health.HealthRecord, er
 		}
 	}
 
+	// Check Workspaces (DB/Memory heavy)
+	if workspaces, err := s.workspaceUsecase.ListWorkspaces(ctx); err == nil {
+		for _, ws := range workspaces {
+			res, _ := s.CheckWorkspace(ctx, ws.ID)
+			results = append(results, res)
+		}
+	}
+
 	return results, nil
 }
 
 func (s *healthService) StartPeriodicChecks(ctx context.Context) {
-	logrus.Info("[Health] starting periodic health checks loop (interval: 6h)")
-	ticker := time.NewTicker(6 * time.Hour)
+	logrus.Info("[Health] starting periodic health checks loop (interval: 12h)")
+	ticker := time.NewTicker(12 * time.Hour)
 
 	// Run once at start
 	go func() {

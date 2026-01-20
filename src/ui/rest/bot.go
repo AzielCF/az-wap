@@ -9,10 +9,12 @@ import (
 	"sync"
 
 	"github.com/AzielCF/az-wap/botengine"
+	"github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/workspace"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -28,10 +30,10 @@ var (
 	engine *botengine.Engine
 )
 
-func SetBotEngine(e *botengine.Engine) {
+func SetBotEngine(e *botengine.Engine, wm *workspace.Manager) {
 	engine = e
-	if e != nil {
-		ClearBotMemoryFunc = e.ClearBotMemory
+	if wm != nil {
+		ClearBotMemoryFunc = wm.ClearBotMemory
 	}
 }
 
@@ -64,6 +66,7 @@ type Bot struct {
 }
 
 func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService domainMCP.IMCPUsecase) Bot {
+	initBotWebhookPool()
 	rest := Bot{Service: service, MCPService: mcpService}
 	app.Get("/bots", rest.ListBots)
 	app.Post("/bots", rest.CreateBot)
@@ -72,6 +75,7 @@ func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService dom
 	app.Delete("/bots/:id", rest.DeleteBot)
 	app.Post("/bots/:id/webhook", rest.HandleWebhook)
 	app.Post("/bots/:id/memory/clear", rest.ClearMemory)
+	app.Get("/bots/config/models", rest.ListModels)
 
 	// Bot-MCP relations
 	app.Get("/bots/:id/mcp", rest.ListBotMCPs)
@@ -80,6 +84,15 @@ func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService dom
 	app.Delete("/bots/:id/mcp/:server_id", rest.RemoveBotMCP)
 
 	return rest
+}
+
+func (h *Bot) ListModels(c *fiber.Ctx) error {
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Models fetched",
+		Results: domainBot.ProviderModels,
+	})
 }
 
 func (h *Bot) ListBots(c *fiber.Ctx) error {
@@ -205,9 +218,7 @@ func (h *Bot) ClearMemory(c *fiber.Ctx) error {
 		})
 	}
 
-	if engine != nil {
-		engine.ClearBotMemory(id)
-	} else {
+	if ClearBotMemoryFunc != nil {
 		ClearBotMemoryFunc(id)
 	}
 
@@ -284,11 +295,11 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 			}()
 
 			if engine != nil && req.MemoryID != "" {
-				output, err := engine.Process(ctx, botengine.BotInput{
+				output, err := engine.Process(ctx, domain.BotInput{
 					BotID:      id,
 					SenderID:   req.MemoryID,
 					ChatID:     req.MemoryID,
-					Platform:   botengine.PlatformWeb,
+					Platform:   domain.PlatformWeb,
 					Text:       text,
 					InstanceID: "webhook",
 				})
