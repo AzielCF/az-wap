@@ -198,7 +198,7 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 							toolResult = map[string]any{"error": fmt.Sprintf("could not read file at %s: %v", path, err)}
 						} else if multimodal, ok := p.(domain.MultimodalInterpreter); ok {
 							media := &domain.BotMedia{Data: data, MimeType: mime, FileName: fname}
-							interp, usageInt, err := multimodal.Interpret(ctx, b.APIKey, b.Model, intent, []*domain.BotMedia{media})
+							interp, usageInt, err := multimodal.Interpret(ctx, b.APIKey, b.Model, intent, input.Language, []*domain.BotMedia{media})
 							if err == nil && usageInt != nil {
 								addCost(b.ID, usageInt.Model, usageInt.CostUSD)
 							}

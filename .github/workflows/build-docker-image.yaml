@@ -22,6 +22,16 @@ jobs:
         run: |
           OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           echo "OWNER_LOWER=${OWNER_LOWER}" >> $GITHUB_ENV
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install Frontend Dependencies
+        working-directory: ./src/frontend
+        run: bun install
+      - name: Build Frontend
+        working-directory: ./src/frontend
+        run: bun run build
       - name: Login GitHub Container Registry
         uses: docker/login-action@v3
         with:

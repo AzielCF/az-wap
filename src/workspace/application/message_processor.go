@@ -84,6 +84,27 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		Text:        msg.Text,
 		Metadata:    msg.Metadata,
 		FocusScore:  currentFocus,
+		Language:    ch.Config.DefaultLanguage, // Default from channel
+	}
+
+	// Attach ClientContext if present in metadata
+	if cc, ok := msg.Metadata["client_context"].(*botengineDomain.ClientContext); ok {
+		input.ClientContext = cc
+		if cc.Language != "" {
+			input.Language = cc.Language // Override with client preference
+		}
+		logrus.WithFields(logrus.Fields{
+			"client_id":     cc.ClientID,
+			"display_name":  cc.DisplayName,
+			"is_registered": cc.IsRegistered,
+			"has_sub":       cc.HasSubscription,
+		}).Infof("[MessageProcessor] Attaching ClientContext to BotInput")
+	} else if msg.Metadata["client_context"] != nil {
+		logrus.Warnf("[MessageProcessor] client_context found in metadata but type is %T, expected *botengineDomain.ClientContext", msg.Metadata["client_context"])
+	}
+
+	if input.Language == "" {
+		input.Language = "en"
 	}
 
 	input.Metadata["last_bubble_count"] = lastBubbleCount

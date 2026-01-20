@@ -1,4 +1,4 @@
-package tools
+package onlyclients
 
 import (
 	"context"
@@ -26,6 +26,7 @@ func NewNewsletterTools(service domainNewsletter.INewsletterUsecase, workspaceMg
 
 func (t *NewsletterTools) ListNewslettersTool() *domain.NativeTool {
 	return &domain.NativeTool{
+		IsVisible: IsClientRegistered,
 		Tool: domainMCP.Tool{
 			Name:        "list_newsletters",
 			Description: "Lists all WhatsApp newsletters (channels) the bot is subscribed to or admin of. Use this to check available alias names for scheduling.",
@@ -74,6 +75,7 @@ func (t *NewsletterTools) ListNewslettersTool() *domain.NativeTool {
 
 func (t *NewsletterTools) SchedulePostTool() *domain.NativeTool {
 	return &domain.NativeTool{
+		IsVisible: IsClientRegistered,
 		Tool: domainMCP.Tool{
 			Name:        "schedule_post",
 			Description: "Schedules a message to be posted to a WhatsApp newsletter or group. Provide the EXACT NAME of the group or newsletter.",

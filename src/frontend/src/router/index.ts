@@ -55,6 +55,16 @@ const router = createRouter({
       name: 'settings',
       component: () => import('../views/SettingsView.vue'),
     },
+    {
+      path: '/clients',
+      name: 'clients',
+      component: () => import('../views/ClientsView.vue'),
+    },
+    {
+      path: '/clients/:id/subscriptions',
+      name: 'client-subscriptions',
+      component: () => import('../views/ClientsSubscriptionsView.vue'),
+    },
   ],
 })
 

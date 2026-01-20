@@ -17,6 +17,7 @@ import (
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/botengine/providers"
 	botTools "github.com/AzielCF/az-wap/botengine/tools"
+	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 	globalConfig "github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
@@ -39,6 +40,11 @@ import (
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	workspaceUsecaseLayer "github.com/AzielCF/az-wap/workspace/usecase"
+
+	// Clients Module
+	clientsRest "github.com/AzielCF/az-wap/clients/adapter/rest"
+	clientsApp "github.com/AzielCF/az-wap/clients/application"
+	clientsRepo "github.com/AzielCF/az-wap/clients/repository"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -77,6 +83,13 @@ var (
 	wkRepo           repository.IWorkspaceRepository
 	workspaceManager *workspace.Manager
 	wkUsecase        *workspaceUsecaseLayer.WorkspaceUsecase
+
+	// Clients Module
+	appDB          *sql.DB
+	clientService  *clientsApp.ClientService
+	subService     *clientsApp.SubscriptionService
+	clientResolver *clientsApp.ClientResolver
+	clientHandler  *clientsRest.ClientHandler
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -321,8 +334,39 @@ func initApp() {
 	// botEngine.RegisterProvider(string(domainBot.ProviderOpenAI), geminiProvider)
 	// botEngine.RegisterProvider(string(domainBot.ProviderClaude), geminiProvider)
 
-	// 3. Workspace Manager (Needs wkRepo, BotEngine)
-	workspaceManager = workspace.NewManager(wkRepo, botEngine)
+	// 2.1 Clients Module Initialization (Needed for Workspace Manager)
+	appDBPath := "storages/app.db"
+	appDB, err = sql.Open("sqlite3", fmt.Sprintf("file:%s?cache=shared&_journal_mode=WAL", appDBPath))
+	if err != nil {
+		logrus.Fatalf("failed to open app db: %v", err)
+	}
+
+	// Client Repository (app.db)
+	clientRepo := clientsRepo.NewSQLiteClientRepository(appDB)
+	if err := clientRepo.InitSchema(ctx); err != nil {
+		logrus.Fatalf("failed to init client repo: %v", err)
+	}
+
+	// Subscription Repository (workspaces.db) - reuse workspaceDB opened earlier
+	subRepo := clientsRepo.NewSQLiteSubscriptionRepository(workspaceDB)
+	if err := subRepo.InitSchema(ctx); err != nil {
+		logrus.Fatalf("failed to init subscription repo: %v", err)
+	}
+
+	// Client Services
+	clientService = clientsApp.NewClientService(clientRepo, subRepo)
+	subService = clientsApp.NewSubscriptionService(subRepo, clientRepo)
+
+	// Client Resolver (for runtime context resolution)
+	clientResolver = clientsApp.NewClientResolver(clientRepo, subRepo, wkRepo)
+
+	// Client REST Handler
+	clientHandler = clientsRest.NewClientHandler(clientService, subService)
+
+	logrus.Info("[CLIENTS] Client module initialized successfully")
+
+	// 3. Workspace Manager (Needs wkRepo, BotEngine, ClientResolver)
+	workspaceManager = workspace.NewManager(wkRepo, botEngine, clientResolver)
 
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED
@@ -415,17 +459,23 @@ func initApp() {
 	})
 
 	// Register Newsletter Tools
-	nTools := botTools.NewNewsletterTools(newsletterUsecase, workspaceManager)
+	nTools := onlyClients.NewNewsletterTools(newsletterUsecase, workspaceManager)
 	botEngine.RegisterNativeTool(nTools.ListNewslettersTool())
 	botEngine.RegisterNativeTool(nTools.SchedulePostTool())
 
-	gTools := botTools.NewGroupTools(workspaceManager)
+	gTools := onlyClients.NewGroupTools(workspaceManager)
 	botEngine.RegisterNativeTool(gTools.ListGroupsTool())
 
 	// Register Reminder Tools
-	rTools := botTools.NewReminderTools(newsletterUsecase)
+	rTools := onlyClients.NewReminderTools(newsletterUsecase)
 	botEngine.RegisterNativeTool(rTools.ScheduleReminderTool())
 	botEngine.RegisterNativeTool(rTools.ListRemindersTool())
+
+	// Register Client Profile Tools (allow users to manage their personal info via AI)
+	cTools := onlyClients.NewClientTools(clientRepo)
+	botEngine.RegisterNativeTool(cTools.UpdateMyInfoTool())
+	botEngine.RegisterNativeTool(cTools.GetMyInfoTool())
+	botEngine.RegisterNativeTool(cTools.DeleteMyFieldTool())
 
 	// Workspace Channels Auto-Start
 	go func() {

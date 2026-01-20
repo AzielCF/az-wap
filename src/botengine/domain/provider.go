@@ -48,7 +48,7 @@ type MultimodalResult struct {
 // MultimodalInterpreter es la interfaz que deben implementar los proveedores
 // para analizar archivos multimedia.
 type MultimodalInterpreter interface {
-	Interpret(ctx context.Context, apiKey string, model string, userText string, medias []*BotMedia) (*MultimodalResult, *UsageStats, error)
+	Interpret(ctx context.Context, apiKey string, model string, userText string, language string, medias []*BotMedia) (*MultimodalResult, *UsageStats, error)
 }
 
 // AIProvider es la interfaz delgada que deben implementar los modelos

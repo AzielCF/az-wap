@@ -1,4 +1,4 @@
-package tools
+package onlyclients
 
 import (
 	"context"
@@ -20,6 +20,7 @@ func NewReminderTools(service domainNewsletter.INewsletterUsecase) *ReminderTool
 
 func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 	return &domain.NativeTool{
+		IsVisible: IsClientRegistered,
 		Tool: domainMCP.Tool{
 			Name:        "schedule_reminder",
 			Description: "Schedules a reminder (message) for the user themselves at a future time. Use this for tasks, appointments, or personal reminders.",
@@ -28,7 +29,7 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 				"properties": map[string]interface{}{
 					"text": map[string]interface{}{
 						"type":        "string",
-						"description": "The message to send. Write it in your own words, strictly adhering to your SYSTEM PROMPT persona and language. Be natural, human-like, and avoid robotic prefixes like 'REMINDER:'. Speak directly to the user (e.g., 'Hey [Name], remember to...' or as appropriate for your character).",
+						"description": "The CONTENT of the reminder message. IMPORTANT: This message will be sent IN THE FUTURE when the reminder triggers. Do NOT include relative time phrases like 'in 10 minutes'. Instead of 'Meeting in 10 minutes', write 'It is time for your meeting!' or 'You have a meeting now'. Write it as if it's happening at that moment.",
 					},
 					"scheduled_at": map[string]interface{}{
 						"type":        "string",
@@ -84,6 +85,7 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 
 func (t *ReminderTools) ListRemindersTool() *domain.NativeTool {
 	return &domain.NativeTool{
+		IsVisible: IsClientRegistered,
 		Tool: domainMCP.Tool{
 			Name:        "list_my_reminders",
 			Description: "Lists all scheduled reminders/tasks for the user.",

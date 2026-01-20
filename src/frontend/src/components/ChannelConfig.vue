@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch, h } from 'vue'
 import { useApi } from '@/composables/useApi'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import AppTabModal from '@/components/AppTabModal.vue'
-import { Search, UserCheck, ShieldAlert, CheckCircle2, Loader2, Image, Mic, Film, FileText, HardDrive, Sticker, Plus, X, ShieldCheck, Brain, Zap, BarChart3, TrendingUp, DollarSign, Settings, Bot } from 'lucide-vue-next'
+import { Search, UserCheck, ShieldAlert, CheckCircle2, Loader2, Image, Mic, Film, FileText, HardDrive, Sticker, Plus, X, ShieldCheck, Brain, Zap, BarChart3, TrendingUp, DollarSign, Settings, Bot, Users, Activity, Calendar, Terminal, Edit3, Trash2 } from 'lucide-vue-next'
+import ResourceSelector from '@/components/ResourceSelector.vue'
+
+const WhatsAppIcon = (props: any) => h('svg', { 
+  viewBox: "0 0 24 24", 
+  fill: "currentColor",
+  class: props.class 
+}, [
+  h('path', { d: "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" })
+])
 
 const props = defineProps<{
   channel: any
@@ -41,7 +50,17 @@ const config = ref<any>({
   allow_stickers: true,
   voice_notes_only: false,
   allowed_extensions: [],
-  max_download_size: 50 * 1024 * 1024
+  max_download_size: 50 * 1024 * 1024,
+  default_language: 'en',
+  inactivity_warning: {
+      enabled: true,
+      default_lang: 'en',
+      templates: {
+          en: '',
+          es: '',
+          fr: ''
+      }
+  }
 })
 
 const extensionInput = ref('')
@@ -108,6 +127,14 @@ function loadInitialConfig() {
         if (config.value.voice_notes_only === undefined) config.value.voice_notes_only = false
         if (!config.value.allowed_extensions) config.value.allowed_extensions = []
         if (!config.value.max_download_size) config.value.max_download_size = 50 * 1024 * 1024
+        if (!config.value.default_language) config.value.default_language = 'en'
+        if (!config.value.inactivity_warning) {
+            config.value.inactivity_warning = {
+                enabled: true,
+                default_lang: 'en',
+                templates: { en: '', es: '', fr: '' }
+            }
+        }
     }
   }
   
@@ -296,6 +323,79 @@ function copyId() {
 }
 
 const activeTab = ref('general')
+const subscribers = ref<any[]>([])
+const loadingSubscribers = ref(false)
+
+const editingSub = ref<any>(null)
+const editForm = ref({
+    custom_bot_id: '',
+    custom_system_prompt: '',
+    expires_at: ''
+})
+
+function startEditSubscription(item: any) {
+    editingSub.value = item
+    editForm.value = {
+        custom_bot_id: item.subscription.custom_bot_id || '',
+        custom_system_prompt: item.subscription.custom_system_prompt || '',
+        expires_at: item.subscription.expires_at ? item.subscription.expires_at.split('T')[0] : ''
+    }
+}
+
+async function saveSubscription() {
+    if (!editingSub.value) return
+    try {
+        const payload = {
+            custom_bot_id: editForm.value.custom_bot_id || null, 
+            custom_system_prompt: editForm.value.custom_system_prompt || null,
+            expires_at: editForm.value.expires_at ? new Date(editForm.value.expires_at).toISOString() : null,
+            clear_expires_at: !editForm.value.expires_at
+        }
+        await api.put(`/clients/${editingSub.value.client.id}/subscriptions/${editingSub.value.subscription.id}`, payload)
+        editingSub.value = null
+        await loadSubscribers()
+    } catch(e) {
+        console.error(e)
+        alert('Failed to update subscription')
+    }
+}
+
+async function removeSubscription(item: any) {
+    confirmModal.value = {
+        show: true,
+        title: 'Revoke Subscription?',
+        message: 'This will remove the bot assignment for this client immediately. They will revert to default channel behavior.',
+        type: 'danger',
+        confirmText: 'Revoke',
+        onConfirm: async () => {
+             try {
+                await api.delete(`/clients/${item.client.id}/subscriptions/${item.subscription.id}`)
+                await loadSubscribers()
+            } catch (err) {
+                console.error(err)
+            }
+        }
+    }
+}
+
+async function loadSubscribers() {
+    loadingSubscribers.value = true
+    try {
+        const res = await api.get(`/channels/${props.channel.id}/subscribers`) as any
+        subscribers.value = res.data || []
+    } catch (err) {
+        console.error('Failed to load subscribers', err)
+    } finally {
+        loadingSubscribers.value = false
+    }
+}
+
+watch(activeTab, (newTab) => {
+    if (newTab === 'subscribers') {
+        loadSubscribers()
+    }
+}, { immediate: true })
+
 onMounted(loadInitialConfig)
 </script>
 
@@ -309,13 +409,15 @@ onMounted(loadInitialConfig)
             { id: 'investments', label: 'Investments', icon: BarChart3 },
             { id: 'connectivity', label: 'Connectivity', icon: Zap },
             { id: 'security', label: 'Identity Guard', icon: ShieldCheck },
+            { id: 'subscribers', label: 'Subscribers', icon: Users },
             { id: 'integrations', label: 'Integrations', icon: HardDrive }
         ]"
         :identity="{
             name: channel.name,
             id: channel.id,
-            icon: channel.type === 'whatsapp' ? '<svg class=\'w-8 h-8 text-[#25D366]\' viewBox=\'0 0 24 24\' fill=\'currentColor\'><path d=\'M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z\'/></svg>' : Settings,
-            iconType: channel.type === 'whatsapp' ? 'svg' : 'component'
+            icon: channel.type === 'whatsapp' ? WhatsAppIcon : Settings,
+            iconType: channel.type === 'whatsapp' ? 'component' : 'component',
+            iconClass: channel.type === 'whatsapp' ? 'text-[#25D366]' : ''
         }"
         @save="save"
         @cancel="emit('cancel')"
@@ -352,12 +454,72 @@ onMounted(loadInitialConfig)
 
         <section class="space-y-6">
             <div class="form-control w-full">
-                <label class="label-premium">Assigned Bot Engine</label>
-                <select v-model="config.bot_id" class="select-premium h-14 w-full">
-                    <option value="">None (Manual Mode)</option>
-                    <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.name }}</option>
-                </select>
+                <ResourceSelector
+                    v-model="config.bot_id"
+                    :items="bots"
+                    label="Assigned Bot Engine"
+                    placeholder="Search for a bot engine..."
+                    iconType="bot"
+                    resourceLabel="Active Engine"
+                    :nullable="true"
+                    color="primary"
+                />
             </div>
+
+            <div class="form-control w-full">
+                <label class="label-premium">Default Response Language</label>
+                <select v-model="config.default_language" class="select-premium h-14 w-full">
+                    <option value="es">Español</option>
+                    <option value="en">English (US)</option>
+                    <option value="pt">Português</option>
+                    <option value="fr">Français</option>
+                    <option value="it">Italiano</option>
+                    <option value="de">Deutsch</option>
+                </select>
+                <p class="text-[10px] text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Fallback language for non-registered clients or general channel vibe.</p>
+            </div>
+
+            <!-- Inactivity Warning Section -->
+            <div class="divider opacity-5"></div>
+            
+            <section class="space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Session Lifecycle Warning</h4>
+                        <p class="text-[10px] text-slate-500 font-medium uppercase mt-1">Notify users before their session expires due to inactivity</p>
+                    </div>
+                    <input type="checkbox" v-model="config.inactivity_warning.enabled" class="toggle toggle-primary toggle-sm" />
+                </div>
+
+                <div v-if="config.inactivity_warning.enabled" class="space-y-6 p-6 bg-black/20 rounded-2xl border border-white/5 animate-in fade-in slide-in-from-top-4">
+                    <div class="form-control">
+                        <label class="label-premium">Warning Default Language</label>
+                        <select v-model="config.inactivity_warning.default_lang" class="select-premium h-12 w-full text-sm">
+                            <option value="en">English (US)</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-4">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">Custom Message Templates</label>
+                        
+                        <div class="grid grid-cols-1 gap-4">
+                            <div v-for="lang in ['en', 'es', 'fr']" :key="lang" class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-black uppercase text-primary tracking-widest">{{ lang === 'en' ? 'ENGLISH' : lang === 'es' ? 'SPANISH' : 'FRENCH' }}</span>
+                                    <span v-if="!config.inactivity_warning.templates[lang]" class="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">(USING SYSTEM DEFAULT)</span>
+                                </div>
+                                <textarea 
+                                    v-model="config.inactivity_warning.templates[lang]"
+                                    placeholder="Enter custom warning message..."
+                                    class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-20 w-full resize-none transition-all"
+                                ></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
             
             <div class="p-6 bg-white/[0.02] rounded-2xl border border-white/5 flex items-center justify-between">
                 <div>
@@ -721,6 +883,150 @@ onMounted(loadInitialConfig)
                 </div>
             </div>
         </section>
+      </div>
+
+      <!-- TAB: Subscribers -->
+      <div v-if="activeTab === 'subscribers'" class="space-y-10">
+          <header class="flex items-center justify-between">
+              <div>
+                <h3 class="text-2xl font-black text-white uppercase tracking-tight">Active Subscribers</h3>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">Clients with exclusive bot assignments or custom prompts</p>
+              </div>
+              <button @click="loadSubscribers" class="btn-premium btn-premium-ghost px-4 h-10" :disabled="loadingSubscribers">
+                  <Activity class="w-4 h-4 mr-2" :class="{ 'animate-pulse': loadingSubscribers }" />
+                  Sync
+              </button>
+          </header>
+
+          <div v-if="loadingSubscribers" class="py-20 flex justify-center">
+              <span class="loading loading-ring loading-lg text-primary"></span>
+          </div>
+
+          <div v-else-if="subscribers.length === 0" class="py-24 text-center bg-black/10 rounded-[2rem] border border-dashed border-white/5">
+              <Users class="w-10 h-10 text-slate-700 mx-auto mb-4 opacity-20" />
+              <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest leading-loose">No Exclusive Subscriptions<br/>found for this channel manifest.</p>
+          </div>
+
+          <div v-else class="grid grid-cols-1 gap-4">
+              <!-- Edit Form -->
+              <div v-if="editingSub" class="animate-in slide-in-from-right-4 fade-in duration-300">
+                  <div class="p-6 bg-black/40 border border-white/5 rounded-[2rem] space-y-6">
+                      <div class="flex items-center justify-between">
+                         <div class="flex items-center gap-3">
+                             <div class="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                                 <Edit3 class="w-5 h-5 text-primary" />
+                             </div>
+                             <div>
+                                 <h4 class="text-white font-bold uppercase tracking-wide">Adjust Subscription</h4>
+                                 <p class="text-xs text-slate-500 font-mono">CLIENT: {{ editingSub.client.display_name }}</p>
+                             </div>
+                         </div>
+                         <button @click="editingSub = null" class="btn btn-ghost btn-sm rounded-lg hover:bg-white/5">
+                             <X class="w-5 h-5" />
+                         </button>
+                      </div>
+
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                           <div class="form-control w-full">
+                                <ResourceSelector
+                                    v-model="editForm.custom_bot_id"
+                                    :items="bots"
+                                    label="Override Bot"
+                                    placeholder="Search specific bot..."
+                                    iconType="bot"
+                                    resourceLabel="Override Active"
+                                    :nullable="true"
+                                    color="indigo"
+                                />
+                            </div>
+                            <div class="form-control w-full">
+                                <label class="label-premium">Subscription Expiry</label>
+                                <input v-model="editForm.expires_at" type="date" class="input-premium h-14 w-full font-bold" />
+                            </div>
+                      </div>
+
+                      <div class="form-control w-full">
+                            <label class="label-premium">System Prompt Override</label>
+                            <textarea v-model="editForm.custom_system_prompt" class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-32 w-full resize-none transition-all p-4" placeholder="Enter custom behavioral instructions just for this client..."></textarea>
+                      </div>
+
+                      <div class="flex justify-end gap-3 pt-4 border-t border-white/5">
+                          <button @click="editingSub = null" class="btn btn-ghost">Cancel</button>
+                          <button @click="saveSubscription" class="btn btn-primary px-8">Save Changes</button>
+                      </div>
+                  </div>
+              </div>
+
+              <!-- List View -->
+              <div v-else v-for="item in subscribers" :key="item.subscription.id" 
+                   class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] flex flex-col gap-6 hover:bg-white/[0.04] transition-all group relative">
+                  
+                  <div class="flex flex-col lg:flex-row justify-between lg:items-center gap-6">
+                      <div class="flex items-center gap-5">
+                          <div class="w-14 h-14 rounded-2xl bg-black/40 flex items-center justify-center ring-1 ring-white/10 group-hover:ring-primary/30 transition-all shadow-xl font-black text-slate-500 uppercase">
+                              {{ item.client.display_name?.charAt(0) || 'C' }}
+                          </div>
+                          <div>
+                              <div class="flex items-center gap-2 mb-1">
+                                  <h4 class="text-base font-black text-white uppercase tracking-tight">{{ item.client.display_name }}</h4>
+                                  <span class="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border"
+                                        :class="item.client.tier === 'vip' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : item.client.tier === 'premium' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-slate-500/10 text-slate-500 border-white/10'">
+                                      {{ item.client.tier }}
+                                  </span>
+                              </div>
+                              <div class="flex items-center gap-3">
+                                  <span class="text-[10px] font-mono text-slate-500 tracking-tighter">{{ item.client.platform_id }}</span>
+                                  <div v-if="item.client.enabled" class="flex items-center gap-1.5">
+                                      <div class="w-1 h-1 rounded-full bg-success"></div>
+                                      <span class="text-[9px] font-black text-success uppercase tracking-widest">Active</span>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                      
+                      <!-- Action Buttons (Visible on Hover/Focus) -->
+                      <div class="flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                            <button @click="startEditSubscription(item)" class="btn btn-sm btn-square btn-ghost hover:bg-white/10 text-slate-400 hover:text-white" title="Edit Subscription">
+                                <Edit3 class="w-4 h-4" />
+                            </button>
+                            <button @click="removeSubscription(item)" class="btn btn-sm btn-square btn-ghost hover:bg-red-500/10 text-slate-400 hover:text-red-500" title="Revoke Subscription">
+                                <Trash2 class="w-4 h-4" />
+                            </button>
+                      </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div class="storage-box-premium m-0 py-3 bg-black/20">
+                           <div class="flex items-center gap-2 mb-1">
+                               <Bot class="w-3 h-3 text-primary" />
+                               <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Custom Bot Engine</span>
+                           </div>
+                           <span class="text-xs font-mono" :class="item.subscription.custom_bot_id ? 'text-indigo-400' : 'text-slate-600'">
+                               {{ getBotName(item.subscription.custom_bot_id) }}
+                           </span>
+                      </div>
+                      <div class="storage-box-premium m-0 py-3 bg-black/20">
+                           <div class="flex items-center gap-2 mb-1">
+                               <Terminal class="w-3 h-3 text-amber-500" />
+                               <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">System Prompt Override</span>
+                           </div>
+                           <span class="text-xs italic" :class="item.subscription.custom_system_prompt ? 'text-slate-300' : 'text-slate-700'">
+                               {{ item.subscription.custom_system_prompt ? 'Configured (Exclusive)' : 'Standard Flow' }}
+                           </span>
+                      </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 px-4 py-2 bg-black/40 rounded-xl border border-white/5 w-fit">
+                      <Calendar class="w-3.5 h-3.5 text-slate-600" />
+                      <div class="flex flex-col">
+                          <span class="text-[8px] font-black text-slate-600 uppercase tracking-tighter leading-none mb-1">Expiry Date</span>
+                          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              {{ item.subscription.expires_at ? new Date(item.subscription.expires_at).toLocaleDateString() : 'INFINITE' }}
+                          </span>
+                      </div>
+                  </div>
+              </div>
+          </div>
       </div>
 
       <!-- TAB: Integrations -->

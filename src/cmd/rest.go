@@ -75,8 +75,11 @@ func restServer(_ *cobra.Command, _ []string) {
 		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:* ws://localhost:*;",
 	}))
 	app.Use(limiter.New(limiter.Config{
-		Max:        100,
-		Expiration: 30 * time.Second,
+		Max:        1000,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
 	}))
 
 	if globalConfig.AppDebug {
@@ -154,6 +157,9 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Register Workspace Handlers
 	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+
+	// Register Client Handlers
+	clientHandler.RegisterRoutes(apiGroup)
 
 	// Websocket
 	websocket.RegisterRoutes(apiGroup, appUsecase)

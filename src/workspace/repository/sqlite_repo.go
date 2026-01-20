@@ -29,7 +29,6 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 			description TEXT,
 			owner_id TEXT NOT NULL,
 			config_timezone TEXT DEFAULT 'UTC',
-			config_default_language TEXT DEFAULT 'en',
 			config_metadata TEXT,
 			limits_max_messages_per_day INTEGER DEFAULT 10000,
 			limits_max_channels INTEGER DEFAULT 5,
@@ -107,18 +106,18 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 
 func (r *SQLiteRepository) Create(ctx context.Context, ws workspace.Workspace) error {
 	metadata, _ := json.Marshal(ws.Config.Metadata)
-	query := `INSERT INTO workspaces (id, name, description, owner_id, config_timezone, config_default_language, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, query, ws.ID, ws.Name, ws.Description, ws.OwnerID, ws.Config.Timezone, ws.Config.DefaultLanguage, string(metadata), ws.Limits.MaxMessagesPerDay, ws.Limits.MaxChannels, ws.Limits.MaxBots, ws.Limits.RateLimitPerMinute, ws.Enabled, ws.CreatedAt, ws.UpdatedAt)
+	query := `INSERT INTO workspaces (id, name, description, owner_id, config_timezone, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, query, ws.ID, ws.Name, ws.Description, ws.OwnerID, ws.Config.Timezone, string(metadata), ws.Limits.MaxMessagesPerDay, ws.Limits.MaxChannels, ws.Limits.MaxBots, ws.Limits.RateLimitPerMinute, ws.Enabled, ws.CreatedAt, ws.UpdatedAt)
 	return err
 }
 
 func (r *SQLiteRepository) GetByID(ctx context.Context, id string) (workspace.Workspace, error) {
-	query := `SELECT id, name, description, owner_id, config_timezone, config_default_language, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at FROM workspaces WHERE id = ?`
+	query := `SELECT id, name, description, owner_id, config_timezone, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at FROM workspaces WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)
 
 	var ws workspace.Workspace
 	var metadata string
-	err := row.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.OwnerID, &ws.Config.Timezone, &ws.Config.DefaultLanguage, &metadata, &ws.Limits.MaxMessagesPerDay, &ws.Limits.MaxChannels, &ws.Limits.MaxBots, &ws.Limits.RateLimitPerMinute, &ws.Enabled, &ws.CreatedAt, &ws.UpdatedAt)
+	err := row.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.OwnerID, &ws.Config.Timezone, &metadata, &ws.Limits.MaxMessagesPerDay, &ws.Limits.MaxChannels, &ws.Limits.MaxBots, &ws.Limits.RateLimitPerMinute, &ws.Enabled, &ws.CreatedAt, &ws.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return workspace.Workspace{}, common.ErrWorkspaceNotFound
 	}
@@ -130,7 +129,7 @@ func (r *SQLiteRepository) GetByID(ctx context.Context, id string) (workspace.Wo
 }
 
 func (r *SQLiteRepository) List(ctx context.Context) ([]workspace.Workspace, error) {
-	query := `SELECT id, name, description, owner_id, config_timezone, config_default_language, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at FROM workspaces`
+	query := `SELECT id, name, description, owner_id, config_timezone, config_metadata, limits_max_messages_per_day, limits_max_channels, limits_max_bots, limits_rate_limit_per_minute, enabled, created_at, updated_at FROM workspaces`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -141,7 +140,7 @@ func (r *SQLiteRepository) List(ctx context.Context) ([]workspace.Workspace, err
 	for rows.Next() {
 		var ws workspace.Workspace
 		var metadata string
-		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.OwnerID, &ws.Config.Timezone, &ws.Config.DefaultLanguage, &metadata, &ws.Limits.MaxMessagesPerDay, &ws.Limits.MaxChannels, &ws.Limits.MaxBots, &ws.Limits.RateLimitPerMinute, &ws.Enabled, &ws.CreatedAt, &ws.UpdatedAt); err != nil {
+		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.OwnerID, &ws.Config.Timezone, &metadata, &ws.Limits.MaxMessagesPerDay, &ws.Limits.MaxChannels, &ws.Limits.MaxBots, &ws.Limits.RateLimitPerMinute, &ws.Enabled, &ws.CreatedAt, &ws.UpdatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(metadata), &ws.Config.Metadata)
@@ -152,8 +151,8 @@ func (r *SQLiteRepository) List(ctx context.Context) ([]workspace.Workspace, err
 
 func (r *SQLiteRepository) Update(ctx context.Context, ws workspace.Workspace) error {
 	metadata, _ := json.Marshal(ws.Config.Metadata)
-	query := `UPDATE workspaces SET name=?, description=?, owner_id=?, config_timezone=?, config_default_language=?, config_metadata=?, limits_max_messages_per_day=?, limits_max_channels=?, limits_max_bots=?, limits_rate_limit_per_minute=?, enabled=?, updated_at=? WHERE id=?`
-	res, err := r.db.ExecContext(ctx, query, ws.Name, ws.Description, ws.OwnerID, ws.Config.Timezone, ws.Config.DefaultLanguage, string(metadata), ws.Limits.MaxMessagesPerDay, ws.Limits.MaxChannels, ws.Limits.MaxBots, ws.Limits.RateLimitPerMinute, ws.Enabled, ws.UpdatedAt, ws.ID)
+	query := `UPDATE workspaces SET name=?, description=?, owner_id=?, config_timezone=?, config_metadata=?, limits_max_messages_per_day=?, limits_max_channels=?, limits_max_bots=?, limits_rate_limit_per_minute=?, enabled=?, updated_at=? WHERE id=?`
+	res, err := r.db.ExecContext(ctx, query, ws.Name, ws.Description, ws.OwnerID, ws.Config.Timezone, string(metadata), ws.Limits.MaxMessagesPerDay, ws.Limits.MaxChannels, ws.Limits.MaxBots, ws.Limits.RateLimitPerMinute, ws.Enabled, ws.UpdatedAt, ws.ID)
 	if err != nil {
 		return err
 	}

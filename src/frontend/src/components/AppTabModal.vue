@@ -14,6 +14,7 @@ const props = defineProps<{
     id?: string
     icon?: any
     iconType?: 'component' | 'svg'
+    iconClass?: string
   }
   footerActions?: boolean
   saveText?: string
@@ -39,8 +40,8 @@ function copyId(id: string) {
           <!-- Identity Header -->
           <div v-if="identity" class="hidden lg:flex flex-col items-center text-center mb-10 pt-4">
               <div v-if="identity.icon" class="w-20 h-20 rounded-[1.5rem] bg-primary/10 flex items-center justify-center text-primary mb-6 border border-primary/20 shadow-2xl relative">
-                  <component v-if="identity.iconType !== 'svg'" :is="identity.icon" class="w-10 h-10" />
-                  <div v-else v-html="identity.icon" class="w-10 h-10 flex items-center justify-center"></div>
+                  <component v-if="identity.iconType !== 'svg'" :is="identity.icon" class="w-10 h-10" :class="identity.iconClass" />
+                  <div v-else v-html="identity.icon" class="w-10 h-10 flex items-center justify-center" :class="identity.iconClass"></div>
                   <div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-white text-[9px] font-black border-2 border-[#161a23]">ID</div>
               </div>
 

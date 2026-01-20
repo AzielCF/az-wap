@@ -20,6 +20,11 @@ import {
   Zap,
   Lock,
   Wrench,
+  Mic,
+  Image,
+  Video,
+  FileText,
+  Brain,
 } from 'lucide-vue-next'
 
 const api = useApi()
@@ -378,6 +383,24 @@ onMounted(loadData)
                     
                     <h4 class="text-2xl font-black text-white uppercase tracking-tighter mb-4 group-hover:text-primary transition-colors leading-none truncate">{{ bot.name }}</h4>
                     <p class="text-sm text-slate-500 font-bold uppercase tracking-tight leading-relaxed line-clamp-2 h-10 opacity-60">{{ bot.description || 'Professional identity blueprint.' }}</p>
+                    
+                    <div class="flex gap-2 mt-6">
+                        <div v-if="bot.audio_enabled !== false" class="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400" title="Audio Capable">
+                            <Mic class="w-3.5 h-3.5" />
+                        </div>
+                        <div v-if="bot.image_enabled !== false" class="p-1.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400" title="Vision Capable">
+                            <Image class="w-3.5 h-3.5" />
+                        </div>
+                        <div v-if="bot.video_enabled" class="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400" title="Video Capable">
+                            <Video class="w-3.5 h-3.5" />
+                        </div>
+                        <div v-if="bot.document_enabled" class="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400" title="Document Processing">
+                            <FileText class="w-3.5 h-3.5" />
+                        </div>
+                        <div v-if="bot.memory_enabled !== false" class="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400" title="Long-term Memory">
+                            <Brain class="w-3.5 h-3.5" />
+                        </div>
+                    </div>
                     
                     <div class="mt-auto pt-8 border-t border-white/5 flex items-center justify-between">
                         <div class="badge-premium badge-success gap-2">

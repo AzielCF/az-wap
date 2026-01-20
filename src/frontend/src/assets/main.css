@@ -9,6 +9,9 @@
     font-size: 15px; 
     line-height: 1.6;
   }
+  button {
+    @apply cursor-pointer;
+  }
 }
 
 @layer components {
@@ -197,6 +200,15 @@
   .badge-indigo { color: #818cf8; border-color: rgba(99, 102, 241, 0.2); }
   .badge-amber { color: #f59e0b; border-color: rgba(245, 158, 11, 0.2); }
   .badge-success { color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
+  
+  /* Tier Badges */
+  .badge-tier-standard { @apply bg-slate-500/10 text-slate-400 border-slate-500/20; }
+  .badge-tier-premium { @apply bg-indigo-500/10 text-indigo-400 border-indigo-500/20; }
+  .badge-tier-vip { @apply bg-amber-500/10 text-amber-500 border-amber-500/20; }
+  .badge-tier-enterprise { @apply bg-rose-500/10 text-rose-400 border-rose-500/20; }
+
+  .icon-box-slate { @apply !bg-slate-500/10 !text-slate-400; }
+  .icon-box-rose { @apply !bg-rose-500/10 !text-rose-400; }
 
   /* Inner Storage Boxes */
   .storage-box-premium {

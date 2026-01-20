@@ -29,9 +29,8 @@ func (u *WorkspaceUsecase) CreateWorkspace(ctx context.Context, name, descriptio
 		Description: description,
 		OwnerID:     ownerID,
 		Config: wsDomain.WorkspaceConfig{
-			Timezone:        "UTC",
-			DefaultLanguage: "en",
-			Metadata:        make(map[string]string),
+			Timezone: "UTC",
+			Metadata: make(map[string]string),
 		},
 		Limits:    wsDomain.DefaultLimits,
 		Enabled:   true,

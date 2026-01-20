@@ -16,6 +16,7 @@ type IncomingMessage struct {
 	SenderID    string
 	IsStatus    bool // True si el mensaje es una historia/status
 	Text        string
+	Language    string // Idioma resuelto (es, en, etc.)
 	Media       *IncomingMedia
 	Medias      []*IncomingMedia // Para mensajes agrupados
 	Metadata    map[string]any
