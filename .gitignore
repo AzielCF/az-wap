@@ -27,3 +27,5 @@ statics/workspaces/
 src/frontend/node_modules/
 src/frontend/dist/
 src/frontend/.bun/
+.vite/
+src/frontend/node_modules/.vite/
