@@ -443,23 +443,32 @@ func (h *WorkspaceHandler) GetWhatsAppStatus(c *fiber.Ctx) error {
 
 	status := adapter.Status()
 	isConnected := status == channel.ChannelStatusConnected
-	// Trust the adapter status
+	isHibernating := status == channel.ChannelStatusHibernating
 	isLoggedIn := adapter.IsLoggedIn()
 
-	// Sync local DB if there's a discrepancy (e.g. manual DB deletion)
-	if !isLoggedIn || !isConnected {
-		ch, err := h.uc.GetChannel(c.Context(), cid)
-		if err == nil && ch.Status == channel.ChannelStatusConnected {
-			ch.Status = channel.ChannelStatusDisconnected
-			_ = h.uc.UpdateChannel(c.Context(), ch)
-		}
+	// If manual sync requested and we are hibernating, try to resume
+	if c.Query("resume") == "true" && isHibernating {
+		logrus.Infof("[REST] Force Status Sync: Resuming hibernated channel %s", cid)
+		_ = adapter.Resume(c.Context())
+		// Refresh status after resume
+		status = adapter.Status()
+		isConnected = status == channel.ChannelStatusConnected
+		isHibernating = status == channel.ChannelStatusHibernating
+	}
+
+	// Sync local DB if there's a discrepancy (e.g. manual DB deletion or hibernation)
+	ch, err := h.uc.GetChannel(c.Context(), cid)
+	if err == nil && (ch.Status != status) {
+		ch.Status = status
+		_ = h.uc.UpdateChannel(c.Context(), ch)
 	}
 
 	return c.JSON(fiber.Map{
-		"is_connected": isConnected,
-		"is_logged_in": isLoggedIn,
-		"status":       status,
-		"channel_id":   cid,
+		"is_connected":   isConnected,
+		"is_logged_in":   isLoggedIn,
+		"is_hibernating": isHibernating,
+		"status":         status,
+		"channel_id":     cid,
 	})
 }
 

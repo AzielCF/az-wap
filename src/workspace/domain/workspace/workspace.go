@@ -15,9 +15,8 @@ type Workspace struct {
 }
 
 type WorkspaceConfig struct {
-	Timezone        string            `json:"timezone"`
-	DefaultLanguage string            `json:"default_language"`
-	Metadata        map[string]string `json:"metadata"`
+	Timezone string            `json:"timezone"`
+	Metadata map[string]string `json:"metadata"`
 }
 
 type WorkspaceLimits struct {

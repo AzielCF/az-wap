@@ -56,6 +56,7 @@ type SessionEntry struct {
 	LastReplyTime   time.Time
 	LastMindset     *botengineDomain.Mindset
 	PendingTasks    []string
+	Language        string
 }
 
 type SessionOrchestrator struct {
@@ -180,10 +181,17 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 			State:      StateDebouncing,
 			BotID:      botID,
 			FocusScore: 0,
+			Language:   msg.Language,
 		}
 		s.dbEntries[key] = e
-	} else if e.BotID == "" {
-		e.BotID = botID
+	} else {
+		// Update language if it changes or is resolved later
+		if msg.Language != "" {
+			e.Language = msg.Language
+		}
+		if e.BotID == "" {
+			e.BotID = botID
+		}
 	}
 
 	if id, ok := msg.Metadata["message_id"].(string); ok && id != "" {

@@ -22,7 +22,15 @@ func (wa *WhatsAppAdapter) Status() channel.ChannelStatus {
 	if wa.client == nil {
 		return channel.ChannelStatusDisconnected
 	}
+
+	wa.hibMu.RLock()
+	isHib := wa.hibernating
+	wa.hibMu.RUnlock()
+
 	if !wa.client.IsConnected() {
+		if isHib {
+			return channel.ChannelStatusHibernating
+		}
 		return channel.ChannelStatusDisconnected
 	}
 	if !wa.client.IsLoggedIn() {
@@ -170,12 +178,20 @@ func (wa *WhatsAppAdapter) startHibernationSync() {
 				logrus.Infof("[WHATSAPP] Periodic Sync Wakeup for channel %s", wa.channelID)
 				_ = wa.Resume(context.Background())
 
-				// Wait 30s to receive anything pending, then check if we should go back to sleep
-				time.Sleep(30 * time.Second)
+				// Wait 60s to receive anything pending (offline messages)
+				time.Sleep(1 * time.Minute)
 
-				if wa.manager != nil && len(wa.manager.GetActiveChats(wa.channelID)) == 0 {
+				// After sync, only go back to sleep if there is NO active chats
+				// AND NO recent activity resumed by HandleIncomingActivity
+				wa.hibMu.RLock()
+				stillIdle := !wa.hibernating // if it was resumed by activity, hibernating will be false
+				wa.hibMu.RUnlock()
+
+				if stillIdle && wa.manager != nil && len(wa.manager.GetActiveChats(wa.channelID)) == 0 {
 					logrus.Infof("[WHATSAPP] Periodic Sync Done. Returning to hibernation for channel %s", wa.channelID)
 					_ = wa.Hibernate(context.Background())
+				} else {
+					logrus.Infof("[WHATSAPP] Periodic Sync detected activity or manual resume. Staying ONLINE for channel %s", wa.channelID)
 				}
 			}
 		case <-wa.stopSync:

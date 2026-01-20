@@ -125,7 +125,8 @@ func (pm *PresenceManager) CheckChannelSocket(channelID string) {
 		return
 	}
 
-	delay := 1 * time.Hour
+	// Stay physically connected for 2 hours of total inactivity
+	delay := 2 * time.Hour
 	pm.socketTimers[channelID] = time.AfterFunc(delay, func() {
 		pm.socketMu.Lock()
 		delete(pm.socketTimers, channelID)
@@ -136,7 +137,7 @@ func (pm *PresenceManager) CheckChannelSocket(channelID string) {
 			adapter, ok := pm.adapters[channelID]
 			pm.adaptersMu.RUnlock()
 			if ok {
-				logrus.Warnf("[PresenceManager] SOCKET HIBERNATION for channel %s", channelID)
+				logrus.Warnf("[PresenceManager] DEEP HIBERNATION (Socket Close) for channel %s after 2h idle", channelID)
 				_ = adapter.Hibernate(context.Background())
 			}
 		}
