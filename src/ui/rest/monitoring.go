@@ -2,17 +2,19 @@ package rest
 
 import (
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
+	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	"github.com/gofiber/fiber/v2"
 )
 
 type MonitoringHandler struct {
 	store monitoring.MonitoringStore
+	wm    *workspace.Manager
 }
 
 // InitRestMonitoring registra los endpoints unificados de monitoreo del sistema
-func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore) {
-	h := &MonitoringHandler{store: store}
+func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *workspace.Manager) {
+	h := &MonitoringHandler{store: store, wm: wm}
 
 	g := app.Group("/monitoring")
 
@@ -20,6 +22,7 @@ func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore) {
 	g.Get("/servers", h.GetServers)
 	g.Get("/cluster-activity", h.GetClusterActivity)
 	g.Get("/stats", h.GetGlobalStats)
+	g.Get("/typing", h.GetTypingStatus)
 
 	// Feed de eventos (mantenemos botmonitor por ahora para el log de eventos recientes)
 	g.Get("/events", h.GetRecentEvents)
@@ -53,4 +56,12 @@ func (h *MonitoringHandler) GetRecentEvents(c *fiber.Ctx) error {
 	// Obtenemos los eventos de botmonitor (log en vivo)
 	stats := botmonitor.GetStats()
 	return c.JSON(stats)
+}
+
+func (h *MonitoringHandler) GetTypingStatus(c *fiber.Ctx) error {
+	active, err := h.wm.GetActiveTyping(c.UserContext())
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(active)
 }

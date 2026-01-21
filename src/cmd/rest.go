@@ -148,8 +148,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestHealth(apiGroup, healthUsecase)
 
 	// Unified Monitoring System (Multi-server aware)
-	rest.InitRestMonitoring(apiGroup, monitorStore)
-	apiGroup.Get("/monitoring/typing", rest.GetTypingStatus(workspaceManager))
+	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager)
 
 	// Register Workspace Handlers
 	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
