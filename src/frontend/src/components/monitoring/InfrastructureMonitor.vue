@@ -107,6 +107,17 @@ function formatChatKey(key: string) {
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
                 <div class="flex justify-between items-start mb-4">
+                    <div class="bg-warning/10 p-2 rounded-xl">
+                        <Clock class="w-5 h-5 text-warning" />
+                    </div>
+                    <span class="text-[10px] font-black text-slate-700 uppercase">Queued</span>
+                </div>
+                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.total_pending || 0 }}</h3>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending Tasks</p>
+            </div>
+
+            <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
+                <div class="flex justify-between items-start mb-4">
                     <div class="bg-purple-500/10 p-2 rounded-xl">
                         <Cpu class="w-5 h-5 text-purple-500" />
                     </div>
