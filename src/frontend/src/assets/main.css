@@ -262,6 +262,25 @@
   .table-premium tr:last-child td {
     border-bottom: none;
   }
+
+  /* Global Modal Fixes */
+  .modal-box {
+    max-height: calc(100dvh - 2rem) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important; /* El scroll lo maneja el hijo */
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+
+  @media (max-width: 640px) {
+    .modal-box {
+      width: calc(100% - 1rem) !important;
+      max-width: calc(100% - 1rem) !important;
+      margin: 0.5rem !important;
+      max-height: calc(100dvh - 1rem) !important;
+    }
+  }
 }
 
 /* Custom Scrollbar */
@@ -281,17 +300,21 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.2);
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.2);
+  background: rgba(99, 102, 241, 0.8);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 /* Hide scrollbar utility */
