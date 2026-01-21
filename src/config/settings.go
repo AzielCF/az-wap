@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	AppVersion             = "v2.0.0"
+	AppVersion             = "v2.0.0-beta"
 	AppPort                = "3000"
 	AppDebug               = false
 	AppOs                  = "AzielCf"
@@ -27,12 +27,11 @@ var (
 	McpPort = "8080"
 	McpHost = "localhost"
 
-	PathStatics    = "statics"
-	PathQrCode     = "statics/qrcode"
-	PathSendItems  = "statics/senditems"
-	PathMedia      = "statics/media"
-	PathCacheMedia = "statics/cache/media"
-	PathStorages   = "storages"
+	PathStatics   = "statics"
+	PathQrCode    = "statics/qrcode"
+	PathSendItems = "statics/senditems"
+	PathMedia     = "statics/media"
+	PathStorages  = "storages"
 
 	DBURI     = "file:storages/whatsapp.db?_foreign_keys=on"
 	DBKeysURI = ""
