@@ -22,6 +22,7 @@ type WhatsAppAdapter struct {
 	workspaceID  string
 	sessionID    string // Optional: for legacy migration persistence
 	client       *whatsmeow.Client
+	dbContainer  interface{ Close() error } // sqlstore.Container for cleanup
 	chatStorage  domainChatStorage.IChatStorageRepository
 	repoMu       sync.Mutex
 	eventHandler func(message.IncomingMessage)

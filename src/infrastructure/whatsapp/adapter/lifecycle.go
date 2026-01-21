@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -111,6 +112,7 @@ func (wa *WhatsAppAdapter) Start(ctx context.Context, config channel.ChannelConf
 	wa.client = whatsmeow.NewClient(device, clientLog)
 	wa.client.EnableAutoReconnect = config.AutoReconnect
 	wa.client.AutoTrustIdentity = true
+	wa.dbContainer = container // Store reference for cleanup
 
 	// Registrar handlers internos
 	wa.handlerID = wa.client.AddEventHandler(wa.handleEvent)
@@ -163,6 +165,52 @@ func (wa *WhatsAppAdapter) Stop(ctx context.Context) error {
 		default:
 		}
 	}
+	return nil
+}
+
+// Cleanup removes all persistent data (WhatsApp DB and ChatStorage DB)
+func (wa *WhatsAppAdapter) Cleanup(ctx context.Context) error {
+	// 1. Stop the client first (removes event handlers, stops sync)
+	_ = wa.Stop(ctx)
+
+	// 2. Disconnect if connected
+	if wa.client != nil && wa.client.IsConnected() {
+		wa.client.Disconnect()
+	}
+
+	// 3. Close the SQLite container - CRITICAL for file deletion
+	if wa.dbContainer != nil {
+		_ = wa.dbContainer.Close()
+		wa.dbContainer = nil
+	} else if wa.client != nil && wa.client.Store != nil {
+		// Fallback: Try to close the container from the Store (legacy clients)
+		if container, ok := wa.client.Store.Container.(interface{ Close() error }); ok {
+			_ = container.Close()
+		}
+	}
+
+	// Nullify the client to prevent any reconnection attempts
+	wa.client = nil
+
+	// Give SQLite time to release file locks
+	time.Sleep(500 * time.Millisecond)
+
+	// 4. Delete WhatsApp session database
+	dbKey := wa.channelID
+	waDBPath := fmt.Sprintf("storages/whatsapp-%s.db", dbKey)
+	waFiles := []string{waDBPath, waDBPath + "-shm", waDBPath + "-wal"}
+	for _, f := range waFiles {
+		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+			logrus.Errorf("[WHATSAPP] Failed to remove %s: %v", f, err)
+		} else if err == nil {
+			logrus.Infof("[WHATSAPP] Removed %s", f)
+		}
+	}
+
+	// 5. Delete ChatStorage database using the instance manager
+	infraChatStorage.CleanupInstanceRepository(wa.channelID)
+
+	logrus.Infof("[WHATSAPP] Cleanup completed for channel %s", wa.channelID)
 	return nil
 }
 
