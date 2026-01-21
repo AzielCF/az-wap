@@ -6,10 +6,12 @@ import (
 	"time"
 
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	wsCommonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
+	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	wsRepo "github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -18,12 +20,14 @@ import (
 type serviceNewsletter struct {
 	workspaceMgr *workspace.Manager
 	repo         wsRepo.IWorkspaceRepository
+	monitor      monitoring.MonitoringStore
 }
 
-func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository) domainNewsletter.INewsletterUsecase {
+func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository, monitor monitoring.MonitoringStore) domainNewsletter.INewsletterUsecase {
 	return &serviceNewsletter{
 		workspaceMgr: workspaceMgr,
 		repo:         repo,
+		monitor:      monitor,
 	}
 }
 
@@ -136,6 +140,11 @@ func (service serviceNewsletter) CancelScheduled(ctx context.Context, postID str
 // ProcessScheduledPosts checks for pending posts and schedules them for execution.
 // It uses a look-ahead window to load upcoming posts into memory for precise execution.
 func (service serviceNewsletter) ProcessScheduledPosts(ctx context.Context) error {
+	// 0. Update global counter for monitoring
+	if count, err := service.repo.CountPendingScheduledPosts(ctx); err == nil {
+		_ = service.monitor.UpdateStat(ctx, "pending", count)
+	}
+
 	// Look ahead 2 minutes to load upcoming posts "hot"
 	lookAhead := time.Now().Add(2 * time.Minute)
 
@@ -174,53 +183,68 @@ func (service serviceNewsletter) ProcessScheduledPosts(ctx context.Context) erro
 }
 
 func (service serviceNewsletter) executePost(ctx context.Context, post wsCommonDomain.ScheduledPost) {
-	logrus.Infof("[SCHEDULER] Executing post %s now", post.ID)
+	logrus.Infof("[SCHEDULER] Queuing post %s for execution", post.ID)
 
-	adapter, err := service.getAdapterForToken(ctx, post.ChannelID)
-	if err != nil {
-		logrus.Errorf("Failed to get adapter for scheduled post %s: %v", post.ID, err)
-		post.Status = wsCommonDomain.ScheduledPostStatusFailed
-		post.Error = err.Error()
-		resultErr := service.repo.UpdateScheduledPost(ctx, post)
-		if resultErr != nil {
-			logrus.Errorf("Failed to update post status %s: %v", post.ID, resultErr)
-		}
-		return
-	}
+	// Use Worker Pool for execution to ensure monitoring visibility and concurrency control
+	msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
+		InstanceID: post.ChannelID,
+		ChatJID:    post.TargetID,
+		Handler: func(workerCtx context.Context) error {
+			logrus.Infof("[SCHEDULER] Worker executing post %s", post.ID)
 
-	var errSend error
+			// Add a timeout to prevent the worker from being blocked indefinitely
+			sendCtx, cancel := context.WithTimeout(workerCtx, 30*time.Second)
+			defer cancel()
 
-	// Determine logical target type by ID analysis (naive but effective for now)
-	isNewsletter := false
-	if len(post.TargetID) > 11 && post.TargetID[len(post.TargetID)-11:] == "@newsletter" {
-		isNewsletter = true
-	}
-
-	if isNewsletter {
-		_, errSend = adapter.SendNewsletterMessage(ctx, post.TargetID, post.Text, post.MediaPath)
-	} else {
-		// Standard Group or Chat
-		if post.MediaPath != "" {
-			errSend = fmt.Errorf("media scheduling for groups not fully implemented yet in auto-scheduler, only text supported")
-		} else {
-			if post.Text != "" {
-				_, errSend = adapter.SendMessage(ctx, post.TargetID, post.Text, "")
+			adapter, err := service.getAdapterForToken(sendCtx, post.ChannelID)
+			if err != nil {
+				service.handlePostError(sendCtx, post, err)
+				return nil
 			}
-		}
-	}
 
-	if errSend != nil {
-		logrus.Errorf("Failed to send scheduled post %s: %v", post.ID, errSend)
-		post.Status = wsCommonDomain.ScheduledPostStatusFailed
-		post.Error = errSend.Error()
-	} else {
-		logrus.Infof("[SCHEDULER] Post %s sent successfully", post.ID)
-		post.Status = wsCommonDomain.ScheduledPostStatusSent
-		post.Error = ""
-	}
+			var errSend error
 
+			// Determine logical target type
+			isNewsletter := false
+			if len(post.TargetID) > 11 && post.TargetID[len(post.TargetID)-11:] == "@newsletter" {
+				isNewsletter = true
+			}
+
+			if isNewsletter {
+				_, errSend = adapter.SendNewsletterMessage(sendCtx, post.TargetID, post.Text, post.MediaPath)
+			} else {
+				// Standard Group or Chat
+				if post.MediaPath != "" {
+					errSend = fmt.Errorf("media scheduling for groups not fully implemented yet in auto-scheduler, only text supported")
+				} else {
+					if post.Text != "" {
+						_, errSend = adapter.SendMessage(sendCtx, post.TargetID, post.Text, "")
+					}
+				}
+			}
+
+			if errSend != nil {
+				service.handlePostError(sendCtx, post, errSend)
+			} else {
+				logrus.Infof("[SCHEDULER] Post %s sent successfully", post.ID)
+				post.Status = wsCommonDomain.ScheduledPostStatusSent
+				post.Error = ""
+				post.UpdatedAt = time.Now()
+				if err := service.repo.UpdateScheduledPost(sendCtx, post); err != nil {
+					logrus.Errorf("Failed to update post status after execution %s: %v", post.ID, err)
+				}
+			}
+			return nil
+		},
+	})
+}
+
+func (service serviceNewsletter) handlePostError(ctx context.Context, post wsCommonDomain.ScheduledPost, err error) {
+	logrus.Errorf("Failed to send scheduled post %s: %v", post.ID, err)
+	post.Status = wsCommonDomain.ScheduledPostStatusFailed
+	post.Error = err.Error()
 	post.UpdatedAt = time.Now()
-	if err := service.repo.UpdateScheduledPost(ctx, post); err != nil {
-		logrus.Errorf("Failed to update post status after execution %s: %v", post.ID, err)
+	if resultErr := service.repo.UpdateScheduledPost(ctx, post); resultErr != nil {
+		logrus.Errorf("Failed to update post status %s: %v", post.ID, resultErr)
 	}
 }

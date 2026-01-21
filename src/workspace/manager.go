@@ -129,17 +129,6 @@ func (m *Manager) startHeartbeat() {
 }
 
 func (m *Manager) setupMonitoringHooks(pool *msgworker.MessageWorkerPool, poolType string) {
-	// 1. Pre-register all workers as IDLE to show full capacity in dashboard
-	for i := 0; i < pool.NumWorkers(); i++ {
-		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
-			ServerID:     m.serverID,
-			WorkerID:     i,
-			PoolType:     poolType,
-			IsProcessing: false,
-			ChatID:       "", // Explicitly empty
-		})
-	}
-
 	pool.OnWorkerStart = func(workerID int, chatKey string) {
 		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
 			ServerID:     m.serverID,

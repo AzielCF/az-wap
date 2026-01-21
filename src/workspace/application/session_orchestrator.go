@@ -274,7 +274,19 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 		tb := &timerBundle{}
 		if s.OnInactivityWarn != nil {
 			tb.warning = time.AfterFunc(3*time.Minute, func() {
-				s.OnInactivityWarn(key, ch)
+				parts := strings.Split(key, "|")
+				chatID := ""
+				if len(parts) >= 2 {
+					chatID = parts[1]
+				}
+				msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
+					InstanceID: ch.ID,
+					ChatJID:    chatID,
+					Handler: func(_ context.Context) error {
+						s.OnInactivityWarn(key, ch)
+						return nil
+					},
+				})
 			})
 		}
 		tb.debounce = time.AfterFunc(4*time.Minute, func() {
@@ -465,7 +477,19 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						tb := &timerBundle{}
 						if s.OnInactivityWarn != nil {
 							tb.warning = time.AfterFunc(3*time.Minute, func() {
-								s.OnInactivityWarn(key, ch)
+								parts := strings.Split(key, "|")
+								chatID := ""
+								if len(parts) >= 2 {
+									chatID = parts[1]
+								}
+								msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
+									InstanceID: ch.ID,
+									ChatJID:    chatID,
+									Handler: func(_ context.Context) error {
+										s.OnInactivityWarn(key, ch)
+										return nil
+									},
+								})
 							})
 						}
 						tb.debounce = time.AfterFunc(4*time.Minute, func() {
