@@ -58,8 +58,13 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Security: Strict CORS
 	// In production, this should be restricted to the actual frontend domain.
+	origins := globalConfig.AppCorsAllowedOrigins
+	if !strings.Contains(origins, globalConfig.AppBaseUrl) {
+		origins += ", " + globalConfig.AppBaseUrl
+	}
+
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000, http://localhost:5173, " + globalConfig.AppBaseUrl,
+		AllowOrigins: origins,
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Instance-Token, X-Request-ID",
 	}))
 	app.Use(middleware.Recovery())

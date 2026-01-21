@@ -164,6 +164,12 @@ func initEnvConfig() {
 		proxies := strings.Split(envTrustedProxies, ",")
 		globalConfig.AppTrustedProxies = proxies
 	}
+	if envBaseUrl := viper.GetString("app_base_url"); envBaseUrl != "" {
+		globalConfig.AppBaseUrl = envBaseUrl
+	}
+	if envCors := viper.GetString("app_cors_allowed_origins"); envCors != "" {
+		globalConfig.AppCorsAllowedOrigins = envCors
+	}
 
 	// Database settings
 	if envDBURI := viper.GetString("db_uri"); envDBURI != "" {
