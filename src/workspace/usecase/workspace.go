@@ -129,6 +129,32 @@ func (u *WorkspaceUsecase) DisableChannel(ctx context.Context, channelID string)
 }
 
 func (u *WorkspaceUsecase) DeleteChannel(ctx context.Context, channelID string) error {
+	if u.manager == nil {
+		return u.repo.DeleteChannel(ctx, channelID)
+	}
+
+	// 1. Try to logout from WhatsApp if there's an active session
+	adapter, ok := u.manager.GetAdapter(channelID)
+	if ok {
+		// Adapter is running, do proper logout + cleanup
+		_ = adapter.Logout(ctx)
+		_ = adapter.Cleanup(ctx)
+		u.manager.UnregisterAdapter(channelID)
+	} else {
+		// Adapter not running, try to start it for proper logout
+		if err := u.manager.StartChannel(ctx, channelID); err == nil {
+			if adapter, ok := u.manager.GetAdapter(channelID); ok {
+				_ = adapter.Logout(ctx)
+				_ = adapter.Cleanup(ctx)
+				u.manager.UnregisterAdapter(channelID)
+			}
+		} else {
+			// Could not start, just cleanup files
+			u.manager.UnregisterAndCleanup(channelID)
+		}
+	}
+
+	// 2. Delete channel from database
 	return u.repo.DeleteChannel(ctx, channelID)
 }
 
