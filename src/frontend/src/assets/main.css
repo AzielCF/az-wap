@@ -267,8 +267,7 @@
   .modal-box {
     max-height: calc(100dvh - 2rem) !important;
     display: flex !important;
-    flex-direction: column !important;
-    overflow: hidden !important; /* El scroll lo maneja el hijo */
+    overflow: hidden !important; 
     margin-top: auto;
     margin-bottom: auto;
   }

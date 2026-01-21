@@ -32,7 +32,7 @@ function copyId(id: string) {
 
 <template>
   <AppModal :modelValue="modelValue" @update:modelValue="emit('update:modelValue', $event)" @close="emit('cancel')" :title="title" :maxWidth="maxWidth || 'max-w-6xl'" noPadding noScroll>
-    <div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-[#0b0e14]">
+    <div class="flex flex-col h-[calc(100dvh-4rem)] sm:h-[92vh] lg:h-[750px] w-full overflow-hidden bg-[#0b0e14]">
       <div class="flex flex-col lg:flex-row flex-1 overflow-hidden">
         <!-- Sidebar Navigation -->
         <aside class="w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-white/5 p-4 lg:p-10 flex flex-col flex-none bg-[#161a23] overflow-y-auto custom-scrollbar">

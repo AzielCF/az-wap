@@ -17,7 +17,7 @@ function close() {
 
 <template>
   <div v-if="modelValue" class="modal modal-open backdrop-blur-md" role="dialog">
-    <div class="modal-box p-0 bg-[#0f1219] border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex flex-col w-[calc(100%-2rem)] sm:w-full max-w-md max-h-[calc(100dvh-4rem)] sm:max-h-[85vh] transition-all duration-300 pointer-events-auto" :class="maxWidth">
+    <div class="modal-box p-0 bg-[#0f1219] border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex flex-col w-[calc(100%-2rem)] sm:w-full max-h-[calc(100dvh-4rem)] sm:max-h-[85vh] transition-all duration-300 pointer-events-auto" :class="maxWidth || 'max-w-md'">
       <!-- Professional Header -->
       <header v-if="title" class="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-none">
         <h3 class="font-bold text-xl uppercase tracking-tight text-white">{{ title }}</h3>
