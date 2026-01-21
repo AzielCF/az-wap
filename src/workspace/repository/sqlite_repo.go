@@ -46,7 +46,7 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 			enabled BOOLEAN DEFAULT 0,
 			config TEXT,
 			status TEXT DEFAULT 'pending',
-			external_ref TEXT UNIQUE,
+			external_ref TEXT,
 			last_seen DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -88,6 +88,8 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_posts_channel_target ON scheduled_posts(channel_id, target_id);`,
 		// Migration for sender_id
 		`ALTER TABLE scheduled_posts ADD COLUMN sender_id TEXT DEFAULT '';`,
+		// Migration: Convert empty external_ref to NULL to fix UNIQUE constraint issue
+		`UPDATE channels SET external_ref = NULL WHERE external_ref = '';`,
 	}
 
 	for _, query := range queries {
@@ -181,8 +183,14 @@ func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
 func (r *SQLiteRepository) CreateChannel(ctx context.Context, ch channel.Channel) error {
 	config, _ := json.Marshal(ch.Config)
 	breakdown, _ := json.Marshal(ch.CostBreakdown)
+
+	var extRef sql.NullString
+	if ch.ExternalRef != "" {
+		extRef = sql.NullString{String: ch.ExternalRef, Valid: true}
+	}
+
 	query := `INSERT INTO channels (id, workspace_id, type, name, enabled, config, status, external_ref, last_seen, accumulated_cost, cost_breakdown, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, query, ch.ID, ch.WorkspaceID, ch.Type, ch.Name, ch.Enabled, string(config), ch.Status, ch.ExternalRef, ch.LastSeen, ch.AccumulatedCost, string(breakdown), ch.CreatedAt, ch.UpdatedAt)
+	_, err := r.db.ExecContext(ctx, query, ch.ID, ch.WorkspaceID, ch.Type, ch.Name, ch.Enabled, string(config), ch.Status, extRef, ch.LastSeen, ch.AccumulatedCost, string(breakdown), ch.CreatedAt, ch.UpdatedAt)
 	return err
 }
 
@@ -193,7 +201,9 @@ func (r *SQLiteRepository) GetChannel(ctx context.Context, channelID string) (ch
 	var ch channel.Channel
 	var config string
 	var breakdown sql.NullString
-	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &ch.ExternalRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+	var extRef sql.NullString
+
+	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &extRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return channel.Channel{}, common.ErrChannelNotFound
 		}
@@ -202,6 +212,9 @@ func (r *SQLiteRepository) GetChannel(ctx context.Context, channelID string) (ch
 	_ = json.Unmarshal([]byte(config), &ch.Config)
 	if breakdown.Valid {
 		_ = json.Unmarshal([]byte(breakdown.String), &ch.CostBreakdown)
+	}
+	if extRef.Valid {
+		ch.ExternalRef = extRef.String
 	}
 	return ch, nil
 }
@@ -219,12 +232,16 @@ func (r *SQLiteRepository) ListChannels(ctx context.Context, workspaceID string)
 		var ch channel.Channel
 		var config string
 		var breakdown sql.NullString
-		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &ch.ExternalRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+		var extRef sql.NullString
+		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &extRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(config), &ch.Config)
 		if breakdown.Valid {
 			_ = json.Unmarshal([]byte(breakdown.String), &ch.CostBreakdown)
+		}
+		if extRef.Valid {
+			ch.ExternalRef = extRef.String
 		}
 		channels = append(channels, ch)
 	}
@@ -233,8 +250,14 @@ func (r *SQLiteRepository) ListChannels(ctx context.Context, workspaceID string)
 
 func (r *SQLiteRepository) UpdateChannel(ctx context.Context, ch channel.Channel) error {
 	config, _ := json.Marshal(ch.Config)
+
+	var extRef sql.NullString
+	if ch.ExternalRef != "" {
+		extRef = sql.NullString{String: ch.ExternalRef, Valid: true}
+	}
+
 	query := `UPDATE channels SET name=?, enabled=?, config=?, status=?, external_ref=?, last_seen=?, updated_at=? WHERE id=?`
-	res, err := r.db.ExecContext(ctx, query, ch.Name, ch.Enabled, string(config), ch.Status, ch.ExternalRef, ch.LastSeen, ch.UpdatedAt, ch.ID)
+	res, err := r.db.ExecContext(ctx, query, ch.Name, ch.Enabled, string(config), ch.Status, extRef, ch.LastSeen, ch.UpdatedAt, ch.ID)
 	if err != nil {
 		return err
 	}
@@ -266,7 +289,9 @@ func (r *SQLiteRepository) GetChannelByExternalRef(ctx context.Context, external
 	var ch channel.Channel
 	var config string
 	var breakdown sql.NullString
-	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &ch.ExternalRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+	var extRef sql.NullString
+
+	if err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &extRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return channel.Channel{}, common.ErrChannelNotFound
 		}
@@ -275,6 +300,9 @@ func (r *SQLiteRepository) GetChannelByExternalRef(ctx context.Context, external
 	_ = json.Unmarshal([]byte(config), &ch.Config)
 	if breakdown.Valid {
 		_ = json.Unmarshal([]byte(breakdown.String), &ch.CostBreakdown)
+	}
+	if extRef.Valid {
+		ch.ExternalRef = extRef.String
 	}
 	return ch, nil
 }
