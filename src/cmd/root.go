@@ -322,7 +322,7 @@ func initApp() {
 	}
 
 	//preparing folder if not exist
-	err := utils.CreateFolder(globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathStorages, globalConfig.PathCacheMedia)
+	err := utils.CreateFolder(globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathStorages)
 	if err != nil {
 		logrus.Errorln(err)
 	}

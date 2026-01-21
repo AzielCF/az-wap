@@ -99,6 +99,11 @@ func NewMessageWorkerPool(numWorkers, queueSize int) *MessageWorkerPool {
 	return pool
 }
 
+// NumWorkers retorna el número de workers configurados en el pool
+func (p *MessageWorkerPool) NumWorkers() int {
+	return p.numWorkers
+}
+
 // Start inicia todos los workers del pool
 func (p *MessageWorkerPool) Start(ctx context.Context) {
 	p.wg.Add(1)
