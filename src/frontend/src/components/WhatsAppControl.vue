@@ -99,13 +99,17 @@ async function login() {
 }
 
 async function logout() {
-  if (!confirm('Are you sure you want to logout?')) return
+  console.log('[LOGOUT] Button clicked!')
   try {
-    await api.get(`/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/logout`)
+    console.log('[LOGOUT] Calling API...', `/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/logout`)
+    const result = await api.get(`/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/logout`)
+    console.log('[LOGOUT] API Response:', result)
     status.value.qr = null
+    status.value.loggedIn = false
     await fetchStatus()
   } catch (err) {
-    alert('Logout error')
+    console.error('[LOGOUT] Error:', err)
+    alert('Logout error: ' + (err as any)?.message)
   }
 }
 
