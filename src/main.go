@@ -24,7 +24,7 @@ import (
 	"github.com/AzielCF/az-wap/cmd"
 )
 
-//go:embed frontend/dist
+//go:embed all:frontend/dist
 var embedFrontend embed.FS
 
 func main() {
