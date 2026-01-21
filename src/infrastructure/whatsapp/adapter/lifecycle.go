@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -23,9 +22,13 @@ func (wa *WhatsAppAdapter) Status() channel.ChannelStatus {
 		return channel.ChannelStatusDisconnected
 	}
 
-	wa.hibMu.RLock()
-	isHib := wa.hibernating
-	wa.hibMu.RUnlock()
+	isHib := false
+	if wa.manager != nil {
+		p, _ := wa.manager.GetChannelPresence(context.Background(), wa.channelID)
+		if p != nil && !p.IsSocketConnected {
+			isHib = true
+		}
+	}
 
 	if !wa.client.IsConnected() {
 		if isHib {
@@ -170,9 +173,13 @@ func (wa *WhatsAppAdapter) startHibernationSync() {
 	for {
 		select {
 		case <-ticker.C:
-			wa.hibMu.RLock()
-			isHib := wa.hibernating
-			wa.hibMu.RUnlock()
+			isHib := false
+			if wa.manager != nil {
+				p, _ := wa.manager.GetChannelPresence(context.Background(), wa.channelID)
+				if p != nil && !p.IsSocketConnected {
+					isHib = true
+				}
+			}
 
 			if isHib {
 				logrus.Infof("[WHATSAPP] Periodic Sync Wakeup for channel %s", wa.channelID)
@@ -183,9 +190,13 @@ func (wa *WhatsAppAdapter) startHibernationSync() {
 
 				// After sync, only go back to sleep if there is NO active chats
 				// AND NO recent activity resumed by HandleIncomingActivity
-				wa.hibMu.RLock()
-				stillIdle := !wa.hibernating // if it was resumed by activity, hibernating will be false
-				wa.hibMu.RUnlock()
+				stillIdle := true
+				if wa.manager != nil {
+					p, _ := wa.manager.GetChannelPresence(context.Background(), wa.channelID)
+					if p != nil && p.IsSocketConnected { // If it was resumed, IsSocketConnected became true
+						stillIdle = false
+					}
+				}
 
 				if stillIdle && wa.manager != nil && len(wa.manager.GetActiveChats(wa.channelID)) == 0 {
 					logrus.Infof("[WHATSAPP] Periodic Sync Done. Returning to hibernation for channel %s", wa.channelID)
@@ -205,32 +216,25 @@ func (wa *WhatsAppAdapter) WaitIdle(ctx context.Context, chatID string, duration
 	logrus.Debugf("[WHATSAPP] Waiting for idle in chat %s (timeout: %v)", chatID, duration)
 	// We use the unified ID to check for presence
 	unifiedID := chatID // In this adapter, chatID should already be unified
-	chatpresence.WaitIdle(ctx, wa.channelID, unifiedID, duration)
+	if wa.manager != nil {
+		wa.manager.WaitIdle(ctx, wa.channelID, unifiedID, duration)
+	}
 	return nil
 }
 
 // Hibernate physically closes the socket to keep a low profile on WhatsApp servers
 func (wa *WhatsAppAdapter) Hibernate(ctx context.Context) error {
-	wa.hibMu.Lock()
-	defer wa.hibMu.Unlock()
-
 	if wa.client == nil || !wa.client.IsConnected() {
-		wa.hibernating = true
 		return nil
 	}
 
 	logrus.Infof("[WHATSAPP] Hibernating channel %s (Closing socket)", wa.channelID)
 	wa.client.Disconnect()
-	wa.hibernating = true
 	return nil
 }
 
 // Resume physically reconnects the socket if it was hibernated
 func (wa *WhatsAppAdapter) Resume(ctx context.Context) error {
-	wa.hibMu.Lock()
-	wa.hibernating = false
-	wa.hibMu.Unlock()
-
 	if wa.client == nil {
 		return fmt.Errorf("client not initialized")
 	}

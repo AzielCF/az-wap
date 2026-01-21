@@ -9,8 +9,8 @@ import (
 
 	globalConfig "github.com/AzielCF/az-wap/config"
 	waUtils "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter/utils"
-	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -85,7 +85,14 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 			unifiedID = wa.getUnifiedID(v.Chat)
 
 			logrus.Infof("[WHATSAPP] Presence update from %s (unified: %s) in channel %s: %s (media: %v)", v.Chat.String(), unifiedID, wa.channelID, v.State, v.Media)
-			chatpresence.Update(wa.channelID, unifiedID, v.State, v.Media)
+
+			if wa.manager != nil {
+				media := channel.TypingMediaText
+				if v.Media == types.ChatPresenceMediaAudio {
+					media = channel.TypingMediaAudio
+				}
+				_ = wa.manager.UpdateTyping(context.Background(), wa.channelID, unifiedID, v.State == types.ChatPresenceComposing, media)
+			}
 		}
 
 	case *events.Message:

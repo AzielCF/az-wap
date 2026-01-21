@@ -41,10 +41,7 @@ type WhatsAppAdapter struct {
 	// Identity cache (LID <-> PN)
 	identityMap sync.Map
 
-	// Hibernation state
-	hibMu       sync.RWMutex
-	hibernating bool
-	stopSync    chan struct{}
+	stopSync chan struct{}
 }
 
 // NewAdapter creates a new adapter from an existing client or prepares a new one
