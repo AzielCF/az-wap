@@ -450,6 +450,13 @@ func (r *SQLiteRepository) ListUpcomingScheduledPosts(ctx context.Context, limit
 	return posts, nil
 }
 
+func (r *SQLiteRepository) CountPendingScheduledPosts(ctx context.Context) (int64, error) {
+	query := `SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing')`
+	var count int64
+	err := r.db.QueryRowContext(ctx, query).Scan(&count)
+	return count, err
+}
+
 func (r *SQLiteRepository) UpdateScheduledPost(ctx context.Context, post common.ScheduledPost) error {
 	query := `UPDATE scheduled_posts SET text=?, media_path=?, media_type=?, scheduled_at=?, status=?, error=?, updated_at=? WHERE id=?`
 	res, err := r.db.ExecContext(ctx, query, post.Text, post.MediaPath, post.MediaType, post.ScheduledAt, post.Status, post.Error, post.UpdatedAt, post.ID)

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -43,7 +44,7 @@ func (s *MemoryMonitoringStore) GetActiveServers(ctx context.Context) ([]monitor
 	var active []monitoring.ServerInfo
 	now := time.Now()
 	for _, srv := range s.servers {
-		// En memoria, consideramos inactivo si no ha reportado en 1 minuto
+		// In memory, we consider inactive if it hasn't reported in 1 minute
 		if now.Sub(srv.LastSeen) < 1*time.Minute {
 			active = append(active, srv)
 		}
@@ -55,7 +56,8 @@ func (s *MemoryMonitoringStore) UpdateWorkerActivity(ctx context.Context, activi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := activity.ServerID + ":" + activity.PoolType + ":" + string(rune(activity.WorkerID))
+	key := activity.ServerID + ":" + activity.PoolType + ":" + fmt.Sprintf("%d", activity.WorkerID)
+	activity.UpdatedAt = time.Now()
 	s.workers[key] = activity
 	return nil
 }
@@ -65,11 +67,23 @@ func (s *MemoryMonitoringStore) GetClusterActivity(ctx context.Context) ([]monit
 	defer s.mu.RUnlock()
 
 	var result []monitoring.WorkerActivity
+	now := time.Now()
+
 	for _, act := range s.workers {
-		// Solo mostramos workers de servidores que siguen vivos
-		if srv, ok := s.servers[act.ServerID]; ok && time.Since(srv.LastSeen) < 1*time.Minute {
-			result = append(result, act)
+		// Only show workers from servers that are still alive
+		srv, ok := s.servers[act.ServerID]
+		if !ok || time.Since(srv.LastSeen) > 1*time.Minute {
+			continue
 		}
+
+		// TTL for workers:
+		// If processing, always show.
+		// If READY (idle), only show if there was activity in the last 2 minutes.
+		if !act.IsProcessing && now.Sub(act.UpdatedAt) > 2*time.Minute {
+			continue
+		}
+
+		result = append(result, act)
 	}
 	return result, nil
 }
@@ -85,6 +99,17 @@ func (s *MemoryMonitoringStore) IncrementStat(ctx context.Context, key string) e
 		s.stats.TotalErrors++
 	case "dropped":
 		s.stats.TotalDropped++
+	}
+	return nil
+}
+
+func (s *MemoryMonitoringStore) UpdateStat(ctx context.Context, key string, value int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch key {
+	case "pending":
+		s.stats.TotalPending = value
 	}
 	return nil
 }
