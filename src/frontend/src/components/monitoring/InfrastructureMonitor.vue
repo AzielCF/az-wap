@@ -54,7 +54,7 @@ function formatUptime(seconds: number) {
 function formatChatKey(key: string) {
     if (!key) return ''
     const parts = key.split('|')
-    if (parts.length >= 2 && parts[1]) {
+    if (parts.length >= 2 && parts[0] && parts[1]) {
         const inst = parts[0].substring(0, 8)
         const chat = parts[1].length > 15 ? parts[1].substring(0, 15) + '...' : parts[1]
         return `${inst} | ${chat}`
