@@ -173,6 +173,12 @@ func (m *Manager) UnregisterAdapter(channelID string) {
 	m.presence.UnregisterAdapter(channelID)
 }
 
+// UnregisterAndCleanup stops the adapter and deletes all persistent data (DBs, files)
+func (m *Manager) UnregisterAndCleanup(channelID string) {
+	m.channels.UnregisterAndCleanup(channelID)
+	m.presence.UnregisterAdapter(channelID)
+}
+
 func (m *Manager) GetAdapter(channelID string) (channelDomain.ChannelAdapter, bool) {
 	return m.channels.GetAdapter(channelID)
 }

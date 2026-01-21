@@ -82,6 +82,23 @@ func (s *ChannelService) UnregisterAdapter(channelID string) {
 	}
 }
 
+// UnregisterAndCleanup stops the adapter and deletes all persistent data
+func (s *ChannelService) UnregisterAndCleanup(channelID string) {
+	s.adaptersMu.Lock()
+	adapter, ok := s.adapters[channelID]
+	if ok {
+		delete(s.adapters, channelID)
+	}
+	s.adaptersMu.Unlock()
+
+	if ok {
+		_ = adapter.Cleanup(context.Background())
+		if s.botEngine != nil {
+			s.botEngine.UnregisterTransport(channelID)
+		}
+	}
+}
+
 func (s *ChannelService) GetAdapter(channelID string) (channel.ChannelAdapter, bool) {
 	s.adaptersMu.RLock()
 	defer s.adaptersMu.RUnlock()
