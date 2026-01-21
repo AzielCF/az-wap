@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/AzielCF/az-wap/config"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/sirupsen/logrus"
 	_ "golang.org/x/image/webp" // Register WebP format
 )

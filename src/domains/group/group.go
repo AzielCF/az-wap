@@ -10,7 +10,7 @@ import (
 // NOTE: IGroupUsecase is now defined in interfaces.go with proper segregation
 
 type JoinGroupWithLinkRequest struct {
-	Link string `json:"link" form:"link"`
+	Link  string `json:"link" form:"link"`
 	Token string `json:"token,omitempty" form:"token"`
 }
 
