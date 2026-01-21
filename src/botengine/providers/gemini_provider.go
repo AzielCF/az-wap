@@ -51,7 +51,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	var genConfig *genai.GenerateContentConfig
 	if req.SystemPrompt != "" {
 		genConfig = &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(req.SystemPrompt, genai.RoleUser),
+			SystemInstruction: genai.NewContentFromText(req.SystemPrompt, ""),
 		}
 	}
 
@@ -107,18 +107,22 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 		}
 
 		// Si el turno tiene ToolResponses, es una respuesta de herramienta (rol user)
+		// IMPORTANTE: Todas las respuestas de un mismo turno deben ir en el mismo Content
 		if len(t.ToolResponses) > 0 {
+			parts := []*genai.Part{}
 			for _, tr := range t.ToolResponses {
-				contents = append(contents, &genai.Content{
-					Role: "user",
-					Parts: []*genai.Part{{
-						FunctionResponse: &genai.FunctionResponse{
-							Name:     tr.Name,
-							Response: tr.Data.(map[string]any),
-						},
-					}},
+				parts = append(parts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						ID:       tr.ID,
+						Name:     tr.Name,
+						Response: tr.Data.(map[string]any),
+					},
 				})
 			}
+			contents = append(contents, &genai.Content{
+				Role:  "user",
+				Parts: parts,
+			})
 			continue
 		}
 
@@ -251,6 +255,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	for _, part := range candidate.Content.Parts {
 		if part.FunctionCall != nil {
 			resp.ToolCalls = append(resp.ToolCalls, domain.ToolCall{
+				ID:   part.FunctionCall.ID,
 				Name: part.FunctionCall.Name,
 				Args: part.FunctionCall.Args,
 			})

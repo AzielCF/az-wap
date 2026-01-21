@@ -139,8 +139,8 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 			RawContent: res.RawContent,
 		})
 
-		// Turno(s) de usuario que contendrán los resultados.
-		// PARIDAD ULTRA: Enviar un turno de usuario por CADA respuesta de herramienta (Identidad Original)
+		// PARIDAD ULTRA: Agrupar TODAS las respuestas de herramientas en un solo turno (Identidad Gemini)
+		var responses []domain.ToolResponse
 		shouldBreak := false
 		for _, tc := range res.ToolCalls {
 			var toolResult map[string]any
@@ -260,14 +260,19 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 				toolResult = map[string]any{"error": "tool not found"}
 			}
 
-			// Añadir respuesta como un turno INDIVIDUAL (Paridad estricta)
+			// Añadir resultado a la lista de respuestas de este turno
+			responses = append(responses, domain.ToolResponse{
+				ID:   tc.ID,
+				Name: tc.Name,
+				Data: toolResult,
+			})
+		}
+
+		// Registrar un ÚNICO turno de usuario con TODAS las respuestas (Importante para Gemini)
+		if len(responses) > 0 {
 			req.History = append(req.History, domain.ChatTurn{
-				Role: "user",
-				ToolResponses: []domain.ToolResponse{{
-					ID:   tc.ID,
-					Name: tc.Name,
-					Data: toolResult,
-				}},
+				Role:          "user",
+				ToolResponses: responses,
 			})
 		}
 
