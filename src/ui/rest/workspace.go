@@ -226,23 +226,9 @@ func (h *WorkspaceHandler) DisableChannel(c *fiber.Ctx) error {
 func (h *WorkspaceHandler) DeleteChannel(c *fiber.Ctx) error {
 	cid := c.Params("cid")
 
-	// 1. Stop and remove from manager
-	h.wm.UnregisterAdapter(cid)
-
-	// 2. Cleanup chat storage files (handles .db, .shm, .wal)
-	_ = chatstorage.CleanupInstanceRepository(cid)
-
-	// 3. Cleanup whatsapp storage files (internal library files)
-	dbPath := fmt.Sprintf("storages/whatsapp-%s.db", cid)
-	files := []string{dbPath, dbPath + "-shm", dbPath + "-wal"}
-	for _, f := range files {
-		if err := os.Remove(f); err != nil {
-			if !os.IsNotExist(err) {
-				logrus.Errorf("[REST] Failed to remove whatsapp storage file %s: %v", f, err)
-			}
-		}
-	}
-
+	// DeleteChannel in usecase handles:
+	// 1. UnregisterAndCleanup (stops adapter, closes DB, deletes files)
+	// 2. Deletes channel from database
 	if err := h.uc.DeleteChannel(c.Context(), cid); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -579,18 +565,62 @@ func (h *WorkspaceHandler) WhatsAppLoginWithCode(c *fiber.Ctx) error {
 
 func (h *WorkspaceHandler) WhatsAppLogout(c *fiber.Ctx) error {
 	cid := c.Params("cid")
-	adapter, ok := h.wm.GetAdapter(cid)
-	if !ok {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "channel not running"})
-	}
 
 	logrus.Infof("[REST] Logging out channel %s", cid)
 
-	if err := adapter.Logout(c.Context()); err != nil {
-		logrus.Warnf("[REST] Logout failed for %s, but syncing state anyway: %v", cid, err)
+	adapter, ok := h.wm.GetAdapter(cid)
+	if ok {
+		// 1. Logout from WhatsApp (disconnects the linked device)
+		if err := adapter.Logout(c.Context()); err != nil {
+			logrus.Warnf("[REST] Logout failed for %s, but syncing state anyway: %v", cid, err)
+		}
+
+		// 2. Cleanup adapter resources (closes SQLite, deletes DB files)
+		if err := adapter.Cleanup(c.Context()); err != nil {
+			logrus.Warnf("[REST] Cleanup failed for %s: %v", cid, err)
+		}
+
+		// 3. Unregister the adapter from the manager
+		h.wm.UnregisterAdapter(cid)
+	} else {
+		// Channel not running - try to start it temporarily to do proper logout
+		logrus.Infof("[REST] Channel %s not running, attempting to start for proper logout", cid)
+
+		// Try to start the channel to get the adapter
+		if err := h.wm.StartChannel(c.Context(), cid); err == nil {
+			// Started successfully, now try to get adapter and logout
+			if adapter, ok := h.wm.GetAdapter(cid); ok {
+				if err := adapter.Logout(c.Context()); err != nil {
+					logrus.Warnf("[REST] Logout failed for %s: %v", cid, err)
+				} else {
+					logrus.Infof("[REST] Logout successful for %s", cid)
+				}
+				if err := adapter.Cleanup(c.Context()); err != nil {
+					logrus.Warnf("[REST] Cleanup failed for %s: %v", cid, err)
+				}
+				h.wm.UnregisterAdapter(cid)
+			}
+		} else {
+			// Could not start channel, just cleanup files directly
+			logrus.Warnf("[REST] Could not start channel %s for logout, cleaning up files only: %v", cid, err)
+
+			// Cleanup WhatsApp storage files
+			waDBPath := fmt.Sprintf("storages/whatsapp-%s.db", cid)
+			waFiles := []string{waDBPath, waDBPath + "-shm", waDBPath + "-wal"}
+			for _, f := range waFiles {
+				if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+					logrus.Warnf("[REST] Failed to remove %s: %v", f, err)
+				} else if err == nil {
+					logrus.Infof("[REST] Removed %s", f)
+				}
+			}
+
+			// Cleanup ChatStorage files
+			_ = chatstorage.CleanupInstanceRepository(cid)
+		}
 	}
 
-	// Update DB status - Always sync to Disconnected on logout attempt
+	// 4. Update DB status
 	ch, err := h.uc.GetChannel(c.Context(), cid)
 	if err == nil {
 		ch.Status = channel.ChannelStatusDisconnected
