@@ -9,11 +9,14 @@ import (
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	globalConfig "github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/application"
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
+	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/infrastructure"
+	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,18 +34,36 @@ type Manager struct {
 	sessions       *application.SessionOrchestrator
 	processor      *application.MessageProcessor
 	presence       *application.PresenceManager
+	typingStore    channelDomain.TypingStore
 	clientResolver ClientResolver
+	monitor        monitoring.MonitoringStore
+	serverID       string
+	startTime      time.Time
 }
 
-func NewManager(repo workspaceDomain.IWorkspaceRepository, botEngine *botengine.Engine, clientResolver ClientResolver) *Manager {
+func NewManager(
+	repo workspaceDomain.IWorkspaceRepository,
+	botEngine *botengine.Engine,
+	clientResolver ClientResolver,
+	typingStore channelDomain.TypingStore,
+	monitor monitoring.MonitoringStore,
+) *Manager {
+	// Generate a unique ID for this server instance
+	serverID := "azwap-" + time.Now().Format("05.000")
+
 	m := &Manager{
 		repo:           repo,
 		botEngine:      botEngine,
 		clientResolver: clientResolver,
+		typingStore:    typingStore,
+		monitor:        monitor,
+		serverID:       serverID,
+		startTime:      time.Now(),
 	}
 
 	// 1. Initialize Presence Manager
-	m.presence = application.NewPresenceManager()
+	// Inyectar MemoryPresenceStore en el constructor de PresenceManager
+	m.presence = application.NewPresenceManager(repository.NewMemoryPresenceStore())
 
 	// 2. Initialize Session Orchestrator
 	m.sessions = application.NewSessionOrchestrator(botEngine)
@@ -84,7 +105,56 @@ func NewManager(repo workspaceDomain.IWorkspaceRepository, botEngine *botengine.
 	// 6. Start Internal Loops
 	m.StartPresenceLoop(context.Background())
 
+	// Initialize Monitoring Hooks for Global Pool
+	m.setupMonitoringHooks(msgworker.GetGlobalPool(), "primary")
+
+	// Start Heartbeat Loop
+	go m.startHeartbeat()
+
+	logrus.Infof("[WS_MANAGER] Initialized with ServerID: %s", serverID)
+
 	return m
+}
+
+func (m *Manager) startHeartbeat() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Initial report
+	_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()))
+
+	for range ticker.C {
+		_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()))
+	}
+}
+
+func (m *Manager) setupMonitoringHooks(pool *msgworker.MessageWorkerPool, poolType string) {
+	pool.OnWorkerStart = func(workerID int, chatKey string) {
+		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
+			ServerID:     m.serverID,
+			WorkerID:     workerID,
+			PoolType:     poolType,
+			IsProcessing: true,
+			ChatID:       chatKey,
+			StartedAt:    time.Now(),
+		})
+	}
+
+	pool.OnWorkerEnd = func(workerID int, chatKey string) {
+		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
+			ServerID:     m.serverID,
+			WorkerID:     workerID,
+			PoolType:     poolType,
+			IsProcessing: false,
+		})
+		// También incrementamos el contador global
+		_ = m.monitor.IncrementStat(context.Background(), "processed")
+	}
+}
+
+// RegisterExternalPool permite que pools creados fuera del Manager (ej: en rest) reporten actividad
+func (m *Manager) RegisterExternalPool(pool *msgworker.MessageWorkerPool, poolType string) {
+	m.setupMonitoringHooks(pool, poolType)
 }
 
 func (m *Manager) RegisterFactory(chType channelDomain.ChannelType, factory AdapterFactory) {
@@ -428,4 +498,44 @@ func (m *Manager) StartPresenceLoop(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func (m *Manager) GetChannelPresence(ctx context.Context, channelID string) (*channelDomain.ChannelPresence, error) {
+	return m.presence.GetStatus(ctx, channelID)
+}
+
+func (m *Manager) UpdateTyping(ctx context.Context, channelID, chatID string, isTyping bool, media channelDomain.TypingMedia) error {
+	return m.typingStore.Update(ctx, channelID, chatID, isTyping, media)
+}
+
+func (m *Manager) IsTyping(ctx context.Context, channelID, chatID string) bool {
+	s, _ := m.typingStore.Get(ctx, channelID, chatID)
+	return s != nil
+}
+
+func (m *Manager) GetActiveTyping(ctx context.Context) ([]channelDomain.TypingState, error) {
+	return m.typingStore.GetAll(ctx)
+}
+
+func (m *Manager) WaitIdle(ctx context.Context, channelID, chatID string, timeout time.Duration) bool {
+	if timeout <= 0 {
+		return true
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	poll := time.NewTicker(250 * time.Millisecond)
+	defer poll.Stop()
+
+	for {
+		if !m.IsTyping(ctx, channelID, chatID) {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-deadline.C:
+			return false
+		case <-poll.C:
+		}
+	}
 }

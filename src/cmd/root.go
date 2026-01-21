@@ -51,11 +51,13 @@ import (
 
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
+	"github.com/AzielCF/az-wap/pkg/botmonitor"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
+	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	workspaceUsecaseLayer "github.com/AzielCF/az-wap/workspace/usecase"
 
@@ -101,6 +103,8 @@ var (
 	wkRepo           repository.IWorkspaceRepository
 	workspaceManager *workspace.Manager
 	wkUsecase        *workspaceUsecaseLayer.WorkspaceUsecase
+	typingStore      channel.TypingStore
+	monitorStore     monitoring.MonitoringStore
 
 	// Clients Module
 	appDB          *sql.DB
@@ -383,8 +387,17 @@ func initApp() {
 
 	logrus.Info("[CLIENTS] Client module initialized successfully")
 
-	// 3. Workspace Manager (Needs wkRepo, BotEngine, ClientResolver)
-	workspaceManager = workspace.NewManager(wkRepo, botEngine, clientResolver)
+	// 3. Monitoring and Typing
+	typingStore = repository.NewMemoryTypingStore()
+	monitorStore = repository.NewMemoryMonitoringStore()
+
+	// 4. Workspace Manager (Needs wkRepo, BotEngine, ClientResolver, stores)
+	workspaceManager = workspace.NewManager(wkRepo, botEngine, clientResolver, typingStore, monitorStore)
+
+	// 5. Connect Bot Monitor to Cluster Stats
+	botmonitor.OnIncrement = func(key string) {
+		_ = monitorStore.IncrementStat(ctx, key)
+	}
 
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED

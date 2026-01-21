@@ -7,7 +7,6 @@ import (
 
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
-	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
@@ -69,7 +68,8 @@ func (h *WorkspaceHandler) GetActiveSessions(c *fiber.Ctx) error {
 }
 
 func (h *WorkspaceHandler) GetActiveTyping(c *fiber.Ctx) error {
-	return c.JSON(chatpresence.GetActiveTyping())
+	active, _ := h.wm.GetActiveTyping(c.Context())
+	return c.JSON(active)
 }
 
 // ... existing code ...

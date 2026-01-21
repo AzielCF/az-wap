@@ -139,7 +139,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestMessage(apiGroup, messageUsecase)
 	rest.InitRestGroup(apiGroup, groupUsecase)
 	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
-	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase)
+	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
 	// rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase) // DEPRECATED
 	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
@@ -147,13 +147,9 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestMCP(apiGroup, mcpUsecase)
 	rest.InitRestHealth(apiGroup, healthUsecase)
 
-	// Worker Pool monitoring endpoint
-	apiGroup.Get("/worker-pool/stats", rest.GetWorkerPoolStats)
-	apiGroup.Get("/bot-webhook-pool/stats", rest.GetBotWebhookPoolStats)
-
-	// Bot monitor endpoint
-	apiGroup.Get("/bot-monitor/stats", rest.GetBotMonitorStats)
-	apiGroup.Get("/monitoring/typing", rest.GetTypingStatus)
+	// Unified Monitoring System (Multi-server aware)
+	rest.InitRestMonitoring(apiGroup, monitorStore)
+	apiGroup.Get("/monitoring/typing", rest.GetTypingStatus(workspaceManager))
 
 	// Register Workspace Handlers
 	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)

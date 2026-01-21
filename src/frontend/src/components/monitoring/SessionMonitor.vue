@@ -108,13 +108,13 @@ const mergedSessions = computed(() => {
 
   // 2. Agregar o actualizar con estado de typing (Real-time events)
   typingStatus.value.forEach(t => {
-    const chatID = t.chat_jid
+    const chatID = t.chat_id
     if (map.has(chatID)) {
       map.get(chatID).typing = t
     } else {
       map.set(chatID, {
-        key: `${t.instance_id}|${chatID}`,
-        channel_id: t.instance_id,
+        key: `${t.channel_id}|${chatID}`,
+        channel_id: t.channel_id,
         chat_id: chatID,
         is_bot_active: false,
         state: 'idle',

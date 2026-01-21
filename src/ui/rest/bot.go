@@ -27,11 +27,13 @@ var (
 	botWebhookPoolCtx    context.Context
 	botWebhookPoolCancel context.CancelFunc
 
-	engine *botengine.Engine
+	workspaceManager *workspace.Manager
+	engine           *botengine.Engine
 )
 
 func SetBotEngine(e *botengine.Engine, wm *workspace.Manager) {
 	engine = e
+	workspaceManager = wm
 	if wm != nil {
 		ClearBotMemoryFunc = wm.ClearBotMemory
 	}
@@ -57,6 +59,11 @@ func initBotWebhookPool() {
 
 		botWebhookPool = msgworker.NewMessageWorkerPool(size, queue)
 		botWebhookPool.Start(botWebhookPoolCtx)
+
+		// Register with global monitor if manager is available
+		if workspaceManager != nil {
+			workspaceManager.RegisterExternalPool(botWebhookPool, "webhook")
+		}
 	})
 }
 
@@ -65,7 +72,8 @@ type Bot struct {
 	MCPService domainMCP.IMCPUsecase
 }
 
-func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService domainMCP.IMCPUsecase) Bot {
+func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService domainMCP.IMCPUsecase, wm *workspace.Manager) Bot {
+	workspaceManager = wm
 	initBotWebhookPool()
 	rest := Bot{Service: service, MCPService: mcpService}
 	app.Get("/bots", rest.ListBots)

@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// OnIncrement es un hook opcional para reportar métricas a sistemas externos (ej: cluster monitor)
+var OnIncrement func(key string)
+
 type Event struct {
 	Timestamp  time.Time         `json:"timestamp"`
 	TraceID    string            `json:"trace_id"`
@@ -67,11 +70,17 @@ func (m *Monitor) Record(e Event) {
 	case "outbound":
 		if e.Status == "ok" {
 			atomic.AddInt64(&m.totalOutbound, 1)
+			if OnIncrement != nil {
+				OnIncrement("processed")
+			}
 		}
 	}
 
 	if e.Status == "error" {
 		atomic.AddInt64(&m.totalErrors, 1)
+		if OnIncrement != nil {
+			OnIncrement("error")
+		}
 	}
 
 	m.eventsMu.Lock()

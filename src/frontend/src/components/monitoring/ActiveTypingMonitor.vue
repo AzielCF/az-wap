@@ -18,10 +18,10 @@
         </div>
         
         <transition-group name="list">
-          <div v-for="chat in activeChats" :key="chat.chat_jid" 
+          <div v-for="chat in activeChats" :key="chat.chat_id" 
                class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-300 group hover:border-primary/50 transition-all">
             <div class="flex flex-col min-w-0">
-              <span class="font-mono text-xs font-bold truncate">{{ chat.chat_jid }}</span>
+              <span class="font-mono text-xs font-bold truncate">{{ chat.chat_id }}</span>
               <span class="text-[10px] opacity-70 flex items-center gap-1 uppercase tracking-wider">
                 <i :class="chat.media === 'audio' ? 'text-error' : 'text-primary'">
                   ●
@@ -30,7 +30,7 @@
               </span>
             </div>
             <div class="flex flex-col items-end shrink-0">
-              <span class="text-[10px] font-mono opacity-50">{{ chat.instance_id }}</span>
+              <span class="text-[10px] font-mono opacity-50">{{ chat.channel_id }}</span>
               <div v-if="chat.media === 'text'" class="flex gap-1 mt-1">
                 <span class="dot-typing"></span>
               </div>

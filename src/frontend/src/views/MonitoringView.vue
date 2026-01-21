@@ -11,37 +11,41 @@ import InfrastructureMonitor from '@/components/monitoring/InfrastructureMonitor
 import SessionMonitor from '@/components/monitoring/SessionMonitor.vue'
 
 const api = useApi()
-const botStats = ref<any>({ results: [], total: 0 })
-const workerStats = ref<any>({ worker_stats: [], active_chats: {}, num_workers: 0, active_workers: 0 })
-const webhookStats = ref<any>({ worker_stats: [], active_chats: {}, num_workers: 0, active_workers: 0 })
+const botEvents = ref<any>({ results: [], total: 0 })
+const globalStats = ref<any>({ total_processed: 0, total_errors: 0, total_dropped: 0 })
+const clusterActivity = ref<any[]>([])
+const activeServers = ref<any[]>([])
 
 const botAutoRefresh = ref(true)
 const infraAutoRefresh = ref(true)
 let botInterval: any = null
 let infraInterval: any = null
 
-	async function loadBotData() {
-		try {
-			const res = await api.get('/api/bot-monitor/stats')
-			botStats.value = res || {}
-		} catch (err) {
-			console.error('Failed to load bot stats:', err)
-			botStats.value = {}
-		}
-	}
+async function loadBotData() {
+    try {
+        const res = await api.get('/api/monitoring/events')
+        botEvents.value = res || {}
+    } catch (err) {
+        console.error('Failed to load bot events:', err)
+        botEvents.value = {}
+    }
+}
 
-	async function loadInfraData() {
-		try {
-			const [workerRes, webhookRes] = await Promise.allSettled([
-				api.get('/api/worker-pool/stats'),
-				api.get('/api/bot-webhook-pool/stats')
-			])
-			if (workerRes.status === 'fulfilled') workerStats.value = workerRes.value || {}
-			if (webhookRes.status === 'fulfilled') webhookStats.value = webhookRes.value || {}
-		} catch (err) {
-			console.error('Failed to load infra stats:', err)
-		}
-	}
+async function loadInfraData() {
+    try {
+        const [statsRes, activityRes, serversRes] = await Promise.allSettled([
+            api.get('/api/monitoring/stats'),
+            api.get('/api/monitoring/cluster-activity'),
+            api.get('/api/monitoring/servers')
+        ])
+        
+        if (statsRes.status === 'fulfilled') globalStats.value = statsRes.value || {}
+        if (activityRes.status === 'fulfilled') clusterActivity.value = activityRes.value || []
+        if (serversRes.status === 'fulfilled') activeServers.value = serversRes.value || []
+    } catch (err) {
+        console.error('Failed to load infra stats:', err)
+    }
+}
 
 function toggleBotSync() {
   botAutoRefresh.value = !botAutoRefresh.value
@@ -114,13 +118,14 @@ onUnmounted(() => {
     <SessionMonitor />
 
     <!-- Bot Monitor Log Section -->
-    <BotEventMonitor :stats="botStats" :auto-sync="botAutoRefresh" @toggle-sync="toggleBotSync" />
+    <BotEventMonitor :stats="botEvents" :auto-sync="botAutoRefresh" @toggle-sync="toggleBotSync" />
 
     <!-- Cluster Pools Monitor -->
     <div class="pt-12 border-t border-white/5">
         <InfrastructureMonitor 
-          :workerStats="workerStats" 
-          :webhookStats="webhookStats" 
+          :clusterActivity="clusterActivity" 
+          :activeServers="activeServers"
+          :globalStats="globalStats"
           :auto-sync="infraAutoRefresh" 
           @toggle-sync="toggleInfraSync" 
         />

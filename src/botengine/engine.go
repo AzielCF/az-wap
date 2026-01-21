@@ -40,7 +40,6 @@ type Engine struct {
 	providers   map[string]domain.AIProvider
 	mu          sync.RWMutex
 	transports  map[string]domain.Transport
-	resourceMgr *infrastructure.ResourceManager
 	humanizer   *infrastructure.Humanizer
 	onPostReply []PostReplyHook
 	nativeTools map[string]*domain.NativeTool
@@ -56,7 +55,6 @@ func NewEngine(botService bot.IBotUsecase, mcpService domainMCP.IMCPUsecase) *En
 		mcpUsecase:  mcpService,
 		providers:   make(map[string]domain.AIProvider),
 		transports:  make(map[string]domain.Transport),
-		resourceMgr: infrastructure.NewResourceManager(),
 		humanizer:   infrastructure.NewHumanizer(true),
 		nativeTools: make(map[string]*domain.NativeTool),
 	}
@@ -198,16 +196,9 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	// 2.5 Media Intent Detection (Conserje de Recursos)
 	e.detectMediaIntents(b, &input)
 
-	// Resource Tracking
-	sessionKey := fmt.Sprintf("bot|%s|%s", b.ID, input.SenderID)
-	if input.WorkspaceID != "" {
-		sessionKey = fmt.Sprintf("ws|%s|bot|%s|%s", input.WorkspaceID, b.ID, input.SenderID)
-	}
-	for _, m := range input.Medias {
-		if m.LocalPath != "" {
-			e.resourceMgr.Track(sessionKey, m.LocalPath)
-		}
-	}
+	// NOTE: Resource tracking is now handled by Workspace.SessionEntry
+	// Files are tracked in SessionEntry.DownloadedFiles and cleaned up
+	// when the session expires via cleanupSessionFiles callback
 
 	// 3. Seleccionar Proveedor
 	providerName := string(b.Provider)

@@ -61,6 +61,10 @@ type MessageWorkerPool struct {
 	activeChatsMu   sync.RWMutex
 	activeChats     map[string]activeChatEntry // chatKey -> workerID
 	startTime       time.Time
+
+	// Hooks para monitoreo externo
+	OnWorkerStart func(workerID int, chatKey string)
+	OnWorkerEnd   func(workerID int, chatKey string)
 }
 
 // worker representa un worker individual con su cola
@@ -279,11 +283,17 @@ func (w *worker) run(wg *sync.WaitGroup) {
 			func() {
 				chatKey := job.InstanceID + "|" + job.ChatJID
 
+				if w.pool.OnWorkerStart != nil {
+					w.pool.OnWorkerStart(w.id, chatKey)
+				}
 				atomic.StoreInt32(&w.isProcessing, 1)
 				defer func() {
 					if r := recover(); r != nil {
 						atomic.AddInt64(&w.pool.totalErrors, 1)
 						logrus.Errorf("[MSG_WORKER_POOL] Worker %d panic for %s: %v", w.id, chatKey, r)
+					}
+					if w.pool.OnWorkerEnd != nil {
+						w.pool.OnWorkerEnd(w.id, chatKey)
 					}
 					atomic.StoreInt32(&w.isProcessing, 0)
 					atomic.AddInt64(&w.jobsProcessed, 1)
