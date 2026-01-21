@@ -14,6 +14,8 @@ type PresenceManager struct {
 	adaptersMu sync.RWMutex
 	adapters   map[string]channel.ChannelAdapter
 
+	store channel.PresenceStore
+
 	presenceMu     sync.Mutex
 	presenceTimers map[string]*time.Timer
 
@@ -24,9 +26,10 @@ type PresenceManager struct {
 	IsChannelActive func(channelID string) bool
 }
 
-func NewPresenceManager() *PresenceManager {
+func NewPresenceManager(store channel.PresenceStore) *PresenceManager {
 	return &PresenceManager{
 		adapters:       make(map[string]channel.ChannelAdapter),
+		store:          store,
 		presenceTimers: make(map[string]*time.Timer),
 		socketTimers:   make(map[string]*time.Timer),
 	}
@@ -46,6 +49,21 @@ func (pm *PresenceManager) UnregisterAdapter(channelID string) {
 
 func (pm *PresenceManager) HandleIncomingActivity(channelID string) {
 	logrus.Debugf("[PresenceManager] Activity detected for channel %s. Cancelling hibernation timers.", channelID)
+
+	ctx := context.Background()
+
+	// Actualizar estado en el store
+	p, _ := pm.store.Get(ctx, channelID)
+	if p == nil {
+		p = &channel.ChannelPresence{ChannelID: channelID}
+	}
+	p.LastSeen = time.Now()
+	p.IsVisuallyOnline = true
+	p.IsSocketConnected = true
+	p.VisualOfflineAt = time.Time{} // Resetear objetivos
+	p.DeepHibernateAt = time.Time{}
+	_ = pm.store.Save(ctx, p)
+
 	pm.presenceMu.Lock()
 	if timer, ok := pm.presenceTimers[channelID]; ok {
 		timer.Stop()
@@ -96,6 +114,16 @@ func (pm *PresenceManager) CheckChannelPresence(channelID string) {
 	}
 
 	delay := time.Duration(4+rand.Intn(7)) * time.Minute
+	visualOfflineAt := time.Now().Add(delay)
+
+	// Actualizar store con el tiempo objetivo
+	ctx := context.Background()
+	p, _ := pm.store.Get(ctx, channelID)
+	if p != nil {
+		p.VisualOfflineAt = visualOfflineAt
+		_ = pm.store.Save(ctx, p)
+	}
+
 	pm.presenceTimers[channelID] = time.AfterFunc(delay, func() {
 		pm.presenceMu.Lock()
 		delete(pm.presenceTimers, channelID)
@@ -108,6 +136,13 @@ func (pm *PresenceManager) CheckChannelPresence(channelID string) {
 			if ok {
 				logrus.Infof("[PresenceManager] Channel %s visually OFFLINE", channelID)
 				_ = adapter.SetOnline(context.Background(), false)
+
+				// Actualizar flag en store
+				p, _ := pm.store.Get(context.Background(), channelID)
+				if p != nil {
+					p.IsVisuallyOnline = false
+					_ = pm.store.Save(context.Background(), p)
+				}
 			}
 		}
 	})
@@ -127,6 +162,16 @@ func (pm *PresenceManager) CheckChannelSocket(channelID string) {
 
 	// Stay physically connected for 2 hours of total inactivity
 	delay := 2 * time.Hour
+	deepHibernateAt := time.Now().Add(delay)
+
+	// Actualizar store con el tiempo objetivo
+	ctx := context.Background()
+	p, _ := pm.store.Get(ctx, channelID)
+	if p != nil {
+		p.DeepHibernateAt = deepHibernateAt
+		_ = pm.store.Save(ctx, p)
+	}
+
 	pm.socketTimers[channelID] = time.AfterFunc(delay, func() {
 		pm.socketMu.Lock()
 		delete(pm.socketTimers, channelID)
@@ -139,7 +184,19 @@ func (pm *PresenceManager) CheckChannelSocket(channelID string) {
 			if ok {
 				logrus.Warnf("[PresenceManager] DEEP HIBERNATION (Socket Close) for channel %s after 2h idle", channelID)
 				_ = adapter.Hibernate(context.Background())
+
+				// Actualizar flags en store
+				p, _ := pm.store.Get(context.Background(), channelID)
+				if p != nil {
+					p.IsSocketConnected = false
+					p.IsVisuallyOnline = false
+					_ = pm.store.Save(context.Background(), p)
+				}
 			}
 		}
 	})
+}
+
+func (pm *PresenceManager) GetStatus(ctx context.Context, channelID string) (*channel.ChannelPresence, error) {
+	return pm.store.Get(ctx, channelID)
 }

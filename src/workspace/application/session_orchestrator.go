@@ -11,21 +11,33 @@ import (
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	globalConfig "github.com/AzielCF/az-wap/config"
-	"github.com/AzielCF/az-wap/pkg/chatpresence"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/AzielCF/az-wap/workspace/domain/session"
+	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/sirupsen/logrus"
 )
 
-type SessionState string
+// Re-export types from session package for backward compatibility
+type SessionState = session.SessionState
 
 const (
-	StateDebouncing SessionState = "debouncing"
-	StateProcessing SessionState = "processing"
-	StateWaiting    SessionState = "waiting"
+	StateDebouncing = session.StateDebouncing
+	StateProcessing = session.StateProcessing
+	StateWaiting    = session.StateWaiting
 )
+
+// SessionEntry is now an alias to session.SessionEntry
+// This maintains backward compatibility while centralizing the type definition
+type SessionEntry = session.SessionEntry
+
+// timerBundle holds the non-serializable timers for each session
+// These are kept locally and cannot be persisted to external stores
+type timerBundle struct {
+	debounce *time.Timer
+	warning  *time.Timer
+}
 
 type ActiveSessionInfo struct {
 	Key       string       `json:"key"`
@@ -36,33 +48,14 @@ type ActiveSessionInfo struct {
 	ExpiresIn int          `json:"expires_in"` // segundos
 }
 
-type SessionEntry struct {
-	Msg             message.IncomingMessage
-	Texts           []string
-	MessageIDs      []string
-	Timer           *time.Timer
-	WarningTimer    *time.Timer
-	ExpireAt        time.Time
-	State           SessionState
-	LastSeen        time.Time
-	LastBubbleCount int
-	Media           []*message.IncomingMedia
-	Memory          session.SessionMemory
-	BotID           string
-	SessionPath     string
-	DownloadedFiles []string
-	ChatOpen        bool
-	FocusScore      int
-	LastReplyTime   time.Time
-	LastMindset     *botengineDomain.Mindset
-	PendingTasks    []string
-	Language        string
-}
-
 type SessionOrchestrator struct {
 	botEngine *botengine.Engine
-	dbMu      sync.Mutex
-	dbEntries map[string]*SessionEntry
+	store     session.SessionStore
+	typing    channel.TypingStore
+
+	// Timers are kept locally (not serializable)
+	timerMu sync.Mutex
+	timers  map[string]*timerBundle
 
 	// Callbacks
 	OnProcessFinal   func(ctx context.Context, ch channel.Channel, msg message.IncomingMessage, botID string) (botengineDomain.BotOutput, error)
@@ -72,65 +65,113 @@ type SessionOrchestrator struct {
 	OnWaitIdle       func(ctx context.Context, channelID, chatID string)
 }
 
+// NewSessionOrchestrator creates a new orchestrator with the default in-memory store
 func NewSessionOrchestrator(botEngine *botengine.Engine) *SessionOrchestrator {
+	return NewSessionOrchestratorWithStore(botEngine, repository.NewMemorySessionStore(), repository.NewMemoryTypingStore())
+}
+
+// NewSessionOrchestratorWithStore creates a new orchestrator with a custom session store
+func NewSessionOrchestratorWithStore(botEngine *botengine.Engine, store session.SessionStore, typing channel.TypingStore) *SessionOrchestrator {
 	return &SessionOrchestrator{
 		botEngine: botEngine,
-		dbEntries: make(map[string]*SessionEntry),
+		store:     store,
+		typing:    typing,
+		timers:    make(map[string]*timerBundle),
+	}
+}
+
+// GetSessionStore returns the underlying session store (useful for metrics/debugging)
+func (s *SessionOrchestrator) GetSessionStore() session.SessionStore {
+	return s.store
+}
+
+func (s *SessionOrchestrator) getTimers(key string) *timerBundle {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	return s.timers[key]
+}
+
+func (s *SessionOrchestrator) setTimers(key string, t *timerBundle) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	s.timers[key] = t
+}
+
+func (s *SessionOrchestrator) stopAndClearTimers(key string) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	if t, ok := s.timers[key]; ok {
+		if t.debounce != nil {
+			t.debounce.Stop()
+		}
+		if t.warning != nil {
+			t.warning.Stop()
+		}
+		delete(s.timers, key)
 	}
 }
 
 func (s *SessionOrchestrator) GetEntry(key string) (*SessionEntry, bool) {
-	s.dbMu.Lock()
-	defer s.dbMu.Unlock()
-	e, ok := s.dbEntries[key]
-	return e, ok
+	ctx := context.Background()
+	e, err := s.store.Get(ctx, key)
+	if err != nil {
+		logrus.WithError(err).Warnf("[SessionOrchestrator] Failed to get entry: %s", key)
+		return nil, false
+	}
+	return e, e != nil
 }
 
 func (s *SessionOrchestrator) DeleteEntry(key string) {
-	s.dbMu.Lock()
-	delete(s.dbEntries, key)
-	s.dbMu.Unlock()
+	ctx := context.Background()
+	s.stopAndClearTimers(key)
+	_ = s.store.Delete(ctx, key)
 }
 
 func (s *SessionOrchestrator) GetOrCreateEntry(key string, msg message.IncomingMessage) (*SessionEntry, bool) {
-	s.dbMu.Lock()
-	defer s.dbMu.Unlock()
-	e, ok := s.dbEntries[key]
-	if !ok {
-		e = &SessionEntry{
-			Msg:        msg,
-			State:      StateDebouncing,
-			FocusScore: 0,
-		}
-		s.dbEntries[key] = e
+	ctx := context.Background()
+	e, err := s.store.Get(ctx, key)
+	if err != nil {
+		logrus.WithError(err).Warnf("[SessionOrchestrator] Failed to get entry: %s", key)
 	}
-	return e, ok
+
+	if e != nil {
+		return e, true
+	}
+
+	e = &SessionEntry{
+		Msg:        msg,
+		State:      StateDebouncing,
+		FocusScore: 0,
+	}
+	_ = s.store.Save(ctx, key, e, 4*time.Minute)
+	return e, false
 }
 
 func (s *SessionOrchestrator) CloseSession(key string) {
-	s.dbMu.Lock()
-	e, ok := s.dbEntries[key]
-	if ok {
-		if e.Timer != nil {
-			e.Timer.Stop()
-		}
-		if e.WarningTimer != nil {
-			e.WarningTimer.Stop()
-		}
-		delete(s.dbEntries, key)
-		if s.OnCleanupFiles != nil {
-			go s.OnCleanupFiles(e)
-		}
+	ctx := context.Background()
+	s.stopAndClearTimers(key)
+
+	e, err := s.store.Get(ctx, key)
+	if err != nil || e == nil {
+		return
 	}
-	s.dbMu.Unlock()
+
+	_ = s.store.Delete(ctx, key)
+	if s.OnCleanupFiles != nil {
+		go s.OnCleanupFiles(e)
+	}
 }
 
 func (s *SessionOrchestrator) GetActiveSessions() []ActiveSessionInfo {
-	s.dbMu.Lock()
-	defer s.dbMu.Unlock()
+	ctx := context.Background()
+	entries, err := s.store.GetAll(ctx)
+	if err != nil {
+		logrus.WithError(err).Warn("[SessionOrchestrator] Failed to get all sessions")
+		return nil
+	}
 
 	var sessions []ActiveSessionInfo
-	for k, e := range s.dbEntries {
+	for k, e := range entries {
 		parts := strings.Split(k, "|")
 		info := ActiveSessionInfo{
 			Key:   k,
@@ -155,27 +196,31 @@ func (s *SessionOrchestrator) GetActiveSessions() []ActiveSessionInfo {
 
 func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.Channel, msg message.IncomingMessage, botID string, markRead func(string, []string)) {
 	key := ch.ID + "|" + msg.ChatID + "|" + msg.SenderID
+	storeCtx := context.Background()
 
-	s.dbMu.Lock()
-	// Identity Protection
+	// Identity Protection - handle LID migration
 	if strings.Contains(msg.SenderID, "@lid") {
-		for k, e := range s.dbEntries {
-			if strings.HasPrefix(k, ch.ID+"|"+msg.ChatID+"|") && k != key {
+		keys, _ := s.store.List(storeCtx, ch.ID+"|"+msg.ChatID+"|*")
+		for _, k := range keys {
+			if k != key {
 				logrus.Infof("[SessionOrchestrator] Identity migration detected: %s -> %s", k, msg.SenderID)
-				e.State = StateWaiting
-				if e.Timer != nil {
-					e.Timer.Stop()
-				}
-				delete(s.dbEntries, k)
-				if s.OnCleanupFiles != nil {
-					go s.OnCleanupFiles(e)
+				if oldEntry, _ := s.store.Get(storeCtx, k); oldEntry != nil {
+					oldEntry.State = StateWaiting
+					s.stopAndClearTimers(k)
+					_ = s.store.Delete(storeCtx, k)
+					if s.OnCleanupFiles != nil {
+						go s.OnCleanupFiles(oldEntry)
+					}
 				}
 			}
 		}
 	}
 
-	e, ok := s.dbEntries[key]
-	if !ok {
+	// Get or create entry
+	e, err := s.store.Get(storeCtx, key)
+	isNew := e == nil || err != nil
+
+	if isNew {
 		e = &SessionEntry{
 			Msg:        msg,
 			State:      StateDebouncing,
@@ -183,7 +228,6 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 			FocusScore: 0,
 			Language:   msg.Language,
 		}
-		s.dbEntries[key] = e
 	} else {
 		// Update language if it changes or is resolved later
 		if msg.Language != "" {
@@ -210,49 +254,44 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	e.LastSeen = time.Now()
 	e.ExpireAt = e.LastSeen.Add(4 * time.Minute)
 
-	if e.Timer != nil {
-		e.Timer.Stop()
-		e.Timer = nil
-	}
-	if e.WarningTimer != nil {
-		e.WarningTimer.Stop()
-		e.WarningTimer = nil
-	}
-	s.dbMu.Unlock()
+	// Stop existing timers
+	s.stopAndClearTimers(key)
 
 	debounceBase := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
 	if debounceBase <= 0 {
+		// Save state before processing
+		_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+
 		if s.OnProcessFinal != nil {
 			_, _ = s.OnProcessFinal(ctx, ch, msg, botID)
 		}
 
-		s.dbMu.Lock()
+		// Update state after processing
 		e.State = StateWaiting
 		e.ExpireAt = time.Now().Add(4 * time.Minute)
+		_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+
+		tb := &timerBundle{}
 		if s.OnInactivityWarn != nil {
-			e.WarningTimer = time.AfterFunc(3*time.Minute, func() {
+			tb.warning = time.AfterFunc(3*time.Minute, func() {
 				s.OnInactivityWarn(key, ch)
 			})
 		}
-		e.Timer = time.AfterFunc(4*time.Minute, func() {
-			s.dbMu.Lock()
-			if curr, still := s.dbEntries[key]; still && curr == e && curr.State == StateWaiting {
-				delete(s.dbEntries, key)
+		tb.debounce = time.AfterFunc(4*time.Minute, func() {
+			if curr, _ := s.store.Get(storeCtx, key); curr != nil && curr.State == StateWaiting {
+				s.stopAndClearTimers(key)
+				_ = s.store.Delete(storeCtx, key)
 				if s.OnCleanupFiles != nil {
-					s.OnCleanupFiles(e)
+					s.OnCleanupFiles(curr)
 				}
 				if s.OnChannelIdle != nil {
-					go s.OnChannelIdle(e.Msg.ChannelID)
+					go s.OnChannelIdle(curr.Msg.ChannelID)
 				}
 			}
-			s.dbMu.Unlock()
 		})
-		s.dbMu.Unlock()
+		s.setTimers(key, tb)
 		return
 	}
-
-	s.dbMu.Lock()
-	defer s.dbMu.Unlock()
 
 	if e.State == StateWaiting {
 		e.State = StateDebouncing
@@ -270,7 +309,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 			}
 		}
 
-		// Length based adjustment (from original manager)
+		// Length based adjustment
 		if len(msg.Text) > 500 {
 			e.FocusScore += 15
 		} else if len(msg.Text) > 100 {
@@ -311,49 +350,53 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 		e.Texts = append(e.Texts, msg.Text)
 	}
 
+	// Save updated entry
+	_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+
 	if e.State == StateProcessing {
 		logrus.Infof("[SessionOrchestrator] Message enqueued during processing for %s (Session extended, Focus: %d)", key, e.FocusScore)
 		return
 	}
 
 	if e.State == StateDebouncing {
-		e.Timer = time.AfterFunc(debounce, func() {
-			s.FlushDebounced(key, ch, botID, markRead)
-		})
+		tb := &timerBundle{
+			debounce: time.AfterFunc(debounce, func() {
+				s.FlushDebounced(key, ch, botID, markRead)
+			}),
+		}
+		s.setTimers(key, tb)
 	}
 }
 
 func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, botID string, markRead func(string, []string)) {
-	s.dbMu.Lock()
-	e, ok := s.dbEntries[key]
-	if !ok || e.State != StateDebouncing {
-		s.dbMu.Unlock()
+	storeCtx := context.Background()
+
+	e, err := s.store.Get(storeCtx, key)
+	if err != nil || e == nil || e.State != StateDebouncing {
 		return
 	}
 
-	isComposing := chatpresence.IsComposing(ch.ID, e.Msg.ChatID)
+	typingState, _ := s.typing.Get(storeCtx, ch.ID, e.Msg.ChatID)
+	isComposing := typingState != nil
 	if isComposing {
 		debounce := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
 		if debounce <= 0 {
 			debounce = 2 * time.Second
 		}
-		if e.Timer != nil {
-			e.Timer.Stop()
+		s.stopAndClearTimers(key)
+		tb := &timerBundle{
+			debounce: time.AfterFunc(debounce, func() {
+				s.FlushDebounced(key, ch, botID, markRead)
+			}),
 		}
-		e.Timer = time.AfterFunc(debounce, func() {
-			s.FlushDebounced(key, ch, botID, markRead)
-		})
+		s.setTimers(key, tb)
 		logrus.Infof("[SessionOrchestrator] User STILL TYPING in %s. Rescheduling flush in %v (ID matching: %s)", key, debounce, e.Msg.ChatID)
-		s.dbMu.Unlock()
 		return
 	}
 	logrus.Debugf("[SessionOrchestrator] Flush check: IsComposing=%v for %s", isComposing, e.Msg.ChatID)
 
 	e.State = StateProcessing
-	if e.Timer != nil {
-		e.Timer.Stop()
-		e.Timer = nil
-	}
+	s.stopAndClearTimers(key)
 
 	batch := e.Texts
 	e.Texts = nil
@@ -374,7 +417,9 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 		finalMsg.Medias = e.Media
 		e.Media = nil
 	}
-	s.dbMu.Unlock()
+
+	// Save updated state
+	_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
 
 	msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
 		InstanceID: ch.ID,
@@ -387,50 +432,57 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 			if s.OnProcessFinal != nil {
 				output, _ := s.OnProcessFinal(workerCtx, ch, finalMsg, botID)
 
-				s.dbMu.Lock()
-				if e, ok := s.dbEntries[key]; ok {
+				// Re-fetch entry from store (may have been updated)
+				if curr, _ := s.store.Get(storeCtx, key); curr != nil {
 					if bCount, ok := output.Metadata["bubbles"].(string); ok {
-						_, _ = fmt.Sscanf(bCount, "%d", &e.LastBubbleCount)
+						_, _ = fmt.Sscanf(bCount, "%d", &curr.LastBubbleCount)
 					}
 
-					if len(e.Texts) > 0 {
-						e.Msg.Metadata["is_delayed"] = true
+					if len(curr.Texts) > 0 {
+						curr.Msg.Metadata["is_delayed"] = true
 						readingPause := time.Duration(0)
 						if s.botEngine != nil {
-							totalContent := strings.Join(e.Texts, "")
+							totalContent := strings.Join(curr.Texts, "")
 							readingPause = s.botEngine.Humanizer().CalculateReadingTime(totalContent)
 						}
-						e.State = StateDebouncing
+						curr.State = StateDebouncing
 						debounce := (time.Duration(globalConfig.AIDebounceMs) * time.Millisecond) + readingPause
-						e.Timer = time.AfterFunc(debounce, func() {
-							s.FlushDebounced(key, ch, botID, markRead)
-						})
+						_ = s.store.Save(storeCtx, key, curr, 4*time.Minute)
+
+						tb := &timerBundle{
+							debounce: time.AfterFunc(debounce, func() {
+								s.FlushDebounced(key, ch, botID, markRead)
+							}),
+						}
+						s.setTimers(key, tb)
 						logrus.Infof("[SessionOrchestrator] Re-queuing %s with reading pause of %s", key, readingPause)
 					} else {
-						e.State = StateWaiting
-						e.ExpireAt = time.Now().Add(4 * time.Minute)
+						curr.State = StateWaiting
+						curr.ExpireAt = time.Now().Add(4 * time.Minute)
+						curr.ChatOpen = false
+						_ = s.store.Save(storeCtx, key, curr, 4*time.Minute)
+
+						tb := &timerBundle{}
 						if s.OnInactivityWarn != nil {
-							e.WarningTimer = time.AfterFunc(3*time.Minute, func() {
+							tb.warning = time.AfterFunc(3*time.Minute, func() {
 								s.OnInactivityWarn(key, ch)
 							})
 						}
-						e.Timer = time.AfterFunc(4*time.Minute, func() {
-							s.dbMu.Lock()
-							if curr, still := s.dbEntries[key]; still && curr == e && curr.State == StateWaiting {
-								delete(s.dbEntries, key)
+						tb.debounce = time.AfterFunc(4*time.Minute, func() {
+							if c, _ := s.store.Get(storeCtx, key); c != nil && c.State == StateWaiting {
+								s.stopAndClearTimers(key)
+								_ = s.store.Delete(storeCtx, key)
 								if s.OnCleanupFiles != nil {
-									s.OnCleanupFiles(e)
+									s.OnCleanupFiles(c)
 								}
 								if s.OnChannelIdle != nil {
-									go s.OnChannelIdle(e.Msg.ChannelID)
+									go s.OnChannelIdle(c.Msg.ChannelID)
 								}
 							}
-							s.dbMu.Unlock()
 						})
-						e.ChatOpen = false
+						s.setTimers(key, tb)
 					}
 				}
-				s.dbMu.Unlock()
 			}
 			return nil
 		},
