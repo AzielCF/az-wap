@@ -153,7 +153,7 @@ function formatChatKey(key: string) {
                     </div>
                 </div>
                 <div class="bg-black/20 px-3 py-1.5 rounded-lg border border-white/5">
-                    <span class="text-[10px] font-black text-slate-600 italic">v1.2.0-swarm</span>
+                    <span class="text-[10px] font-black text-slate-600 italic">{{ server.version ? server.version : 'v2.0-beta' }}</span>
                 </div>
             </div>
 
@@ -178,7 +178,7 @@ function formatChatKey(key: string) {
                                 </div>
                             </div>
                             <div class="text-xs font-bold text-white transition-opacity truncate" :class="w.is_processing ? 'opacity-100' : 'opacity-20'">
-                                {{ w.is_processing ? formatChatKey(w.chat_id) : 'IDLE STATE' }}
+                                {{ w.is_processing ? formatChatKey(w.chat_id) : 'READY' }}
                             </div>
                             <!-- Background pattern for processing -->
                             <div v-if="w.is_processing" class="absolute -right-2 -bottom-2 opacity-[0.05] text-primary rotate-12">

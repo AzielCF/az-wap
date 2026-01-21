@@ -33,7 +33,7 @@ type GlobalStats struct {
 // MonitoringStore define el contrato para el latido y métricas del sistema
 type MonitoringStore interface {
 	// Heartbeat: Avisar que este servidor sigue vivo
-	ReportHeartbeat(ctx context.Context, serverID string, uptime int64) error
+	ReportHeartbeat(ctx context.Context, serverID string, uptime int64, version string) error
 
 	// Server List: Obtener todos los servidores que han reportado pulso recientemente
 	GetActiveServers(ctx context.Context) ([]ServerInfo, error)

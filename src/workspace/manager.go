@@ -121,14 +121,25 @@ func (m *Manager) startHeartbeat() {
 	defer ticker.Stop()
 
 	// Initial report
-	_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()))
+	_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
 
 	for range ticker.C {
-		_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()))
+		_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
 	}
 }
 
 func (m *Manager) setupMonitoringHooks(pool *msgworker.MessageWorkerPool, poolType string) {
+	// 1. Pre-register all workers as IDLE to show full capacity in dashboard
+	for i := 0; i < pool.NumWorkers(); i++ {
+		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
+			ServerID:     m.serverID,
+			WorkerID:     i,
+			PoolType:     poolType,
+			IsProcessing: false,
+			ChatID:       "", // Explicitly empty
+		})
+	}
+
 	pool.OnWorkerStart = func(workerID int, chatKey string) {
 		_ = m.monitor.UpdateWorkerActivity(context.Background(), monitoring.WorkerActivity{
 			ServerID:     m.serverID,
@@ -146,6 +157,8 @@ func (m *Manager) setupMonitoringHooks(pool *msgworker.MessageWorkerPool, poolTy
 			WorkerID:     workerID,
 			PoolType:     poolType,
 			IsProcessing: false,
+			ChatID:       "",          // Clear chat ID
+			StartedAt:    time.Time{}, // reset time
 		})
 		// También incrementamos el contador global
 		_ = m.monitor.IncrementStat(context.Background(), "processed")

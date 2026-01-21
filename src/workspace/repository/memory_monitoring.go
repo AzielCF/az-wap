@@ -23,7 +23,7 @@ func NewMemoryMonitoringStore() *MemoryMonitoringStore {
 	}
 }
 
-func (s *MemoryMonitoringStore) ReportHeartbeat(ctx context.Context, serverID string, uptime int64) error {
+func (s *MemoryMonitoringStore) ReportHeartbeat(ctx context.Context, serverID string, uptime int64, version string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -31,6 +31,7 @@ func (s *MemoryMonitoringStore) ReportHeartbeat(ctx context.Context, serverID st
 		ID:       serverID,
 		LastSeen: time.Now(),
 		Uptime:   uptime,
+		Version:  version,
 	}
 	return nil
 }
