@@ -405,7 +405,7 @@ func initApp() {
 	chatUsecase = usecase.NewChatService(workspaceManager)
 	userUsecase = usecase.NewUserService(workspaceManager)
 	groupUsecase = usecase.NewGroupService(workspaceManager)
-	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo)
+	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, monitorStore)
 	sendUsecase = usecase.NewSendService(appUsecase, workspaceManager)
 	messageUsecase = usecase.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)
