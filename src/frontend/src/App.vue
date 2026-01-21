@@ -13,11 +13,21 @@ import { ref, onMounted } from 'vue'
 import { useRouter, RouterLink, RouterView } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 
+// Setup
 const router = useRouter()
 const isReady = ref(false)
+const appVersion = ref('v0.0.0') // Default to zero state
 const { get } = useApi()
 
 onMounted(async () => {
+    // 1. Fetch Version ASAP
+    try {
+        const info: any = await get('/app/version')
+        if (info && info.version) {
+            appVersion.value = info.version
+        }
+    } catch(e) { /* ignore */ }
+
     // Wait for router
     await router.isReady()
     
@@ -111,7 +121,7 @@ onMounted(async () => {
         <!-- Logo Area -->
         <div class="px-8 py-10 mb-2 border-b border-white/5 flex flex-col items-center">
            <img src="/src/assets/azwap.svg" class="w-full max-w-[140px] h-auto object-contain" alt="Az-Wap Enterprise" />
-           <div class="badge badge-primary badge-xs font-bold px-3 py-1 mt-4 text-[8px] tracking-[0.2em] uppercase shadow-lg border-none opacity-80 h-auto">AI WhatsApp Engine v2.0</div>
+           <div class="badge badge-primary badge-xs font-bold px-3 py-1 mt-4 text-[8px] tracking-[0.2em] uppercase shadow-lg border-none opacity-80 h-auto">AI WhatsApp Engine {{ appVersion }}</div>
         </div>
 
         <!-- Navigation -->

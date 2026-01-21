@@ -23,8 +23,16 @@ func InitRestApp(app fiber.Router, service domainApp.IAppUsecase) App {
 	app.Get("/app/status", rest.ConnectionStatus)
 	app.Get("/app/settings", rest.GetSettings)
 	app.Put("/app/settings", rest.UpdateSettings)
+	app.Get("/app/version", rest.GetVersion) // Nueva ruta
 
 	return App{Service: service}
+}
+
+func (handler *App) GetVersion(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"version": config.AppVersion,
+		"os":      config.AppOs,
+	})
 }
 
 func (handler *App) Login(c *fiber.Ctx) error {
