@@ -19,6 +19,7 @@ type ChannelAdapter interface {
 	// Ciclo de vida
 	Start(ctx context.Context, config ChannelConfig) error
 	Stop(ctx context.Context) error
+	Cleanup(ctx context.Context) error // Deletes all persistent data (DBs, files)
 	UpdateConfig(config ChannelConfig)
 	Hibernate(ctx context.Context) error
 	Resume(ctx context.Context) error
