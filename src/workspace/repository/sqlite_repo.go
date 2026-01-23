@@ -382,8 +382,12 @@ func (r *SQLiteRepository) AddChannelComplexCost(ctx context.Context, channelID 
 	}
 
 	breakdown := make(map[string]float64)
-	if currentJSON.Valid && currentJSON.String != "" {
+	if currentJSON.Valid && currentJSON.String != "" && currentJSON.String != "null" {
 		_ = json.Unmarshal([]byte(currentJSON.String), &breakdown)
+	}
+
+	if breakdown == nil {
+		breakdown = make(map[string]float64)
 	}
 
 	// 2. Sumar nuevos detalles

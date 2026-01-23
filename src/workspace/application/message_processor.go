@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -40,13 +39,6 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		"sender_id":  msg.SenderID,
 		"mode":       ch.Config.AccessMode,
 	}).Debug("[MessageProcessor] Entering ProcessFinal")
-
-	defer func() {
-		if r := recover(); r != nil {
-			logrus.Errorf("[PANIC DEBUG] ProcessFinal panicked: %v\nStack trace:\n%s", r, string(debug.Stack()))
-			panic(r) // Re-throw to let worker handle it
-		}
-	}()
 
 	key := ch.ID + "|" + msg.ChatID + "|" + msg.SenderID
 
