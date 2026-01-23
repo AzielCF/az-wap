@@ -10,7 +10,7 @@ import (
 
 func TestGeminiProvider_GenerateReply_Basic(t *testing.T) {
 	ctx := context.Background()
-	p := NewGeminiProvider(nil)
+	p := NewGeminiProvider(nil, nil)
 
 	b := bot.Bot{
 		ID:            "bot-1",

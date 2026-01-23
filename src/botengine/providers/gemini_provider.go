@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	domain "github.com/AzielCF/az-wap/botengine/domain"
@@ -17,20 +16,17 @@ import (
 	"google.golang.org/genai"
 )
 
-type contextCacheEntry struct {
-	Name      string
-	ExpiresAt time.Time
-}
-
-// GeminiProvider es el adaptador para la API de Google Gemini
+// GeminiProvider is the adapter for the Google Gemini API
 type GeminiProvider struct {
-	mcpUsecase domainMCP.IMCPUsecase
-	caches     sync.Map // key: fingerprint string, value: contextCacheEntry
+	mcpUsecase   domainMCP.IMCPUsecase
+	contextCache domain.ContextCacheStore
 }
 
-func NewGeminiProvider(mcpService domainMCP.IMCPUsecase) *GeminiProvider {
+// NewGeminiProvider creates a new Gemini provider with the given MCP service and context cache store.
+func NewGeminiProvider(mcpService domainMCP.IMCPUsecase, cacheStore domain.ContextCacheStore) *GeminiProvider {
 	return &GeminiProvider{
-		mcpUsecase: mcpService,
+		mcpUsecase:   mcpService,
+		contextCache: cacheStore,
 	}
 }
 
@@ -159,29 +155,29 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	totalChars += len(req.SystemPrompt)
 
 	var cachedContentName string
-	if totalChars > 80000 && len(contents) > 4 {
-		// Cachear el prefijo estable (todo menos los últimos 2 turnos)
+	if totalChars > 80000 && len(contents) > 4 && p.contextCache != nil {
+		// Cache the stable prefix (everything except the last 2 turns)
 		stablePrefixCount := len(contents) - 2
 		stablePrefix := contents[:stablePrefixCount]
 
 		fingerprint := p.calculateFingerprint(req.ChatKey, req.SystemPrompt, stablePrefix, functionDecls)
 
-		if entry, ok := p.caches.Load(fingerprint); ok {
-			e := entry.(contextCacheEntry)
-			if time.Now().Before(e.ExpiresAt) {
-				cachedContentName = e.Name
-				contents = contents[stablePrefixCount:] // Solo enviar lo nuevo
+		// Try to load from cache store
+		if entry, err := p.contextCache.Get(ctx, fingerprint); err == nil && entry != nil {
+			if time.Now().Before(entry.ExpiresAt) {
+				cachedContentName = entry.Name
+				contents = contents[stablePrefixCount:] // Only send new content
 				logrus.WithFields(logrus.Fields{
 					"chat_key":      req.ChatKey,
 					"cache_name":    cachedContentName,
 					"total_chars":   totalChars,
 					"stable_prefix": stablePrefixCount,
-				}).Info("[CACHE_HIT] Context cache reutilizado")
+				}).Debug("[CACHE_HIT] Context cache reused")
 			}
 		}
 
 		if cachedContentName == "" {
-			// Crear nuevo cache
+			// Create new cache
 			ttl := 1 * time.Hour
 			cReq := &genai.CreateCachedContentConfig{
 				Contents: stablePrefix,
@@ -197,20 +193,22 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 			cache, cErr := client.Caches.Create(ctx, model, cReq)
 			if cErr == nil {
 				cachedContentName = cache.Name
-				p.caches.Store(fingerprint, contextCacheEntry{
+				// Store in cache with safety margin (55 min for 1 hour TTL)
+				_ = p.contextCache.Save(ctx, fingerprint, &domain.ContextCacheEntry{
 					Name:      cache.Name,
-					ExpiresAt: time.Now().Add(55 * time.Minute), // Guardar con margen
-				})
-				contents = contents[stablePrefixCount:] // Solo enviar lo nuevo
+					ExpiresAt: time.Now().Add(55 * time.Minute),
+					Model:     model,
+				}, 55*time.Minute)
+				contents = contents[stablePrefixCount:] // Only send new content
 				logrus.WithFields(logrus.Fields{
 					"chat_key":        req.ChatKey,
 					"cache_name":      cachedContentName,
 					"total_chars":     totalChars,
 					"cached_turns":    stablePrefixCount,
 					"remaining_turns": len(contents),
-				}).Info("[CACHE_CREATED] Nuevo context cache creado")
+				}).Debug("[CACHE_CREATED] New context cache created")
 			} else {
-				logrus.WithField("error", cErr.Error()).Warn("[CACHE_ERROR] No se pudo crear context cache")
+				logrus.WithField("error", cErr.Error()).Warn("[CACHE_ERROR] Failed to create context cache")
 			}
 		}
 	}
@@ -273,7 +271,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 			"output_tokens": resp.Usage.OutputTokens,
 			"cached_tokens": resp.Usage.CachedTokens,
 			"cost_usd":      fmt.Sprintf("$%.6f", resp.Usage.CostUSD),
-		}).Info("[USAGE] Token usage recorded")
+		}).Debug("[USAGE] Token usage recorded")
 	}
 
 	return resp, nil
@@ -362,7 +360,7 @@ Your PRIMARY language for descriptions and summaries is: %s.`, userText, languag
 		logrus.WithFields(logrus.Fields{
 			"stage": "multimodal_interpretation",
 			"cost":  usage.CostUSD,
-		}).Info("[USAGE] Multimodal cost recorded")
+		}).Debug("[USAGE] Multimodal cost recorded")
 	}
 
 	var interpretation struct {
@@ -493,7 +491,7 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 		logrus.WithFields(logrus.Fields{
 			"stage": "intuition",
 			"cost":  usage.CostUSD,
-		}).Info("[USAGE] Intuition cost recorded")
+		}).Debug("[USAGE] Intuition cost recorded")
 	}
 
 	var mindset domain.Mindset
