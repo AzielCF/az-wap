@@ -162,10 +162,11 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	// 1. Cargar configuración del bot
 	b, err := e.botUsecase.GetByID(ctx, input.BotID)
 	if err != nil {
+		meta["error_detail"] = err.Error()
 		botmonitor.Record(botmonitor.Event{
 			TraceID:    input.TraceID,
 			InstanceID: input.InstanceID, ChatJID: input.ChatID,
-			Stage: "ai_response", Status: "error", Error: err.Error(),
+			Stage: "bot_load", Status: "error", Error: err.Error(),
 			Metadata: meta,
 		})
 		return domain.BotOutput{}, fmt.Errorf("failed to load bot %s: %w", input.BotID, err)
@@ -471,6 +472,13 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	// D. Ejecutar Orquestador (Ciclo de herramientas)
 	output, err := e.orchestrator.Execute(ctx, p, b, input, req, serverMap)
 	if err != nil {
+		meta["error_detail"] = err.Error()
+		botmonitor.Record(botmonitor.Event{
+			TraceID:    input.TraceID,
+			InstanceID: input.InstanceID, ChatJID: input.ChatID,
+			Stage: "ai_execution", Status: "error", Error: err.Error(),
+			Metadata: meta,
+		})
 		return domain.BotOutput{}, fmt.Errorf("orchestrator failed: %w", err)
 	}
 

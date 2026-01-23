@@ -482,7 +482,14 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: prompt}}}}
 	result, err := p.generateContentWithRetry(ctx, client, model, contents, cfg)
 	if err != nil {
-		return &domain.Mindset{Pace: "steady"}, nil, nil // Safe fallback
+		// If it's an authentication or permission error, we MUST return it to let the user know.
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "api_key") || strings.Contains(errStr, "401") || strings.Contains(errStr, "403") || strings.Contains(errStr, "invalid") {
+			return nil, nil, fmt.Errorf("intuition phase failed with critical error: %w", err)
+		}
+
+		logrus.WithError(err).Warn("[GEMINI] Intuition phase failed, using safe fallback")
+		return &domain.Mindset{Pace: "steady", ShouldRespond: true}, nil, nil // Fallback with ShouldRespond=true
 	}
 
 	var usage *domain.UsageStats
