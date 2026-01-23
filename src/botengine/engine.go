@@ -141,6 +141,15 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 
 	logrus.Infof("[ENGINE] Processing message from %s for bot %s (Instance/Channel: %s, Trace: %s)", input.SenderID, input.BotID, input.InstanceID, input.TraceID)
 
+	if input.Metadata == nil {
+		input.Metadata = make(map[string]any)
+	}
+
+	// Ensure we don't have nil slices that can explode in loops
+	if input.Medias == nil {
+		input.Medias = make([]*domain.BotMedia, 0)
+	}
+
 	meta := map[string]string{"trace_id": input.TraceID}
 
 	// 0. Record Inbound
@@ -491,12 +500,19 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	}
 
 	// Consolidate costs details
+	if output.CostDetails == nil {
+		output.CostDetails = make([]domain.ExecutionCost, 0)
+	}
 	for _, d := range costDetails {
 		output.CostDetails = append(output.CostDetails, d)
 	}
 	// Re-calculate total just in case or trust the sum
 	output.TotalCost += totalExecutionCost
 	output.Mindset = mindset // Preservar mindset para el hook si es necesario
+
+	if output.Metadata == nil {
+		output.Metadata = make(map[string]any)
+	}
 
 	if output.Text == "" {
 		return output, nil

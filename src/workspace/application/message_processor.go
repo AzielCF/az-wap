@@ -111,6 +111,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		input.Metadata = make(map[string]any)
 	}
 	input.Metadata["last_bubble_count"] = lastBubbleCount
+	input.Metadata["trace_id"] = input.TraceID // Ensure trace is in metadata too
 
 	input.OnChatOpen = func() {
 		if entry, ok := p.orchestrator.GetEntry(key); ok {

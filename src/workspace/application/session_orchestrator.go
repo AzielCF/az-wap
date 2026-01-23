@@ -422,6 +422,10 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 		finalMsg.Text = batch[0]
 	}
 
+	if finalMsg.Metadata == nil {
+		finalMsg.Metadata = make(map[string]any)
+	}
+
 	if len(ids) > 0 {
 		finalMsg.Metadata["message_ids"] = ids
 	}
@@ -451,6 +455,9 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 					}
 
 					if len(curr.Texts) > 0 {
+						if curr.Msg.Metadata == nil {
+							curr.Msg.Metadata = make(map[string]any)
+						}
 						curr.Msg.Metadata["is_delayed"] = true
 						readingPause := time.Duration(0)
 						if s.botEngine != nil {
