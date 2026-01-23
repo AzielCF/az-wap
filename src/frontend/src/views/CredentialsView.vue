@@ -15,12 +15,21 @@ import {
   HardDrive,
   Cpu,
   Search,
+  Eye,
+  EyeOff,
 } from 'lucide-vue-next'
 
 const api = useApi()
 const loading = ref(true)
 const credentials = ref<any[]>([])
 const search = ref('')
+const showKeys = ref<Record<string, boolean>>({})
+
+function toggleKeyVisibility(id: string) {
+  showKeys.value[id] = !showKeys.value[id]
+}
+
+const showFormKey = ref(false)
 
 const aiKinds = ['ai', 'gemini', 'openai', 'claude']
 
@@ -94,10 +103,20 @@ function openEdit(cred: any) {
 
 async function saveCredential() {
   try {
+    // Deep cleaning and UTF-8 safety: remove leading/trailing spaces and control characters
+    const cleanData = {
+      name: newCredential.value.name.trim(),
+      kind: newCredential.value.kind,
+      ai_api_key: newCredential.value.ai_api_key.trim(),
+      chatwoot_base_url: newCredential.value.chatwoot_base_url.trim().replace(/\/$/, ''),
+      chatwoot_account_token: newCredential.value.chatwoot_account_token.trim(),
+      chatwoot_bot_token: newCredential.value.chatwoot_bot_token.trim()
+    }
+
     if (editingCredential.value) {
-      await api.put(`/credentials/${editingCredential.value.id}`, newCredential.value)
+      await api.put(`/credentials/${editingCredential.value.id}`, cleanData)
     } else {
-      await api.post('/credentials', newCredential.value)
+      await api.post('/credentials', cleanData)
     }
     showAddModal.value = false
     resetForm()
@@ -231,10 +250,13 @@ onMounted(loadData)
                         <div v-if="isAI(cred.kind)" class="storage-box-premium">
                             <div class="flex items-baseline justify-between mb-1">
                                 <span class="text-[10px] font-bold text-slate-600 uppercase">API KEY</span>
-                                <Lock class="w-3 h-3 text-slate-800" />
+                                <button @click="toggleKeyVisibility(cred.id)" class="hover:text-primary transition-colors">
+                                    <Eye v-if="!showKeys[cred.id]" class="w-3 h-3" />
+                                    <EyeOff v-else class="w-3 h-3" />
+                                </button>
                             </div>
                             <div class="font-mono text-xs text-slate-400 break-all leading-relaxed tracking-tight select-all">
-                                ••••••••••••••••••••••
+                                {{ showKeys[cred.id] ? cred.ai_api_key : '••••••••••••••••••••••' }}
                             </div>
                         </div>
 
@@ -297,11 +319,17 @@ onMounted(loadData)
                         <!-- AI Fields -->
                         <div v-if="isAI(newCredential.kind)" key="ai" class="space-y-6 animate-in fade-in slide-in-from-top-4">
                             <div class="form-control">
-                                <div class="flex items-center gap-2 mb-2">
-                                     <Lock class="w-3 h-3 text-indigo-400" />
-                                     <label class="label-premium mb-0">API Key</label>
+                                <div class="flex items-center justify-between mb-2">
+                                     <div class="flex items-center gap-2">
+                                        <Lock class="w-3 h-3 text-indigo-400" />
+                                        <label class="label-premium mb-0">API Key</label>
+                                     </div>
+                                     <button @click="showFormKey = !showFormKey" type="button" class="text-slate-500 hover:text-primary">
+                                        <Eye v-if="!showFormKey" class="w-3 h-3" />
+                                        <EyeOff v-else class="w-3 h-3" />
+                                     </button>
                                 </div>
-                                <input v-model="newCredential.ai_api_key" type="password" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste your API key here..." />
+                                <input v-model="newCredential.ai_api_key" :type="showFormKey ? 'text' : 'password'" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste your API key here..." />
                             </div>
                         </div>
 
