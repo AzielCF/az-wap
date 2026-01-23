@@ -70,6 +70,12 @@ var (
 
 	// Security
 	AppSecretKey string = "changeme_please_change_me_in_prod_12345"
+
+	// API Keys Fallback
+	GeminiAPIKey string
+	OpenAIAPIKey string
+	ClaudeAPIKey string
+	AIApiKey     string
 )
 
 func init() {
@@ -153,6 +159,20 @@ func init() {
 
 	if val := os.Getenv("APP_SECRET_KEY"); val != "" {
 		AppSecretKey = val
+	}
+
+	// Load API Keys from Env
+	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
+		GeminiAPIKey = v
+	}
+	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
+		OpenAIAPIKey = v
+	}
+	if v := os.Getenv("CLAUDE_API_KEY"); v != "" {
+		ClaudeAPIKey = v
+	}
+	if v := os.Getenv("AI_API_KEY"); v != "" {
+		AIApiKey = v
 	}
 }
 

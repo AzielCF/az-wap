@@ -6,6 +6,7 @@ import (
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	"github.com/AzielCF/az-wap/botengine/repository"
+	globalConfig "github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
@@ -107,7 +108,17 @@ func (s *botService) List(ctx context.Context) ([]domainBot.Bot, error) {
 	if err := s.ensureRepo(); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx)
+	bots, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve credentials for each bot in the list
+	for i := range bots {
+		s.resolveCredentials(ctx, &bots[i])
+	}
+
+	return bots, nil
 }
 
 func (s *botService) GetByID(ctx context.Context, id string) (domainBot.Bot, error) {
@@ -216,23 +227,67 @@ func (s *botService) Shutdown() {
 // === Helpers ===
 
 func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
-	if s.credService == nil {
-		return
-	}
-
-	if b.APIKey == "" && b.CredentialID != "" {
+	if s.credService != nil && b.APIKey == "" && b.CredentialID != "" {
+		logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
 		cred, err := s.credService.GetByID(ctx, b.CredentialID)
-		isAI := cred.Kind == domainCredential.KindAI ||
-			cred.Kind == domainCredential.KindGemini ||
-			cred.Kind == domainCredential.KindOpenAI ||
-			cred.Kind == domainCredential.KindClaude
+		if err != nil {
+			logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
+		} else {
+			isAI := cred.Kind == domainCredential.KindAI ||
+				cred.Kind == domainCredential.KindGemini ||
+				cred.Kind == domainCredential.KindOpenAI ||
+				cred.Kind == domainCredential.KindClaude
 
-		if err == nil && isAI {
-			b.APIKey = cred.AIAPIKey
+			if isAI && cred.AIAPIKey != "" {
+				b.APIKey = cred.AIAPIKey
+				logrus.Debugf("[BOT] API Key resolved from credential %s", cred.Name)
+			} else if isAI && cred.AIAPIKey == "" {
+				logrus.Warnf("[BOT] Credential %s found but AI API Key is empty", cred.Name)
+			}
 		}
 	}
 
-	if b.ChatwootCredentialID != "" {
+	// Fallback to Config Variables if still empty
+	if b.APIKey == "" {
+		// Log only once if we are attempting fallback
+		hasLoggedFallback := false
+
+		switch b.Provider {
+		case domainBot.ProviderGemini, domainBot.ProviderAI:
+			if globalConfig.GeminiAPIKey != "" {
+				b.APIKey = globalConfig.GeminiAPIKey
+				logrus.Infof("[BOT] Using Gemini API Key from config for bot %s", b.ID)
+				hasLoggedFallback = true
+			}
+		case domainBot.ProviderOpenAI:
+			if globalConfig.OpenAIAPIKey != "" {
+				b.APIKey = globalConfig.OpenAIAPIKey
+				logrus.Infof("[BOT] Using OpenAI API Key from config for bot %s", b.ID)
+				hasLoggedFallback = true
+			}
+		case domainBot.ProviderClaude:
+			if globalConfig.ClaudeAPIKey != "" {
+				b.APIKey = globalConfig.ClaudeAPIKey
+				logrus.Infof("[BOT] Using Claude API Key from config for bot %s", b.ID)
+				hasLoggedFallback = true
+			}
+		}
+
+		// Final fallback for generic AI key
+		if b.APIKey == "" {
+			if globalConfig.AIApiKey != "" {
+				b.APIKey = globalConfig.AIApiKey
+				logrus.Infof("[BOT] Using General AI API Key from config for bot %s", b.ID)
+				hasLoggedFallback = true
+			}
+		}
+
+		if !hasLoggedFallback && b.APIKey == "" {
+			logrus.Errorf("[BOT] Bot %s has no API Key configured (Database, Credential or Config fallback)", b.ID)
+		}
+	}
+
+	if b.ChatwootCredentialID != "" && s.credService != nil {
 		cred, err := s.credService.GetByID(ctx, b.ChatwootCredentialID)
 		if err == nil && cred.Kind == domainCredential.KindChatwoot {
 			b.ChatwootCredential = domainBot.ChatwootCredential{
