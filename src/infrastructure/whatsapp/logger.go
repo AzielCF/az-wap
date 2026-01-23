@@ -22,7 +22,7 @@ func isWebsocketEOFError(msg string) bool {
 		(strings.Contains(lower, "error reading from websocket") && strings.Contains(lower, "failed to read frame header: eof"))
 }
 
-func newFilteredLogger(base waLog.Logger) waLog.Logger {
+func NewFilteredLogger(base waLog.Logger) waLog.Logger {
 	return &filteredLogger{base: base}
 }
 
@@ -49,5 +49,5 @@ func (l *filteredLogger) Debugf(msg string, args ...interface{}) {
 }
 
 func (l *filteredLogger) Sub(module string) waLog.Logger {
-	return newFilteredLogger(l.base.Sub(module))
+	return NewFilteredLogger(l.base.Sub(module))
 }

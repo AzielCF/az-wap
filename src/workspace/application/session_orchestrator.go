@@ -402,7 +402,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 			}),
 		}
 		s.setTimers(key, tb)
-		logrus.Infof("[SessionOrchestrator] User STILL TYPING in %s. Rescheduling flush in %v (ID matching: %s)", key, debounce, e.Msg.ChatID)
+		logrus.Debugf("[SessionOrchestrator] User STILL TYPING in %s. Rescheduling flush in %v (ID matching: %s)", key, debounce, e.Msg.ChatID)
 		return
 	}
 	logrus.Debugf("[SessionOrchestrator] Flush check: IsComposing=%v for %s", isComposing, e.Msg.ChatID)
@@ -467,7 +467,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 							}),
 						}
 						s.setTimers(key, tb)
-						logrus.Infof("[SessionOrchestrator] Re-queuing %s with reading pause of %s", key, readingPause)
+						logrus.Debugf("[SessionOrchestrator] Re-queuing %s with reading pause of %s", key, readingPause)
 					} else {
 						curr.State = StateWaiting
 						curr.ExpireAt = time.Now().Add(4 * time.Minute)

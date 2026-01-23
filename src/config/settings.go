@@ -131,6 +131,26 @@ func init() {
 		}
 	}
 
+	if val := os.Getenv("APP_PORT"); val != "" {
+		AppPort = val
+	}
+	if val := os.Getenv("APP_DEBUG"); val != "" {
+		switch strings.ToLower(val) {
+		case "1", "true", "yes", "y", "on":
+			AppDebug = true
+		case "0", "false", "no", "n", "off":
+			AppDebug = false
+		}
+	} else if val := os.Getenv("DEBUG"); val != "" {
+		switch strings.ToLower(val) {
+		case "1", "true", "yes", "y", "on":
+			AppDebug = true
+		}
+	}
+	if val := os.Getenv("WHATSAPP_LOG_LEVEL"); val != "" {
+		WhatsappLogLevel = strings.ToUpper(val)
+	}
+
 	if val := os.Getenv("APP_SECRET_KEY"); val != "" {
 		AppSecretKey = val
 	}

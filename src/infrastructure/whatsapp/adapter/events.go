@@ -84,7 +84,7 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 			// Try again after potential cache hit
 			unifiedID = wa.getUnifiedID(v.Chat)
 
-			logrus.Infof("[WHATSAPP] Presence update from %s (unified: %s) in channel %s: %s (media: %v)", v.Chat.String(), unifiedID, wa.channelID, v.State, v.Media)
+			logrus.Debugf("[WHATSAPP] Presence update from %s (unified: %s) in channel %s: %s (media: %v)", v.Chat.String(), unifiedID, wa.channelID, v.State, v.Media)
 
 			if wa.manager != nil {
 				media := channel.TypingMediaText

@@ -258,7 +258,7 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 			"platform_type": pType,
 			"channel_id":    msg.ChannelID,
 			"raw_sender":    msg.SenderID,
-		}).Infof("[WorkspaceManager] Attempting to resolve global client")
+		}).Debugf("[WorkspaceManager] Attempting to resolve global client")
 
 		resolvedCtx, overrideBotID, err := m.clientResolver.Resolve(ctx, platformID, secondaryID, pType, msg.ChannelID)
 		if err == nil && resolvedCtx != nil {
@@ -267,7 +267,7 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 				"client_id":        clientCtx.ClientID,
 				"is_registered":    clientCtx.IsRegistered,
 				"has_subscription": clientCtx.HasSubscription,
-			}).Infof("[WorkspaceManager] Resolved client context")
+			}).Debugf("[WorkspaceManager] Resolved client context")
 
 			if overrideBotID != "" {
 				logrus.Infof("[WorkspaceManager] Overriding BotID from subscription: %s -> %s", botID, overrideBotID)
@@ -341,7 +341,7 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 			return
 		}
 	} else {
-		logrus.Infof("[WorkspaceManager] Bypassing access control for registered client: %s", clientCtx.ClientID)
+		logrus.Debugf("[WorkspaceManager] Bypassing access control for registered client: %s", clientCtx.ClientID)
 	}
 
 	// Enqueue for debouncing

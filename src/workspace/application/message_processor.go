@@ -38,7 +38,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		"bot_id":     botID,
 		"sender_id":  msg.SenderID,
 		"mode":       ch.Config.AccessMode,
-	}).Info("[MessageProcessor] Entering ProcessFinal")
+	}).Debug("[MessageProcessor] Entering ProcessFinal")
 
 	key := ch.ID + "|" + msg.ChatID + "|" + msg.SenderID
 
@@ -98,7 +98,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 			"display_name":  cc.DisplayName,
 			"is_registered": cc.IsRegistered,
 			"has_sub":       cc.HasSubscription,
-		}).Infof("[MessageProcessor] Attaching ClientContext to BotInput")
+		}).Debugf("[MessageProcessor] Attaching ClientContext to BotInput")
 	} else if msg.Metadata["client_context"] != nil {
 		logrus.Warnf("[MessageProcessor] client_context found in metadata but type is %T, expected *botengineDomain.ClientContext", msg.Metadata["client_context"])
 	}
@@ -159,7 +159,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		"channel_id": ch.ID,
 		"trace_id":   input.TraceID,
 		"action":     output.Action,
-	}).Info("[MessageProcessor] Bot message processed successfully")
+	}).Debug("[MessageProcessor] Bot message processed successfully")
 
 	// Handle Session Termination Action from AI
 	if output.Action == "terminate_session" {

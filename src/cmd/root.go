@@ -34,6 +34,7 @@ import (
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/botengine/providers"
+	botengineRepo "github.com/AzielCF/az-wap/botengine/repository"
 	botTools "github.com/AzielCF/az-wap/botengine/tools"
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 	globalConfig "github.com/AzielCF/az-wap/config"
@@ -138,13 +139,29 @@ func init() {
 
 // initEnvConfig loads configuration from environment variables
 func initEnvConfig() {
-	fmt.Println(viper.AllSettings())
+	// Bind environment variables to viper keys
+	viper.BindEnv("app_port", "APP_PORT")
+	viper.BindEnv("app_debug", "APP_DEBUG")
+	viper.BindEnv("debug", "DEBUG")
+	viper.BindEnv("whatsapp_log_level", "WHATSAPP_LOG_LEVEL")
+	viper.BindEnv("db_uri", "DB_URI")
+	viper.BindEnv("db_keys_uri", "DB_KEYS_URI")
+
+	// If config already loaded variables via os.Getenv in init(), we sync them with viper if needed
+	// or just ensure viper doesn't overwrite them with empty defaults
+
 	// Application settings
 	if envPort := viper.GetString("app_port"); envPort != "" {
 		globalConfig.AppPort = envPort
 	}
-	if envDebug := viper.GetBool("app_debug"); envDebug {
-		globalConfig.AppDebug = envDebug
+	if viper.IsSet("app_debug") {
+		globalConfig.AppDebug = viper.GetBool("app_debug")
+	} else if viper.IsSet("debug") {
+		globalConfig.AppDebug = viper.GetBool("debug")
+	}
+
+	if envLogLevel := viper.GetString("whatsapp_log_level"); envLogLevel != "" {
+		globalConfig.WhatsappLogLevel = strings.ToUpper(envLogLevel)
 	}
 	if envOs := viper.GetString("app_os"); envOs != "" {
 		globalConfig.AppOs = envOs
@@ -322,9 +339,19 @@ func initFlags() {
 }
 
 func initApp() {
+	// Priority: Explicit WHATSAPP_LOG_LEVEL > APP_DEBUG logic
 	if globalConfig.AppDebug {
-		globalConfig.WhatsappLogLevel = "DEBUG"
 		logrus.SetLevel(logrus.DebugLevel)
+		if globalConfig.WhatsappLogLevel == "" || globalConfig.WhatsappLogLevel == "ERROR" {
+			globalConfig.WhatsappLogLevel = "INFO" // For WhatsApp, INFO is enough for debug without being binary-heavy
+		}
+	} else {
+		logrus.SetLevel(logrus.InfoLevel)
+	}
+
+	// Set specific Level for WhatsApp if provided
+	if globalConfig.WhatsappLogLevel != "" {
+		// This will be used when creating adapters
 	}
 
 	//preparing folder if not exist
@@ -356,7 +383,10 @@ func initApp() {
 
 	// 2. Bot Engine Initialization (Needs BotUsecase, MCPUsecase)
 	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
-	geminiProvider := providers.NewGeminiProvider(mcpUsecase)
+
+	// Initialize context cache store for AI providers (enables Valkey migration later)
+	contextCacheStore := botengineRepo.NewMemoryContextCacheStore()
+	geminiProvider := providers.NewGeminiProvider(mcpUsecase, contextCacheStore)
 	botEngine.RegisterProvider(string(domainBot.ProviderAI), geminiProvider)
 	botEngine.RegisterProvider(string(domainBot.ProviderGemini), geminiProvider)
 	// botEngine.RegisterProvider(string(domainBot.ProviderOpenAI), geminiProvider)

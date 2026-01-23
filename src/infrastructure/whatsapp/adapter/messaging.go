@@ -204,7 +204,7 @@ func (wa *WhatsAppAdapter) SendPresence(ctx context.Context, chatID string, typi
 		media = types.ChatPresenceMediaAudio
 	}
 
-	logrus.Infof("[WHATSAPP] Sending chat presence (Typing: %v, Audio: %v) to %s", typing, isAudio, chatID)
+	logrus.Debugf("[WHATSAPP] Sending chat presence (Typing: %v, Audio: %v) to %s", typing, isAudio, chatID)
 	return wa.client.SendChatPresence(ctx, jid, presence, media)
 }
 
