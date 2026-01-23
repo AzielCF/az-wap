@@ -205,6 +205,9 @@ func (r *SQLiteClientRepository) Update(ctx context.Context, client *domain.Clie
 	)
 
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return domain.ErrDuplicateClient
+		}
 		return err
 	}
 

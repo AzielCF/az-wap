@@ -144,6 +144,9 @@ func (h *ClientHandler) UpdateClient(c *fiber.Ctx) error {
 	}
 
 	// Actualizar campos
+	if req.PlatformID != nil {
+		client.PlatformID = *req.PlatformID
+	}
 	if req.DisplayName != nil {
 		client.DisplayName = *req.DisplayName
 	}
@@ -173,6 +176,9 @@ func (h *ClientHandler) UpdateClient(c *fiber.Ctx) error {
 	}
 
 	if err := h.clientService.Update(c.Context(), client); err != nil {
+		if err == domain.ErrDuplicateClient {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

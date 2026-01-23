@@ -21,6 +21,7 @@ type CreateClientRequest struct {
 
 // UpdateClientRequest representa la petición para actualizar un cliente
 type UpdateClientRequest struct {
+	PlatformID  *string        `json:"platform_id"`
 	DisplayName *string        `json:"display_name"`
 	Email       *string        `json:"email"`
 	Phone       *string        `json:"phone"`
