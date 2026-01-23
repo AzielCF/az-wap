@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppTabModal from '@/components/AppTabModal.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
@@ -80,6 +80,9 @@ const lidVerified = ref(false)
 const botSearch = ref('')
 const showBotResults = ref(false)
 const activeClientTab = ref('identity')
+const lastValidatedPhone = ref('')
+const originalClientState = ref('') // Para comparar cambios
+const isLoadingClient = ref(false) // Flag to prevent watchers during load
 
 const unselectedBots = computed(() => {
   return bots.value.filter(b => !newClient.value.allowed_bots.includes(b.id))
@@ -136,8 +139,23 @@ async function loadWorkspaces() {
 }
 
 async function extractLid() {
-  if (!newClient.value.phone) {
+  // Get the input value - prefer platform_id field, fallback to phone
+  const rawInput = newClient.value.platform_id || newClient.value.phone
+  if (!rawInput) {
     alert('Please enter a phone number first')
+    return
+  }
+
+  // If the input already contains @, it's a LID/JID - we need the actual phone number
+  if (rawInput.includes('@')) {
+    alert('Please enter the actual phone number (without @lid or @s.whatsapp.net). The system will resolve the LID for you.')
+    return
+  }
+
+  // Clean the input to only digits
+  const phoneNumber = rawInput.replace(/[^\d]/g, '')
+  if (!phoneNumber || phoneNumber.length < 8) {
+    alert('Please enter a valid phone number')
     return
   }
 
@@ -161,26 +179,23 @@ async function extractLid() {
 
   validatingLid.value = true
   try {
-    const res = await api.get(`/workspaces/${targetWorkspace.id}/channels/${targetChannel.id}/resolve-identity?identity=${newClient.value.phone}`) as any
+    const res = await api.get(`/workspaces/${targetWorkspace.id}/channels/${targetChannel.id}/resolve-identity?identity=${phoneNumber}`) as any
     if (res.resolved_identity) {
-      const parts = res.resolved_identity.split('|')
-      const lidPart = parts.find((p: string) => p.includes('@lid'))
+      // Save the LID to platform_id
+      newClient.value.platform_id = res.resolved_identity
+      lidVerified.value = res.status === 'verified'
       
-      if (lidPart) {
-        newClient.value.platform_id = lidPart
-        lidVerified.value = true
-      } else {
-        // Fallback if no explicit @lid is found
-        newClient.value.platform_id = parts[0]
-      }
-      
-      // If display name is empty, use the contact name
+      // Save the original phone number that was used for validation
+      newClient.value.phone = phoneNumber
+      lastValidatedPhone.value = phoneNumber
+
+      // Only fill display name if WhatsApp actually returned a name signal
       if (!newClient.value.display_name && res.name) {
         newClient.value.display_name = res.name
       }
     }
   } catch (err) {
-    alert('Could not resolve LID. Make sure the channel is connected.')
+    alert('Could not resolve LID. Make sure the channel is connected and the number is registered on WhatsApp.')
   } finally {
     validatingLid.value = false
   }
@@ -230,9 +245,12 @@ function resetForm() {
     allowed_bots: []
   }
   newTag.value = ''
+  lidVerified.value = false
+  lastValidatedPhone.value = ''
 }
 
 function openEdit(client: Client) {
+  isLoadingClient.value = true
   editingClient.value = client
   newClient.value = {
     platform_id: client.platform_id,
@@ -246,8 +264,30 @@ function openEdit(client: Client) {
     language: client.language || 'en',
     allowed_bots: client.allowed_bots || []
   }
+  
+  // Auto-verify ONLY if the loaded ID is a LID (NEVER JID)
+  if (client.platform_type === 'whatsapp' && client.platform_id.includes('@lid')) {
+    lidVerified.value = true
+    lastValidatedPhone.value = client.phone || ''
+  } else {
+    lidVerified.value = false
+    lastValidatedPhone.value = ''
+  }
+
+  // Save original state for dirty checking
+  originalClientState.value = JSON.stringify(newClient.value)
+  isLoadingClient.value = false
   showAddModal.value = true
 }
+
+const hasChanges = computed(() => {
+  // For new clients: enable if platform_id is filled
+  if (!editingClient.value) {
+    return newClient.value.platform_id.length > 0
+  }
+  // For editing: compare with original state
+  return JSON.stringify(newClient.value) !== originalClientState.value
+})
 
 function addTag() {
   if (newTag.value && !newClient.value.tags.includes(newTag.value)) {
@@ -270,8 +310,12 @@ async function saveClient() {
     showAddModal.value = false
     resetForm()
     await loadData()
-  } catch (err) {
-    alert('Error saving client.')
+  } catch (err: any) {
+    if (err.status === 409) {
+      alert('CONFLICTO: Este ID ya está siendo usado por otro cliente. Busca el cliente duplicado y elimínalo primero.')
+    } else {
+      alert('Error saving client: ' + (err.message || 'Unknown error'))
+    }
   }
 }
 
@@ -305,6 +349,15 @@ async function toggleEnabled(client: Client) {
     console.error(err)
   }
 }
+
+// Only reset lidVerified when the user MANUALLY changes these fields
+
+watch(() => newClient.value.platform_id, (newVal, oldVal) => {
+  // Don't reset if we're loading, or if the new value IS a LID (meaning we just resolved it)
+  if (!isLoadingClient.value && oldVal && !newVal.includes('@lid')) {
+    lidVerified.value = false
+  }
+})
 
 onMounted(() => {
   loadData()
@@ -465,6 +518,7 @@ onMounted(() => {
         v-model="showAddModal"
         :title="editingClient ? 'Control Manifest: Edit Client' : 'Control Manifest: New Entry'"
         v-model:activeTab="activeClientTab"
+        :saveDisabled="!hasChanges"
         :tabs="[
             { id: 'identity', label: 'Identity', icon: ShieldCheck },
             { id: 'personal', label: 'Contact Details', icon: Contact },
@@ -477,7 +531,7 @@ onMounted(() => {
             icon: Users,
             iconType: 'component'
         } : undefined"
-        saveText="Commit Changes"
+        saveText="Save"
         @save="saveClient"
         @cancel="showAddModal = false"
     >
@@ -490,19 +544,29 @@ onMounted(() => {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div class="form-control">
-                    <label class="label-premium text-slate-400">Platform ID (LID/JID)</label>
+                    <label class="label-premium text-slate-400">Platform ID (LID)</label>
                     <div class="flex gap-2">
-                        <input v-model="newClient.platform_id" type="text" class="input-premium h-14 flex-1 text-sm font-mono" placeholder="Identification signal..." />
+                        <input v-model="newClient.platform_id" 
+                               type="text" 
+                               class="input-premium h-14 flex-1 text-sm font-mono" 
+                               placeholder="Identification signal..." />
                         <button v-if="newClient.platform_type === 'whatsapp'" 
                                 type="button"
                                 class="btn-premium px-6 h-14" 
                                 :class="lidVerified ? 'btn-premium-ghost text-green-500 border-green-500/20' : 'btn-premium-ghost'"
                                 @click="extractLid"
                                 :disabled="validatingLid">
-                            <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': validatingLid }" />
+                            <CheckCircle2 v-if="lidVerified && !validatingLid" class="w-4 h-4" />
+                            <RefreshCw v-else class="w-4 h-4" :class="{ 'animate-spin': validatingLid }" />
                         </button>
                     </div>
-                    <p class="text-[9px] text-slate-600 font-bold uppercase mt-2">Unique identifier for the selected platform.</p>
+                    <div class="flex items-center justify-between mt-2">
+                        <p class="text-[9px] text-slate-600 font-bold uppercase">Unique identifier for the selected platform.</p>
+                        <p v-if="lidVerified" class="text-[9px] text-green-500 font-black uppercase flex items-center gap-1 animate-in fade-in slide-in-from-right-2">
+                             <CheckCircle2 class="w-2.5 h-2.5" /> 
+                             Number: {{ lastValidatedPhone }} <span class="mx-1 opacity-40">→</span> LID: {{ newClient.platform_id }}
+                        </p>
+                    </div>
                 </div>
 
                 <div class="form-control">
@@ -547,7 +611,12 @@ onMounted(() => {
                 </div>
                 <div class="form-control">
                     <label class="label-premium text-slate-400">Universal Phone</label>
-                    <input v-model="newClient.phone" type="tel" class="input-premium h-14 w-full text-sm font-mono" placeholder="+XX XXX XXX XXX" />
+                    <input v-model="newClient.phone" 
+                        type="tel" 
+                        class="input-premium h-14 w-full text-sm font-mono" 
+                        :class="{ 'opacity-50 cursor-not-allowed bg-black/20': newClient.platform_type === 'whatsapp' }"
+                        :readonly="newClient.platform_type === 'whatsapp'"
+                        placeholder="+XX XXX XXX XXX" />
                 </div>
             </div>
 

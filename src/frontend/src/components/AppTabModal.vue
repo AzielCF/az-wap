@@ -20,6 +20,7 @@ const props = defineProps<{
   saveText?: string
   discardText?: string
   loading?: boolean
+  saveDisabled?: boolean
 }>()
 
 const emit = defineEmits(['update:modelValue', 'update:activeTab', 'save', 'cancel'])
@@ -89,7 +90,9 @@ function copyId(id: string) {
                   <button @click="emit('cancel')" class="flex-1 sm:flex-none btn-premium btn-premium-ghost px-6 lg:px-10 h-10 lg:h-14 text-[10px] lg:text-xs min-w-[100px]">
                     {{ discardText || 'Discard' }}
                   </button>
-                  <button @click="emit('save')" class="flex-1 sm:flex-none btn-premium btn-premium-primary px-8 lg:px-16 h-10 lg:h-14 text-[10px] lg:text-xs min-w-[140px]" :disabled="loading">
+                  <button @click="emit('save')" 
+                          class="flex-1 sm:flex-none btn-premium btn-premium-primary px-8 lg:px-16 h-10 lg:h-14 text-[10px] lg:text-xs min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none" 
+                          :disabled="loading || saveDisabled">
                     <span v-if="loading" class="loading loading-spinner loading-xs mr-2"></span>
                     <CheckCircle2 v-else class="w-4 h-4 mr-2" />
                     {{ saveText || 'Apply Settings' }}
