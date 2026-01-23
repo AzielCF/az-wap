@@ -43,7 +43,24 @@ func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.C
 	if wa.client == nil {
 		return common.ContactInfo{}, fmt.Errorf("no client")
 	}
-	parsedJID, err := wa.parseJID(jid)
+
+	// Handle potential combined identity (pn|lid) or just LID/JID
+	targetJID := jid
+	if strings.Contains(jid, "|") {
+		parts := strings.Split(jid, "|")
+		// Prefer LID if available in the combined string
+		for _, p := range parts {
+			if strings.HasSuffix(p, "@lid") {
+				targetJID = p
+				break
+			}
+		}
+		if targetJID == jid {
+			targetJID = parts[0]
+		}
+	}
+
+	parsedJID, err := wa.parseJID(targetJID)
 	if err != nil {
 		return common.ContactInfo{}, err
 	}
@@ -60,16 +77,17 @@ func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.C
 	// Fallback to network query
 	info, err := wa.client.GetUserInfo(ctx, []types.JID{parsedJID})
 	if err != nil || len(info) == 0 {
-		return common.ContactInfo{JID: jid}, nil
+		return common.ContactInfo{JID: targetJID}, nil
 	}
 
 	user := info[parsedJID]
 	vName := ""
 	if user.VerifiedName != nil {
-		vName = fmt.Sprintf("%v", *user.VerifiedName)
+		vName = fmt.Sprintf("%v", user.VerifiedName)
 	}
+
 	return common.ContactInfo{
-		JID:    jid,
+		JID:    parsedJID.String(),
 		Name:   vName,
 		Status: user.Status,
 	}, nil
@@ -214,7 +232,7 @@ func (wa *WhatsAppAdapter) IsOnWhatsApp(ctx context.Context, phone string) (bool
 
 func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier string) (string, error) {
 	if wa.client == nil {
-		return identifier, nil
+		return identifier, fmt.Errorf("no client available")
 	}
 
 	var targetJID types.JID
@@ -224,38 +242,46 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 	if strings.Contains(identifier, "@") {
 		targetJID, err = types.ParseJID(identifier)
 		if err != nil {
-			return identifier, nil
+			return identifier, fmt.Errorf("invalid identifier format")
 		}
 	} else {
-		// Sanitize digits
+		// Clean and normalize number
 		id := pkgUtils.ExtractPhoneNumber(identifier)
 		if id == "" {
-			return identifier, nil
+			return identifier, fmt.Errorf("could not extract a valid phone number")
 		}
 
+		// Try to verify on WhatsApp
 		resp, err := wa.client.IsOnWhatsApp(ctx, []string{id})
 		if err != nil || len(resp) == 0 || !resp[0].IsIn {
-			return identifier, nil
+			// Second attempt: maybe it needs a prefix or is already a partial jid-like
+			if !strings.HasSuffix(id, "@s.whatsapp.net") {
+				testJID := types.NewJID(id, types.DefaultUserServer)
+				info, err := wa.client.GetUserInfo(ctx, []types.JID{testJID})
+				if err == nil && len(info) > 0 {
+					targetJID = testJID
+				} else {
+					return identifier, fmt.Errorf("identity not found on WhatsApp")
+				}
+			} else {
+				return identifier, fmt.Errorf("identity not found on WhatsApp")
+			}
+		} else {
+			targetJID = resp[0].JID
 		}
-		targetJID = resp[0].JID
 	}
 
-	// 2. Double resolution: Try to get both PN and LID via GetUserInfo
-	// We prefer to store both combined so access matching works for all clients
+	// 2. Resolve LID via GetUserInfo - USER REQUIRES ONLY LID, NEVER JID
 	info, err := wa.client.GetUserInfo(ctx, []types.JID{targetJID})
 	if err == nil {
 		if u, ok := info[targetJID]; ok {
-			pn := targetJID
 			lid := u.LID
-
-			// Based on whatsmeow types, we check if the requested JID was LID
-			// the UserInfo doesn't have a direct .PN field in all versions.
-			// Let's use a simpler approach that works: if we have both pn and lid, return both.
-			if !pn.IsEmpty() && !lid.IsEmpty() && pn != lid {
-				return fmt.Sprintf("%s|%s", pn.String(), lid.String()), nil
+			if !lid.IsEmpty() {
+				return lid.String(), nil
 			}
 		}
 	}
 
-	return targetJID.String(), nil
+	// NO LID found - return error, never fallback to JID
+	return "", fmt.Errorf("could not resolve LID for this identity")
 }

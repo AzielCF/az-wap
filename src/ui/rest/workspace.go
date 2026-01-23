@@ -759,8 +759,16 @@ func (h *WorkspaceHandler) ResolveIdentity(c *fiber.Ctx) error {
 		name = contact.Name
 	}
 
+	// Only return the original identity as phone if it was a plain phone number (no @)
+	// If identity already contained @ (was a JID/LID), we cannot determine the original phone number
+	phone := ""
+	if !strings.Contains(identity, "@") {
+		phone = identity
+	}
+
 	return c.JSON(fiber.Map{
 		"resolved_identity": resolved,
+		"phone":             phone,
 		"name":              name,
 		"status":            "verified",
 	})
