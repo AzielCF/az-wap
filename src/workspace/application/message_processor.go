@@ -107,6 +107,9 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		input.Language = "en"
 	}
 
+	if input.Metadata == nil {
+		input.Metadata = make(map[string]any)
+	}
 	input.Metadata["last_bubble_count"] = lastBubbleCount
 
 	input.OnChatOpen = func() {

@@ -227,28 +227,38 @@ func (s *botService) Shutdown() {
 // === Helpers ===
 
 func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
-	if s.credService != nil && b.APIKey == "" && b.CredentialID != "" {
-		logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
-		cred, err := s.credService.GetByID(ctx, b.CredentialID)
-		if err != nil {
-			logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
-		} else {
-			isAI := cred.Kind == domainCredential.KindAI ||
-				cred.Kind == domainCredential.KindGemini ||
-				cred.Kind == domainCredential.KindOpenAI ||
-				cred.Kind == domainCredential.KindClaude
+	// 1. Clean up existing keys to avoid "empty but with spaces" issues
+	b.APIKey = strings.TrimSpace(b.APIKey)
+	b.CredentialID = strings.TrimSpace(b.CredentialID)
 
-			if isAI && cred.AIAPIKey != "" {
-				b.APIKey = cred.AIAPIKey
-				logrus.Debugf("[BOT] API Key resolved from credential %s", cred.Name)
-			} else if isAI && cred.AIAPIKey == "" {
-				logrus.Warnf("[BOT] Credential %s found but AI API Key is empty", cred.Name)
+	if s.credService != nil && b.CredentialID != "" {
+		// If the bot has an API Key but also a CredentialID, we log it for awareness
+		if b.APIKey != "" {
+			logrus.Debugf("[BOT] Bot %s has its own API Key, skipping global credential %s. Clear bot's API Key to use the global one.", b.ID, b.CredentialID)
+		} else {
+			logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
+			cred, err := s.credService.GetByID(ctx, b.CredentialID)
+			if err != nil {
+				logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
+			} else {
+				isAI := cred.Kind == domainCredential.KindAI ||
+					cred.Kind == domainCredential.KindGemini ||
+					cred.Kind == domainCredential.KindOpenAI ||
+					cred.Kind == domainCredential.KindClaude
+
+				if isAI && cred.AIAPIKey != "" {
+					b.APIKey = strings.TrimSpace(cred.AIAPIKey)
+					logrus.Debugf("[BOT] API Key resolved from credential %s", cred.Name)
+				} else if isAI && cred.AIAPIKey == "" {
+					logrus.Warnf("[BOT] Credential %s found but AI API Key is empty", cred.Name)
+				}
 			}
 		}
 	}
 
 	// Fallback to Config Variables if still empty
 	if b.APIKey == "" {
+		// ... resto del switch de fallback ...
 		// Log only once if we are attempting fallback
 		hasLoggedFallback := false
 

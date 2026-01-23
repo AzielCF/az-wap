@@ -212,6 +212,10 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 	botID := ch.Config.BotID
 	var clientCtx *botengineDomain.ClientContext
 
+	if msg.Metadata == nil {
+		msg.Metadata = make(map[string]any)
+	}
+
 	// Resolve Global Client Context
 	if m.clientResolver != nil {
 		pType := string(adapter.Type()) // Use adapter type (e.g., "whatsapp")
