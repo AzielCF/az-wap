@@ -694,6 +694,9 @@ func (e *Engine) detectMediaIntents(b bot.Bot, input *domain.BotInput) {
 		strings.Contains(lowerText, "explica")
 
 	for _, m := range input.Medias {
+		if m == nil {
+			continue
+		}
 		if m.State == domain.MediaStateBlocked {
 			continue
 		}

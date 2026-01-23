@@ -73,22 +73,30 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		lastBubbleCount = entry.LastBubbleCount
 	}
 
+	// Initialize metadata proactively to prevent nil map assignments
+	safeMetadata := make(map[string]any)
+	if msg.Metadata != nil {
+		for k, v := range msg.Metadata {
+			safeMetadata[k] = v
+		}
+	}
+
 	input := botengineDomain.BotInput{
 		BotID:       botID,
 		WorkspaceID: ch.WorkspaceID,
-		TraceID:     fmt.Sprintf("%v", msg.Metadata["message_id"]),
+		TraceID:     fmt.Sprintf("%v", safeMetadata["message_id"]),
 		InstanceID:  ch.ID,
 		ChatID:      msg.ChatID,
 		SenderID:    msg.SenderID,
 		Platform:    botengineDomain.PlatformWhatsApp,
 		Text:        msg.Text,
-		Metadata:    msg.Metadata,
+		Metadata:    safeMetadata,
 		FocusScore:  currentFocus,
 		Language:    ch.Config.DefaultLanguage, // Default from channel
 	}
 
 	// Attach ClientContext if present in metadata
-	if cc, ok := msg.Metadata["client_context"].(*botengineDomain.ClientContext); ok {
+	if cc, ok := safeMetadata["client_context"].(*botengineDomain.ClientContext); ok {
 		input.ClientContext = cc
 		if cc.Language != "" {
 			input.Language = cc.Language // Override with client preference
@@ -99,8 +107,8 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 			"is_registered": cc.IsRegistered,
 			"has_sub":       cc.HasSubscription,
 		}).Debugf("[MessageProcessor] Attaching ClientContext to BotInput")
-	} else if msg.Metadata["client_context"] != nil {
-		logrus.Warnf("[MessageProcessor] client_context found in metadata but type is %T, expected *botengineDomain.ClientContext", msg.Metadata["client_context"])
+	} else if safeMetadata["client_context"] != nil {
+		logrus.Warnf("[MessageProcessor] client_context found in metadata but type is %T, expected *botengineDomain.ClientContext", safeMetadata["client_context"])
 	}
 
 	if input.Language == "" {
@@ -143,10 +151,14 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 	}
 
 	if msg.Media != nil {
-		input.Medias = append(input.Medias, p.loadBotMedia(msg.Media))
+		if m := p.loadBotMedia(msg.Media); m != nil {
+			input.Medias = append(input.Medias, m)
+		}
 	}
 	for _, m := range msg.Medias {
-		input.Medias = append(input.Medias, p.loadBotMedia(m))
+		if bm := p.loadBotMedia(m); bm != nil {
+			input.Medias = append(input.Medias, bm)
+		}
 	}
 
 	output, err := botProcess(ctx, input)
