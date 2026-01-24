@@ -48,7 +48,7 @@ const showAddModal = ref(false)
 const editingCredential = ref<any>(null)
 const newCredential = ref({
   name: '',
-  kind: 'ai' as 'ai' | 'chatwoot',
+  kind: 'gemini',
   ai_api_key: '',
   chatwoot_base_url: '',
   chatwoot_account_token: '',
@@ -80,7 +80,7 @@ function resetForm() {
   editingCredential.value = null
   newCredential.value = {
     name: '',
-    kind: 'ai',
+    kind: 'gemini',
     ai_api_key: '',
     chatwoot_base_url: '',
     chatwoot_account_token: '',
@@ -302,7 +302,7 @@ onMounted(loadData)
                     <div class="form-control">
                         <label class="label-premium text-slate-400">Credential Type</label>
                         <div class="grid grid-cols-2 gap-4">
-                            <button @click="newCredential.kind = 'ai'" class="h-16 rounded-2xl border-2 transition-all flex items-center justify-center gap-4 uppercase font-black tracking-widest text-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                            <button @click="newCredential.kind = 'gemini'" class="h-16 rounded-2xl border-2 transition-all flex items-center justify-center gap-4 uppercase font-black tracking-widest text-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                                     :class="isAI(newCredential.kind) ? 'border-primary bg-primary/10 text-primary shadow-xl shadow-primary/10' : 'border-white/5 bg-white/5 text-slate-500 hover:border-white/20'">
                                 <Cpu class="w-5 h-5" />
                                 AI Provider
@@ -318,6 +318,13 @@ onMounted(loadData)
                     <TransitionGroup enter-active-class="transition duration-300 ease-out" enter-from-class="opacity-0 translate-y-4" move-class="transition duration-500">
                         <!-- AI Fields -->
                         <div v-if="isAI(newCredential.kind)" key="ai" class="space-y-6 animate-in fade-in slide-in-from-top-4">
+                            <div class="form-control">
+                                <label class="label-premium text-primary">Provider</label>
+                                <select v-model="newCredential.kind" class="select-premium h-14 w-full text-sm font-bold">
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="openai">OpenAI (Experimental)</option>
+                                </select>
+                            </div>
                             <div class="form-control">
                                 <div class="flex items-center justify-between mb-2">
                                      <div class="flex items-center gap-2">

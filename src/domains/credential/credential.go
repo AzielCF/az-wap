@@ -33,6 +33,7 @@ type CreateCredentialRequest struct {
 
 type UpdateCredentialRequest struct {
 	Name                 string `json:"name"`
+	Kind                 Kind   `json:"kind"`
 	AIAPIKey             string `json:"ai_api_key"`
 	ChatwootBaseURL      string `json:"chatwoot_base_url"`
 	ChatwootAccountToken string `json:"chatwoot_account_token"`

@@ -259,6 +259,11 @@ func (s *credentialService) Update(ctx context.Context, id string, req domainCre
 
 	updated := existing
 	updated.Name = name
+
+	if req.Kind != "" {
+		updated.Kind = req.Kind
+	}
+
 	updated.AIAPIKey = strings.TrimSpace(req.AIAPIKey)
 	updated.ChatwootBaseURL = strings.TrimSpace(req.ChatwootBaseURL)
 	updated.ChatwootAccountToken = strings.TrimSpace(req.ChatwootAccountToken)
@@ -266,12 +271,12 @@ func (s *credentialService) Update(ctx context.Context, id string, req domainCre
 
 	query := `
 		UPDATE credentials
-		SET name = ?, ai_api_key = ?, chatwoot_base_url = ?, chatwoot_account_token = ?, chatwoot_bot_token = ?, updated_at = CURRENT_TIMESTAMP
+		SET name = ?, kind = ?, ai_api_key = ?, chatwoot_base_url = ?, chatwoot_account_token = ?, chatwoot_bot_token = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?;
 	`
 
 	if _, err := s.db.ExecContext(ctx, query,
-		updated.Name, updated.AIAPIKey, updated.ChatwootBaseURL, updated.ChatwootAccountToken, updated.ChatwootBotToken,
+		updated.Name, string(updated.Kind), updated.AIAPIKey, updated.ChatwootBaseURL, updated.ChatwootAccountToken, updated.ChatwootBotToken,
 		updated.ID,
 	); err != nil {
 		return domainCredential.Credential{}, err
@@ -308,23 +313,28 @@ func (s *credentialService) Validate(ctx context.Context, id string) error {
 		if cred.AIAPIKey == "" {
 			return fmt.Errorf("missing AI API key")
 		}
-		// Attempt to list models to verify API Key
-		client, err := genai.NewClient(ctx, &genai.ClientConfig{
-			APIKey:  cred.AIAPIKey,
-			Backend: genai.BackendGeminiAPI,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create Gemini client: %w", err)
+
+		// Only validate with Gemini client if it IS a Gemini credential
+		if cred.Kind == domainCredential.KindGemini || cred.Kind == domainCredential.KindAI {
+			// Attempt to list models to verify API Key
+			client, err := genai.NewClient(ctx, &genai.ClientConfig{
+				APIKey:  cred.AIAPIKey,
+				Backend: genai.BackendGeminiAPI,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create Gemini client: %w", err)
+			}
+
+			// Use a short timeout for health check
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			_, err = client.Models.List(timeoutCtx, nil)
+			if err != nil {
+				return fmt.Errorf("AI API key verification failed: %w", err)
+			}
 		}
 
-		// Use a short timeout for health check
-		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		_, err = client.Models.List(timeoutCtx, nil)
-		if err != nil {
-			return fmt.Errorf("AI API key verification failed: %w", err)
-		}
 		return nil
 	}
 

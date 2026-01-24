@@ -60,6 +60,10 @@ const timezones = [
 const aiKinds = ['ai', 'gemini', 'openai', 'claude']
 const aiCredentials = computed(() => credentials.value.filter(c => aiKinds.includes(c.kind)))
 const chatwootCredentials = computed(() => credentials.value.filter(c => c.kind === 'chatwoot'))
+const multimodalModels = computed(() => {
+    const models = availableModels.value[newBot.value.provider] || []
+    return models.filter(m => m.is_multimodal)
+})
 
 // Bot Management
 const showAddBot = ref(false)
@@ -527,16 +531,18 @@ onMounted(loadData)
                                 <label class="label-premium">Engine Provider</label>
                                 <select v-model="newBot.provider" class="select-premium h-14 w-full text-sm font-bold uppercase transition-all">
                                     <option value="gemini">Google Gemini (Active)</option>
-                                    <option value="openai" disabled class="opacity-30">OpenAI (Soon)</option>
+                                    <option value="openai">OpenAI (Experimental)</option>
                                     <option value="claude" disabled class="opacity-30">Claude (Soon)</option>
                                     <option value="ai">Legacy / Custom</option>
                                 </select>
                             </div>
                             <div class="form-control">
                                 <label class="label-premium">Core Logic Model</label>
-                                <select v-model="newBot.model" class="select-premium h-14 w-full text-sm font-bold uppercase">
+                                <select v-model="newBot.model" class="select-premium h-14 w-full text-sm font-bold uppercase transition-all">
                                     <option value="">(Inherit Provider Default)</option>
-                                    <option v-for="m in availableModels[newBot.provider] || []" :key="m.id" :value="m.id">{{ m.name }}</option>
+                                    <option v-for="m in availableModels[newBot.provider] || []" :key="m.id" :value="m.id">
+                                        {{ m.name }} — {{ (m.avg_cost_in || m.avg_cost_out) ? `[$${m.avg_cost_in} / $${m.avg_cost_out}]` : '[--]' }}
+                                    </option>
                                 </select>
                             </div>
                         </div>
@@ -546,14 +552,18 @@ onMounted(loadData)
                                 <label class="label-premium">Mindset Analyzer</label>
                                 <select v-model="newBot.mindset_model" class="select-premium h-14 w-full text-sm font-bold uppercase">
                                     <option value="">(Inherit Logic / Lite Preferred)</option>
-                                    <option v-for="m in availableModels[newBot.provider] || []" :key="m.id" :value="m.id">{{ m.name }}</option>
+                                    <option v-for="m in availableModels[newBot.provider] || []" :key="m.id" :value="m.id">
+                                        {{ m.name }} — {{ (m.avg_cost_in || m.avg_cost_out) ? `[$${m.avg_cost_in} / $${m.avg_cost_out}]` : '[--]' }}
+                                    </option>
                                 </select>
                             </div>
                             <div class="form-control">
                                 <label class="label-premium">Vision/Multimodal Interpreter</label>
                                 <select v-model="newBot.multimodal_model" class="select-premium h-14 w-full text-sm font-bold uppercase">
                                     <option value="">(Vision Preferred)</option>
-                                    <option v-for="m in availableModels[newBot.provider] || []" :key="m.id" :value="m.id">{{ m.name }}</option>
+                                    <option v-for="m in multimodalModels" :key="m.id" :value="m.id">
+                                        {{ m.name }} — {{ (m.avg_cost_in || m.avg_cost_out) ? `[$${m.avg_cost_in} / $${m.avg_cost_out}]` : '[--]' }}
+                                    </option>
                                 </select>
                             </div>
                         </div>

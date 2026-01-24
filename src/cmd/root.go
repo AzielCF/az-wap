@@ -387,9 +387,11 @@ func initApp() {
 	// Initialize context cache store for AI providers (enables Valkey migration later)
 	contextCacheStore := botengineRepo.NewMemoryContextCacheStore()
 	geminiProvider := providers.NewGeminiProvider(mcpUsecase, contextCacheStore)
+	openaiProvider := providers.NewOpenAIProvider(mcpUsecase)
+
 	botEngine.RegisterProvider(string(domainBot.ProviderAI), geminiProvider)
 	botEngine.RegisterProvider(string(domainBot.ProviderGemini), geminiProvider)
-	// botEngine.RegisterProvider(string(domainBot.ProviderOpenAI), geminiProvider)
+	botEngine.RegisterProvider(string(domainBot.ProviderOpenAI), openaiProvider)
 	// botEngine.RegisterProvider(string(domainBot.ProviderClaude), geminiProvider)
 
 	// 2.1 Clients Module Initialization (Needed for Workspace Manager)

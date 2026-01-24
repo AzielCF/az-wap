@@ -95,11 +95,33 @@ func InitRestBot(app fiber.Router, service domainBot.IBotUsecase, mcpService dom
 }
 
 func (h *Bot) ListModels(c *fiber.Ctx) error {
+	// Enrich models with pricing info
+	enrichedModels := make(map[domainBot.Provider][]domainBot.ModelInfo)
+
+	for provider, models := range domainBot.ProviderModels {
+		var pricingMap map[string]domainBot.ModelPricing
+		if provider == domainBot.ProviderGemini {
+			pricingMap = domainBot.GeminiModelPrices
+		} else if provider == domainBot.ProviderOpenAI {
+			pricingMap = domainBot.OpenAIModelPrices
+		}
+
+		var newModels []domainBot.ModelInfo
+		for _, m := range models {
+			if price, ok := pricingMap[m.ID]; ok {
+				m.AvgCostIn = price.InputPerMToken
+				m.AvgCostOut = price.OutputPerMToken
+			}
+			newModels = append(newModels, m)
+		}
+		enrichedModels[provider] = newModels
+	}
+
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
 		Message: "Models fetched",
-		Results: domainBot.ProviderModels,
+		Results: enrichedModels,
 	})
 }
 

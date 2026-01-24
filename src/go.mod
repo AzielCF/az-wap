@@ -13,6 +13,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/openai/openai-go/v3 v3.16.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.1
@@ -69,6 +70,10 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tinylib/msgp v1.2.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.31 // indirect
