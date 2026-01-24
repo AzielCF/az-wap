@@ -15,7 +15,8 @@ const status = ref({
   isPaused: false,
   isHibernating: false,
   qr: null as string | null,
-  loading: true
+  loading: true,
+  profilePhoto: null as string | null
 })
 
 let interval: any = null
@@ -24,6 +25,8 @@ const loginMethod = ref<'qr' | 'code'>('qr')
 const phoneNumber = ref('')
 const pairingCode = ref<string | null>(null)
 const qrImage = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadingPhoto = ref(false)
 
 // Watch for QR code changes to render image
 watch(() => status.value.qr, async (newVal) => {
@@ -74,14 +77,53 @@ async function fetchStatus(manual = false) {
   try {
     const query = manual ? '?resume=true' : ''
     const data = await api.get(`/workspaces/${props.workspaceId}/channels/${props.channel.id}/whatsapp/status${query}`)
+    
+    const wasLoggedIn = status.value.loggedIn
     status.value.connected = data.is_connected
     status.value.loggedIn = data.is_logged_in
     status.value.isHibernating = data.is_hibernating || false
     status.value.isPaused = data.is_paused || false
     status.value.loading = false
+
+    // Fetch photo once if we just logged in or if it's missing
+    if (status.value.loggedIn && (!wasLoggedIn || !status.value.profilePhoto)) {
+        fetchProfilePhoto()
+    }
   } catch (err) {
     console.error(err)
   }
+}
+
+async function fetchProfilePhoto() {
+    try {
+        const res = await api.get(`/instances/${props.channel.id}/profile/photo`)
+        if (res.results && res.results.url) {
+            status.value.profilePhoto = res.results.url
+        }
+    } catch (err) {
+        // Fail silently
+    }
+}
+
+async function updateProfilePhoto(event: Event) {
+    const target = event.target as HTMLInputElement
+    const file = target.files?.[0]
+    if (!file) return
+
+    uploadingPhoto.value = true
+    const formData = new FormData()
+    formData.append('avatar', file)
+
+    try {
+        await api.post(`/instances/${props.channel.id}/profile/photo`, formData)
+        // Give it more time for the network to propagate and CDN to refresh
+        setTimeout(fetchProfilePhoto, 5000)
+    } catch (err) {
+        alert('Failed to update profile photo')
+    } finally {
+        uploadingPhoto.value = false
+        if (fileInput.value) fileInput.value.value = ''
+    }
 }
 
 async function login() {
@@ -171,13 +213,36 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Logged In View -->
-            <div v-else-if="status.loggedIn" class="flex flex-col items-center py-10 animate-in zoom-in duration-500">
-                <div class="w-24 h-24 rounded-3xl bg-success/10 text-success flex items-center justify-center border-2 border-success/20 shadow-xl shadow-success/5 mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+            <div v-else-if="status.loggedIn" class="flex flex-col items-center py-6 animate-in zoom-in duration-500 w-full px-10">
+                <div class="relative group/avatar mb-6">
+                    <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-success/20 shadow-2xl bg-black/40 flex items-center justify-center relative">
+                        <img v-if="status.profilePhoto" :src="status.profilePhoto" class="w-full h-full object-cover transition-transform group-hover/avatar:scale-110" alt="Profile" />
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-success/40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        
+                        <!-- Upload Overlay -->
+                        <div v-if="!uploadingPhoto" @click="fileInput?.click()" class="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            <span class="text-[8px] font-black text-white uppercase tracking-widest">Update</span>
+                        </div>
+                        <div v-else class="absolute inset-0 bg-black/60 flex items-center justify-center">
+                            <span class="loading loading-spinner loading-sm text-primary"></span>
+                        </div>
+                    </div>
+                    
+                    <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="updateProfilePhoto" />
+
+                    <!-- Status Dot -->
+                    <div class="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-[#0b0e14] flex items-center justify-center border border-white/5">
+                        <div class="w-3 h-3 rounded-full bg-success animate-pulse"></div>
+                    </div>
                 </div>
-                <h3 class="text-2xl font-black text-white uppercase tracking-tighter mb-1">Instance Linked</h3>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Protocol Sync Complete</p>
-                <div v-if="status.isPaused" class="mt-4 px-4 py-1.5 bg-warning/10 border border-warning/20 rounded-lg">
+
+                <div class="text-center">
+                    <h3 class="text-2xl font-black text-white uppercase tracking-tighter mb-1">Instance Linked</h3>
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Protocol Sync Complete</p>
+                </div>
+
+                <div v-if="status.isPaused" class="mt-6 px-4 py-1.5 bg-warning/10 border border-warning/20 rounded-lg w-full text-center">
                    <p class="text-[9px] text-warning font-bold uppercase tracking-widest">Bot is Paused • Resume to restore real-time sync</p>
                 </div>
             </div>
