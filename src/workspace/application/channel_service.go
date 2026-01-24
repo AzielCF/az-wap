@@ -165,3 +165,15 @@ func (s *ChannelService) UpdateChannelConfig(channelID string, config channel.Ch
 		adapter.UpdateConfig(config)
 	}
 }
+
+func (s *ChannelService) SetProfilePhoto(ctx context.Context, channelID string, photo []byte) (string, error) {
+	s.adaptersMu.RLock()
+	adapter, ok := s.adapters[channelID]
+	s.adaptersMu.RUnlock()
+
+	if !ok {
+		return "", fmt.Errorf("channel adapter %s not found or not connected", channelID)
+	}
+
+	return adapter.SetProfilePhoto(ctx, photo)
+}

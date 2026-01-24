@@ -11,6 +11,7 @@ import (
 
 	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
+	"github.com/sirupsen/logrus"
 )
 
 func (wa *WhatsAppAdapter) SetProfileName(ctx context.Context, name string) error {
@@ -31,9 +32,21 @@ func (wa *WhatsAppAdapter) SetProfilePhoto(ctx context.Context, photo []byte) (s
 	if wa.client == nil {
 		return "", fmt.Errorf("no client")
 	}
-	// Personal profile photo in whatsmeow is set using SetGroupPhoto with empty JID
-	resp, err := wa.client.SetGroupPhoto(ctx, types.JID{}, photo)
+
+	if !wa.client.IsConnected() {
+		return "", fmt.Errorf("client not connected")
+	}
+
+	// For personal profile photo, the protocol destination must be Empty JID.
+	// Even on LID-based connections, using 'Empty JID' tells WhatsApp: "This is for the authenticated user".
+	// Using a specific LID JID here often causes it to be treated as a GROUP operation, which fails with timeout.
+	targetID := types.JID{}
+
+	logrus.Infof("[WHATSAPP_ADAPTER] Setting personal profile photo (using Empty JID standard)")
+
+	resp, err := wa.client.SetGroupPhoto(ctx, targetID, photo)
 	if err != nil {
+		logrus.WithError(err).Errorf("[WHATSAPP_ADAPTER] SetGroupPhoto failed for self-profile update")
 		return "", err
 	}
 	return resp, nil

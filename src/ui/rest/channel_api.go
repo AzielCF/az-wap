@@ -5,7 +5,9 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	"github.com/AzielCF/az-wap/config"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
@@ -42,6 +44,8 @@ func InitChannelAPI(app fiber.Router, wkUsecase *workspaceUsecase.WorkspaceUseca
 	app.Put("/instances/:id/ai", handler.UpdateInstanceAIConfig) // Was /gemini
 	app.Put("/instances/:id/auto-reconnect", handler.UpdateInstanceAutoReconnectConfig)
 	app.Get("/instances/:id/groups", handler.ListGroups)
+	app.Get("/instances/:id/profile/photo", handler.GetChannelProfilePhoto)
+	app.Post("/instances/:id/profile/photo", handler.UpdateChannelProfilePhoto)
 
 	// AI global settings (legacy support)
 	app.Get("/settings/ai", handler.GetAISettings)
@@ -66,6 +70,13 @@ func (h *ChannelHandler) mapChannelToLegacy(ch channel.Channel) LegacyInstanceRe
 	if adapter, ok := h.WorkspaceManager.GetAdapter(ch.ID); ok {
 		if adapter.IsLoggedIn() {
 			inst.Status = "ONLINE"
+			// Try to get profile photo for list view
+			if me, err := adapter.GetMe(); err == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				photo, _ := adapter.GetProfilePictureInfo(ctx, me.JID, true) // true for preview (faster)
+				inst.ProfilePhoto = photo
+				cancel()
+			}
 		} else if adapter.Status() == channel.ChannelStatusConnected {
 			inst.Status = "CREATED"
 		} else {
@@ -629,5 +640,65 @@ func (handler *ChannelHandler) ListGroups(c *fiber.Ctx) error {
 		Code:    "SUCCESS",
 		Message: "Groups fetched",
 		Results: groups,
+	})
+}
+
+func (h *ChannelHandler) UpdateChannelProfilePhoto(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	file, err := c.FormFile("avatar")
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: "missing avatar file",
+		})
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: "failed to open file"})
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: "failed to read file"})
+	}
+
+	resp, err := h.WorkspaceUsecase.SetChannelProfilePhoto(c.UserContext(), id, data)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Profile photo updated",
+		Results: resp,
+	})
+}
+
+func (h *ChannelHandler) GetChannelProfilePhoto(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	url, err := h.WorkspaceUsecase.GetChannelProfilePhoto(c.UserContext(), id)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{
+			Status:  400,
+			Code:    "BAD_REQUEST",
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Profile photo fetched",
+		Results: map[string]string{"url": url},
 	})
 }

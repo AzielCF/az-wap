@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -10,7 +11,9 @@ import (
 	"github.com/AzielCF/az-wap/workspace/domain/common"
 	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/repository"
+	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 type WorkspaceUsecase struct {
@@ -245,4 +248,86 @@ func (u *WorkspaceUsecase) DeleteAccessRule(ctx context.Context, id string) erro
 
 func (u *WorkspaceUsecase) DeleteAllAccessRules(ctx context.Context, channelID string) error {
 	return u.repo.DeleteAllAccessRules(ctx, channelID)
+}
+
+func (u *WorkspaceUsecase) SetChannelProfilePhoto(ctx context.Context, channelID string, imageData []byte) (string, error) {
+	if u.manager == nil {
+		return "", fmt.Errorf("workspace manager not initialized")
+	}
+
+	// 1. Decode image
+	srcImage, err := imaging.Decode(bytes.NewReader(imageData))
+	if err != nil {
+		logrus.WithError(err).Error("[WORKSPACE_USECASE] Failed to decode profile image")
+		return "", fmt.Errorf("failed to decode image: %v", err)
+	}
+
+	// 2. Process image (Square crop & Resize)
+	bounds := srcImage.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Determine square size (shortest side)
+	size := w
+	if h < w {
+		size = h
+	}
+
+	// Crop center square
+	croppedImage := imaging.CropCenter(srcImage, size, size)
+
+	// Resize down to 640 if larger
+	if size > 640 {
+		croppedImage = imaging.Resize(croppedImage, 640, 640, imaging.Lanczos)
+	}
+
+	// 3. Encode to JPEG
+	var buf bytes.Buffer
+	err = imaging.Encode(&buf, croppedImage, imaging.JPEG, imaging.JPEGQuality(80))
+	if err != nil {
+		logrus.WithError(err).Error("[WORKSPACE_USECASE] Failed to encode processed profile image")
+		return "", fmt.Errorf("failed to encode image: %v", err)
+	}
+
+	// 4. Update via Manager (agnostic)
+	// We use a dedicated context with a longer timeout for this heavy network operation
+	logrus.Infof("[WORKSPACE_USECASE] Starting profile photo update for channel %s (size: %d bytes)", channelID, len(buf.Bytes()))
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	resp, err := u.manager.SetProfilePhoto(timeoutCtx, channelID, buf.Bytes())
+	if err != nil {
+		logrus.WithError(err).Errorf("[WORKSPACE_USECASE] Manager failed to set profile photo for channel %s", channelID)
+	}
+	return resp, err
+}
+
+func (u *WorkspaceUsecase) GetChannelProfilePhoto(ctx context.Context, channelID string) (string, error) {
+	if u.manager == nil {
+		return "", nil // No noise
+	}
+
+	adapter, ok := u.manager.GetAdapter(channelID)
+	if !ok || !adapter.IsLoggedIn() {
+		return "", nil // Skip silently if not connected or logged in
+	}
+
+	// Get own identity
+	me, err := adapter.GetMe()
+	if err != nil {
+		return "", nil // Suppress error
+	}
+
+	// Priority to LID for the query as requested by USER
+	targetID := me.JID
+	if me.LID != "" {
+		targetID = me.LID
+	}
+
+	// Get profile picture URL
+	url, err := adapter.GetProfilePictureInfo(ctx, targetID, false)
+	if err != nil {
+		// Log but don't fail, common for new accounts
+		return "", nil
+	}
+	return url, nil
 }

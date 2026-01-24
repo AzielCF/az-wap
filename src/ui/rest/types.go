@@ -3,10 +3,11 @@ package rest
 // LegacyInstanceResponse mirrors the old Instance domain model
 // to ensure backward compatibility with the frontend.
 type LegacyInstanceResponse struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Token  string `json:"token,omitempty"`
-	Status string `json:"status"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Token        string `json:"token,omitempty"`
+	Status       string `json:"status"`
+	ProfilePhoto string `json:"profile_photo,omitempty"`
 
 	WebhookURLs               []string `json:"webhook_urls,omitempty"`
 	WebhookSecret             string   `json:"webhook_secret,omitempty"`

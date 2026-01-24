@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"image"
 
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/validations"
@@ -169,19 +168,13 @@ func (service serviceUser) ChangeAvatar(ctx context.Context, request domainUser.
 		return fmt.Errorf("failed to decode image: %v", err)
 	}
 
-	bounds := srcImage.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-	size := width
-	if height < width {
-		size = height
+	w, h := srcImage.Bounds().Dx(), srcImage.Bounds().Dy()
+	size := w
+	if h < w {
+		size = h
 	}
-	if size > 640 {
-		size = 640
-	}
-	left := (width - size) / 2
-	top := (height - size) / 2
-	croppedImage := imaging.Crop(srcImage, image.Rect(left, top, left+size, top+size))
+
+	croppedImage := imaging.CropCenter(srcImage, size, size)
 	if size > 640 {
 		croppedImage = imaging.Resize(croppedImage, 640, 640, imaging.Lanczos)
 	}

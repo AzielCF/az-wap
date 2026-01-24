@@ -551,3 +551,7 @@ func (m *Manager) WaitIdle(ctx context.Context, channelID, chatID string, timeou
 		}
 	}
 }
+
+func (m *Manager) SetProfilePhoto(ctx context.Context, channelID string, photo []byte) (string, error) {
+	return m.channels.SetProfilePhoto(ctx, channelID, photo)
+}
