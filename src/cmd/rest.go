@@ -77,7 +77,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		HSTSMaxAge:            31536000, // 1 Year
 		HSTSExcludeSubdomains: false,
 		ReferrerPolicy:        "strict-origin-when-cross-origin",
-		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:* ws://localhost:*;",
+		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.whatsapp.net; connect-src 'self' http://localhost:* ws://localhost:*;",
 	}))
 	app.Use(limiter.New(limiter.Config{
 		Max:        1000,

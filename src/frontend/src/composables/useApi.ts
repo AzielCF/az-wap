@@ -64,10 +64,14 @@ export function useApi() {
     }
     const url = `${baseUrl}${cleanPath}`
     
-    const headers = {
+    const isFormData = options.body instanceof FormData
+    const headers: any = {
       'Authorization': `Basic ${getAuthToken()}`,
-      'Content-Type': 'application/json',
       ...options.headers,
+    }
+
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json'
     }
 
     try {
@@ -106,8 +110,14 @@ export function useApi() {
     loading,
     error,
     get: (path: string) => request(path, { method: 'GET' }),
-    post: (path: string, body: any) => request(path, { method: 'POST', body: JSON.stringify(body) }),
-    put: (path: string, body: any) => request(path, { method: 'PUT', body: JSON.stringify(body) }),
+    post: (path: string, body: any) => request(path, { 
+      method: 'POST', 
+      body: body instanceof FormData ? body : JSON.stringify(body) 
+    }),
+    put: (path: string, body: any) => request(path, { 
+      method: 'PUT', 
+      body: body instanceof FormData ? body : JSON.stringify(body) 
+    }),
     delete: (path: string) => request(path, { method: 'DELETE' }),
     login,
     logout
