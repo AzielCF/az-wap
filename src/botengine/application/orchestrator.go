@@ -112,6 +112,15 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 			md["usage_cost"] = fmt.Sprintf("$%.6f", res.Usage.CostUSD)
 			md["usage_input_tokens"] = fmt.Sprintf("%d", res.Usage.InputTokens)
 			md["usage_output_tokens"] = fmt.Sprintf("%d", res.Usage.OutputTokens)
+			if res.Usage.SystemTokens > 0 {
+				md["usage_system_tokens"] = fmt.Sprintf("%d", res.Usage.SystemTokens)
+			}
+			if res.Usage.UserTokens > 0 {
+				md["usage_user_tokens"] = fmt.Sprintf("%d", res.Usage.UserTokens)
+			}
+			if res.Usage.HistoryTokens > 0 {
+				md["usage_history_tokens"] = fmt.Sprintf("%d", res.Usage.HistoryTokens)
+			}
 			if res.Usage.CachedTokens > 0 {
 				md["usage_cached_tokens"] = fmt.Sprintf("%d", res.Usage.CachedTokens)
 			}

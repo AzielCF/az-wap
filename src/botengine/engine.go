@@ -281,6 +281,15 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			md["cost"] = fmt.Sprintf("$%.6f", usageInt.CostUSD)
 			md["input_tokens"] = fmt.Sprintf("%d", usageInt.InputTokens)
 			md["output_tokens"] = fmt.Sprintf("%d", usageInt.OutputTokens)
+			if usageInt.SystemTokens > 0 {
+				md["usage_system_tokens"] = fmt.Sprintf("%d", usageInt.SystemTokens)
+			}
+			if usageInt.UserTokens > 0 {
+				md["usage_user_tokens"] = fmt.Sprintf("%d", usageInt.UserTokens)
+			}
+			if usageInt.HistoryTokens > 0 {
+				md["usage_history_tokens"] = fmt.Sprintf("%d", usageInt.HistoryTokens)
+			}
 		}
 		botmonitor.Record(botmonitor.Event{
 			TraceID:    input.TraceID,
@@ -437,13 +446,22 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		multimodalModel = b.Model
 	}
 	enrichedText, usageMult, err := interpreter.EnrichInput(ctx, multimodalModel, input)
-	if err == nil && usageMult != nil {
-		modelName := usageMult.Model
-		if modelName == "" {
-			modelName = multimodalModel
+	if err == nil {
+		if usageMult != nil {
+			modelName := usageMult.Model
+			if modelName == "" {
+				modelName = multimodalModel
+			}
+			addExecutionCost(b.ID, modelName, usageMult.CostUSD)
 		}
-		addExecutionCost(b.ID, modelName, usageMult.CostUSD)
+
+		// Update input.Text with enriched text (e.g., audio transcriptions)
+		// so it can be correctly persisted in the session history by the Workspace module.
+		if enrichedText != "" {
+			input.Text = enrichedText
+		}
 	}
+
 	if err != nil {
 		botmonitor.Record(botmonitor.Event{
 			TraceID:    input.TraceID,
@@ -473,11 +491,17 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		chatHistory = input.History
 	}
 
+	// Fallback logic: If enrichedText is empty (no media processed), use the original input text.
+	finalUserText := enrichedText
+	if finalUserText == "" {
+		finalUserText = input.Text
+	}
+
 	req := domain.ChatRequest{
 		SystemPrompt: systemPrompt,
 		History:      chatHistory,
 		Tools:        tools,
-		UserText:     enrichedText,
+		UserText:     finalUserText,
 		Model:        b.Model,
 		ChatKey:      input.InstanceID + "|" + input.ChatID,
 	}
@@ -499,6 +523,13 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		return domain.BotOutput{}, fmt.Errorf("orchestrator failed: %w", err)
 	}
 
+	// AFTER EXECUTION: Record Detailed usage in Monitor if present in Output
+	// The orchestrator collects usage from each turn
+	if output.TotalCost > 0 {
+		// Orchestrator handles turn-by-turn monitoring.
+		// Aggregate cost is already included in the final BotOutput.
+	}
+
 	// Consolidate costs details
 	if output.CostDetails == nil {
 		output.CostDetails = make([]domain.ExecutionCost, 0)
@@ -508,7 +539,8 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	}
 	// Re-calculate total just in case or trust the sum
 	output.TotalCost += totalExecutionCost
-	output.Mindset = mindset // Preservar mindset para el hook si es necesario
+	output.Mindset = mindset     // Preservar mindset para el hook si es necesario
+	output.UserText = input.Text // RETURN ENRICHED TEXT (Transcriptions, etc.)
 
 	if output.Metadata == nil {
 		output.Metadata = make(map[string]any)

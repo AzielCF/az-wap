@@ -225,9 +225,53 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 
 	p.applyThinking(genConfig, model, "dynamic")
 
+	// --- TOKEN INTELLIGENCE (Estimation) ---
+	estimateTokens := func(text string) int {
+		if text == "" {
+			return 0
+		}
+		return len(text) / 4
+	}
+	systemTokens := estimateTokens(req.SystemPrompt)
+
+	// Intelligent User Token Estimation:
+	// The orchestrator moves UserText to History for normalization.
+	// If UserText is empty, we treat the last user message in history as the "User Input" for metrics.
+	textToEstimate := req.UserText
+	if textToEstimate == "" && len(req.History) > 0 {
+		lastTurn := req.History[len(req.History)-1]
+		if lastTurn.Role == "user" {
+			textToEstimate = lastTurn.Text
+		}
+	}
+	userTokens := estimateTokens(textToEstimate)
+
 	result, err := p.generateContentWithRetry(ctx, client, model, contents, genConfig)
 	if err != nil {
 		return domain.ChatResponse{}, err
+	}
+
+	var usage *domain.UsageStats
+	if result.UsageMetadata != nil {
+		usage = p.extractUsage(model, result.UsageMetadata)
+		if usage != nil {
+			usage.SystemTokens = systemTokens
+			usage.UserTokens = userTokens
+
+			// History is accurately inferred: Official Total - Local Estimates
+			usage.HistoryTokens = usage.InputTokens - systemTokens - userTokens
+			if usage.HistoryTokens < 0 {
+				usage.HistoryTokens = 0
+			}
+
+			logrus.WithFields(logrus.Fields{
+				"total_input": usage.InputTokens,
+				"cached":      usage.CachedTokens,
+				"system_est":  systemTokens,
+				"user_est":    userTokens,
+				"history":     usage.HistoryTokens,
+			}).Debug("[GEMINI] Token Intelligence collected")
+		}
 	}
 
 	if result == nil || len(result.Candidates) == 0 {
@@ -247,6 +291,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	resp := domain.ChatResponse{
 		Text:       fullText,
 		RawContent: candidate.Content, // PARIDAD ORIGINAL: Preservar el contenido completo
+		Usage:      usage,
 	}
 
 	// Extraer llamadas a herramientas
@@ -261,9 +306,8 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	}
 
 	// Extraer UsageMetadata y calcular costo
-	if result.UsageMetadata != nil {
-		resp.Usage = p.extractUsage(model, result.UsageMetadata)
-
+	// Usage Log Final
+	if resp.Usage != nil {
 		logrus.WithFields(logrus.Fields{
 			"chat_key":      req.ChatKey,
 			"model":         model,
@@ -495,9 +539,29 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 	var usage *domain.UsageStats
 	if result.UsageMetadata != nil {
 		usage = p.extractUsage(model, result.UsageMetadata)
+
+		// Token Intelligence for Intuition
+		// Estimate components to breakdown the monolithic prompt
+		estUser := len(input.Text) / 4
+		if estUser == 0 && input.Text != "" {
+			estUser = 1
+		}
+		estHistory := len(histStr.String()) / 4
+
+		usage.UserTokens = estUser
+		usage.HistoryTokens = estHistory
+		// The rest is the "System" template logic
+		usage.SystemTokens = usage.InputTokens - estUser - estHistory
+		if usage.SystemTokens < 0 {
+			usage.SystemTokens = 0
+		}
+
 		logrus.WithFields(logrus.Fields{
-			"stage": "intuition",
-			"cost":  usage.CostUSD,
+			"stage":   "intuition",
+			"cost":    usage.CostUSD,
+			"system":  usage.SystemTokens,
+			"user":    usage.UserTokens,
+			"history": usage.HistoryTokens,
 		}).Debug("[USAGE] Intuition cost recorded")
 	}
 
