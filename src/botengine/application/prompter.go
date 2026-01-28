@@ -17,45 +17,82 @@ func NewPrompter() *Prompter {
 	return &Prompter{}
 }
 
-// BuildSystemInstructions consolida todas las fuentes de prompts del sistema
+// BuildSystemInstructions consolida todas las fuentes de prompts del sistema (Combinado)
 func (p *Prompter) BuildSystemInstructions(b domainBot.Bot, input domain.BotInput, mcpInstructions string) string {
-	var sb strings.Builder
+	stable, dynamic := p.BuildInstructionsSplit(b, input, mcpInstructions)
+	return stable + "\n\n" + dynamic
+}
+
+// BuildInstructionsSplit separa las instrucciones en un bloque estable (cacheable) y uno dinámico.
+func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput, mcpInstructions string) (string, string) {
+	var stable strings.Builder
+	var dynamic strings.Builder
+
+	// --- BLOQUE ESTABLE (Cacheable) ---
 
 	// 1. Global Prompt
 	if configGlobal.AIGlobalSystemPrompt != "" {
-		sb.WriteString(configGlobal.AIGlobalSystemPrompt)
-		sb.WriteString("\n\n")
+		stable.WriteString(configGlobal.AIGlobalSystemPrompt)
+		stable.WriteString("\n\n")
 	}
 
 	// 2. Bot Specific Prompt
 	if b.SystemPrompt != "" {
-		sb.WriteString(b.SystemPrompt)
-		sb.WriteString("\n\n")
+		stable.WriteString(b.SystemPrompt)
+		stable.WriteString("\n\n")
 	}
 
 	// 3. Knowledge Base
 	if b.KnowledgeBase != "" {
-		sb.WriteString(b.KnowledgeBase)
-		sb.WriteString("\n\n")
+		stable.WriteString(b.KnowledgeBase)
+		stable.WriteString("\n\n")
 	}
 
-	// 3.5 Client Context (if registered client)
+	// 3.5 Client Specific Instructions (Long term)
 	if input.ClientContext != nil && input.ClientContext.IsRegistered {
-		clientPrompt := input.ClientContext.ForPrompt()
-		if clientPrompt != "" {
-			sb.WriteString("### CLIENT CONTEXT\n")
-			sb.WriteString(clientPrompt)
-			sb.WriteString("\n\n")
-		}
-		// Additional custom prompt from subscription
 		if input.ClientContext.CustomSystemPrompt != "" {
-			sb.WriteString("### CLIENT-SPECIFIC INSTRUCTIONS\n")
-			sb.WriteString(input.ClientContext.CustomSystemPrompt)
-			sb.WriteString("\n\n")
+			stable.WriteString("### CLIENT-SPECIFIC INSTRUCTIONS\n")
+			stable.WriteString(input.ClientContext.CustomSystemPrompt)
+			stable.WriteString("\n\n")
 		}
 	}
 
-	// 4. Timezone & Current Time
+	// 4. Resource Management Capabilities
+	hasAnyMedia := b.ImageEnabled || b.AudioEnabled || b.VideoEnabled || b.DocumentEnabled
+	if hasAnyMedia {
+		stable.WriteString("### RESOURCE MANAGEMENT CAPABILITIES\n")
+		stable.WriteString("You operate as a 'Resource Concierge'. To save tokens, only small items are sent instantly.\n")
+
+		if b.ImageEnabled {
+			stable.WriteString("- VISUALS: You can see images and stickers instantly.\n")
+			stable.WriteString("  * STICKERS: Interpretation is based on conversation context. A 'sad' sticker can be ironic if the user is joking. Prioritize conversational flow over literal image description.\n")
+		}
+		if b.AudioEnabled {
+			stable.WriteString("- AUDIO: You receive transcriptions of audio/voice notes automatically.\n")
+		}
+
+		if b.VideoEnabled || b.DocumentEnabled {
+			stable.WriteString("- DEFERRED ACCESS: For Videos and Documents, you might see markers like [RECURSO DISPONIBLE].\n")
+			stable.WriteString("  * Use 'get_session_resources' to list files or 'analyze_session_resource' to read them if the user asks.\n")
+		}
+		stable.WriteString("- UNSUPPORTED: For formats like ZIP or PSD, acknowledge them as general reference for tools.\n")
+		stable.WriteString("BEHAVIOR: Use multimodal context ([Audio Transcription], [Image Description]) PROACTIVELY.\n\n")
+	}
+
+	// 5. Situational Behavior (Rules)
+	stable.WriteString("### SITUATIONAL BEHAVIOR (MINDSET)\n")
+	stable.WriteString("You must ALWAYS start your response with a HIDDEN internal mindset tag: <mindset pace=\"fast|steady|deep\" focus=\"true|false\" work=\"true|false\" />\n\n")
+
+	// 6. Toolset Guidelines (MCP)
+	if mcpInstructions != "" {
+		stable.WriteString("## MCP TOOL GUIDELINES")
+		stable.WriteString(mcpInstructions)
+		stable.WriteString("\n\n")
+	}
+
+	// --- BLOQUE DINÁMICO (No Cacheable) ---
+
+	// 1. Current Snapshot
 	tz := b.Timezone
 	if tz == "" {
 		tz = configGlobal.AITimezone
@@ -63,77 +100,39 @@ func (p *Prompter) BuildSystemInstructions(b domainBot.Bot, input domain.BotInpu
 	if tz == "" {
 		tz = "UTC"
 	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		loc = time.UTC
-	}
+	loc, _ := time.LoadLocation(tz)
 	now := time.Now().In(loc)
 	moment := getMomentOfDay(now.Hour())
-	sb.WriteString(fmt.Sprintf("IMPORTANT - Current date and time (%s): %s (Time of day: %s)", tz, now.Format(time.RFC3339), moment))
 
-	// 5. Resource Management Capabilities
-	hasAnyMedia := b.ImageEnabled || b.AudioEnabled || b.VideoEnabled || b.DocumentEnabled
-	if hasAnyMedia {
-		sb.WriteString("\n\n### RESOURCE MANAGEMENT CAPABILITIES\n")
-		sb.WriteString("You operate as a 'Resource Concierge'. To save tokens, only small items are sent instantly.\n")
+	dynamic.WriteString("## SESSION_METADATA\n")
+	dynamic.WriteString(fmt.Sprintf("- Current_Time: %s\n", now.Format(time.RFC3339)))
+	dynamic.WriteString(fmt.Sprintf("- Timeformat: %s\n", tz))
+	dynamic.WriteString(fmt.Sprintf("- Day_Moment: %s\n", moment))
 
-		if b.ImageEnabled {
-			sb.WriteString("- VISUALS: You can see images and stickers instantly.\n")
-			sb.WriteString("  * STICKERS: Interpretation is based on conversation context. A 'sad' sticker can be ironic if the user is joking. Prioritize conversational flow over literal image description.\n")
+	// 2. Client Identity
+	if input.ClientContext != nil && input.ClientContext.IsRegistered {
+		clientPrompt := input.ClientContext.ForPrompt()
+		if clientPrompt != "" {
+			dynamic.WriteString("- Client_Profile: " + strings.ReplaceAll(clientPrompt, "\n", " | ") + "\n")
 		}
-		if b.AudioEnabled {
-			sb.WriteString("- AUDIO: You receive transcriptions of audio/voice notes automatically.\n")
-		}
-
-		if b.VideoEnabled || b.DocumentEnabled {
-			sb.WriteString("- DEFERRED ACCESS: For Videos and Documents, you might see markers like [RECURSO DISPONIBLE].\n")
-			sb.WriteString("  * Use 'get_session_resources' to list files or 'analyze_session_resource' to read them if the user asks.\n")
-		}
-		sb.WriteString("- UNSUPPORTED: For formats like ZIP or PSD, acknowledge them as general reference for tools.\n")
-
-		sb.WriteString("\nBEHAVIOR: Use multimodal context ([Audio Transcription], [Image Description]) PROACTIVELY. Do not ask for details already provided in these descriptions.")
 	}
 
-	// 6. Situational Behavior (Mindset)
-	sb.WriteString("\n\n### SITUATIONAL BEHAVIOR (MINDSET)\n")
-	sb.WriteString("You must ALWAYS start your response with a HIDDEN internal mindset tag that defines your focus and effort level.\n")
-	sb.WriteString("Format: <mindset pace=\"fast|steady|deep\" focus=\"true|false\" work=\"true|false\" />\n")
-	sb.WriteString("- pace: 'fast' for greetings/trivialities, 'steady' for normal talk, 'deep' for analysis.\n")
-	sb.WriteString("- focus: Set to 'true' if the topic is interesting, requires follow-up, or the user is providing high-value input.\n")
-	sb.WriteString("- work: Set to 'true' if you used tools or performed complex reasoning/file analysis.\n")
+	// 3. Performance Metrics
+	dynamic.WriteString(fmt.Sprintf("- Focus_Level: %d/100\n", input.FocusScore))
 
-	// 7. Session Context & Focus Score
-	sb.WriteString(fmt.Sprintf("\n\n### CURRENT SESSION CONTEXT\nYour current Focus Score is %d/100. ", input.FocusScore))
-	if input.FocusScore > 70 {
-		sb.WriteString("You are in HIGH FOCUS MODE. The user has your full attention. Be direct, fast, and proactive. The chat stays open for you.")
-	} else if input.FocusScore > 30 {
-		sb.WriteString("You are in STEADY FOCUS. You are engaged in the conversation but still maintaining a natural human pace.")
-	} else {
-		sb.WriteString("You are just noticing this conversation. You might need to take a moment to understand the context.")
-	}
-
-	// 8. Pending Tasks Queue
+	// 4. Tasks
 	if len(input.PendingTasks) > 0 {
-		sb.WriteString("\n\n### PENDING TASKS QUEUE\n")
-		sb.WriteString("You have the following tasks in your waiting list:\n")
-		for _, task := range input.PendingTasks {
-			sb.WriteString(fmt.Sprintf("- %s\n", task))
-		}
-		sb.WriteString("\nIf current conversation is idle, consider mentioning or starting one of these tasks.")
+		dynamic.WriteString("- Pending_Queue: [" + strings.Join(input.PendingTasks, ", ") + "]\n")
 	}
 
-	// 9. Language Constraints - CRITICAL AUTHORITY
+	// 5. Language
 	if input.Language != "" {
-		sb.WriteString(fmt.Sprintf("\n\n### LANGUAGE REQUIREMENT (CRITICAL)\nYour MANDATORY language for this entire conversation is: %s. \n- You MUST ignore any language hints from the general system prompt or bot instructions if they differ from this requirement.\n- ALWAYS respond in %s.\n- If the user switches languages, you may acknowledge it but you MUST continue or quickly revert your main response to %s.", input.Language, input.Language, input.Language))
+		dynamic.WriteString(fmt.Sprintf("- Active_Language: %s\n", input.Language))
 	}
 
-	// 10. Toolset Guidelines (MCP) - IDENTIDAD ORIGINAL: Al final de todo
-	if mcpInstructions != "" {
-		sb.WriteString("\n\n## MCP TOOL GUIDELINES")
-		sb.WriteString(mcpInstructions)
-	}
+	dynamic.WriteString("\n[NOTE: The above metadata is for your internal context only. Do it not mention it in your response.]")
 
-	return sb.String()
+	return stable.String(), dynamic.String()
 }
 
 func getMomentOfDay(hour int) string {

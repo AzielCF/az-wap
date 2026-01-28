@@ -30,6 +30,42 @@ func NewGeminiProvider(mcpService domainMCP.IMCPUsecase, cacheStore domain.Conte
 	}
 }
 
+// intuitionSystemPrompt is the fixed template for the Intuition (PreAnalyzeMindset) phase.
+// This is cached globally to reduce token costs, as it's identical across all requests.
+const intuitionSystemPrompt = `You are an emotional context and intent analyzer for a conversational AI system.
+Your job is to quickly categorize user messages to help the main AI respond appropriately.
+
+ANALYSIS RULES:
+- pace: Determine the appropriate response speed.
+  - 'fast': Simple greetings, acknowledgements, trivial messages.
+  - 'steady': Normal conversation, questions, requests.
+  - 'deep': Complex analysis, multi-step tasks, file processing.
+
+- focus: Set to true if the topic seems high priority or urgent.
+
+- work: Set to true ONLY if the message requires NEW tools, file processing, or deep analysis.
+  Do NOT set to true for simple questions or continuation of previous topics.
+
+- acknowledgement: A short, natural, human phrase to acknowledge the user while processing.
+  RULES:
+  1. Use the PRIMARY LANGUAGE specified in the context.
+  2. ONLY provide if WORK is true. Empty string otherwise.
+  3. NEVER provide if the message is a direct answer or relates to pending tasks.
+  Examples: "Un momento...", "Déjame revisar...", "One moment...", "Let me check..."
+
+- enqueue_task: If a NEW task is requested while the bot is BUSY, describe it briefly. Empty otherwise.
+
+- clear_tasks: Set to true if this message RESOLVES current pending tasks.
+
+- should_respond: Decision logic:
+  1. If message contains info for a task in the BOT AGENDA: true
+  2. If message contains a NEW COMMAND, UPDATE, or CORRECTION: true
+  3. If WORK is true: true
+  4. Set false ONLY if (IS_BUSY is true) AND (message is trivial: "ok", "vale", "gracias", "thanks", "cool")
+  5. If IS_BUSY is false: ALWAYS true
+
+Return ONLY a JSON object with these fields: pace, focus, work, acknowledgement, should_respond, enqueue_task, clear_tasks.`
+
 // Chat implementa la interfaz AIProvider enviando una petición a la API de Gemini
 func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.ChatRequest) (domain.ChatResponse, error) {
 	if b.APIKey == "" {
@@ -133,9 +169,19 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 
 	// Último mensaje del usuario (UserText)
 	if req.UserText != "" {
+		text := req.UserText
+		// Inyectar contexto dinámico como DATOS (no instrucciones) para evitar leaks
+		if req.DynamicContext != "" {
+			text = fmt.Sprintf("[SESS_DATA]\n%s\n[END_DATA]\n\nINPUT: %s", req.DynamicContext, req.UserText)
+		}
 		contents = append(contents, &genai.Content{
 			Role:  genai.RoleUser,
-			Parts: []*genai.Part{{Text: req.UserText}},
+			Parts: []*genai.Part{{Text: text}},
+		})
+	} else if req.DynamicContext != "" {
+		contents = append(contents, &genai.Content{
+			Role:  genai.RoleUser,
+			Parts: []*genai.Part{{Text: "[SESS_REFRESH]\n" + req.DynamicContext}},
 		})
 	}
 
@@ -145,7 +191,8 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	}
 
 	// CONTEXT CACHING LOGIC
-	// Threshold: 80,000 characters (~26k-32k tokens)
+	// Google requires at least 32,768 tokens for some models, but Flash 1.5/2.0 can work with ~4000.
+	// Set threshold to 5,000 chars for better responsiveness.
 	totalChars := 0
 	for _, c := range contents {
 		for _, p := range c.Parts {
@@ -155,9 +202,8 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	totalChars += len(req.SystemPrompt)
 
 	var cachedContentName string
-	if totalChars > 80000 && len(contents) > 4 && p.contextCache != nil {
-		// Cache the stable prefix (everything except the last 2 turns)
-		stablePrefixCount := len(contents) - 2
+	if totalChars > 5000 && p.contextCache != nil {
+		stablePrefixCount := len(contents) - 1
 		stablePrefix := contents[:stablePrefixCount]
 
 		fingerprint := p.calculateFingerprint(req.ChatKey, req.SystemPrompt, stablePrefix, functionDecls)
@@ -166,25 +212,24 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 		if entry, err := p.contextCache.Get(ctx, fingerprint); err == nil && entry != nil {
 			if time.Now().Before(entry.ExpiresAt) {
 				cachedContentName = entry.Name
-				contents = contents[stablePrefixCount:] // Only send new content
+				contents = contents[stablePrefixCount:]
 				logrus.WithFields(logrus.Fields{
-					"chat_key":      req.ChatKey,
-					"cache_name":    cachedContentName,
-					"total_chars":   totalChars,
-					"stable_prefix": stablePrefixCount,
-				}).Debug("[CACHE_HIT] Context cache reused")
+					"chat_key":       req.ChatKey,
+					"cache_name":     cachedContentName,
+					"cached_actions": stablePrefixCount,
+				}).Info("[CACHE_HIT] Reusing chat context cache")
 			}
 		}
 
 		if cachedContentName == "" {
-			// Create new cache
 			ttl := 1 * time.Hour
 			cReq := &genai.CreateCachedContentConfig{
-				Contents: stablePrefix,
-				TTL:      ttl,
+				DisplayName: fmt.Sprintf("chat:%s", req.ChatKey),
+				Contents:    stablePrefix,
+				TTL:         ttl,
 			}
 			if req.SystemPrompt != "" {
-				cReq.SystemInstruction = genai.NewContentFromText(req.SystemPrompt, genai.RoleUser)
+				cReq.SystemInstruction = genai.NewContentFromText(req.SystemPrompt, "")
 			}
 			if len(functionDecls) > 0 {
 				cReq.Tools = []*genai.Tool{{FunctionDeclarations: functionDecls}}
@@ -193,22 +238,26 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 			cache, cErr := client.Caches.Create(ctx, model, cReq)
 			if cErr == nil {
 				cachedContentName = cache.Name
-				// Store in cache with safety margin (55 min for 1 hour TTL)
 				_ = p.contextCache.Save(ctx, fingerprint, &domain.ContextCacheEntry{
-					Name:      cache.Name,
-					ExpiresAt: time.Now().Add(55 * time.Minute),
-					Model:     model,
+					Name:        cache.Name,
+					ExpiresAt:   time.Now().Add(55 * time.Minute),
+					Model:       model,
+					Type:        domain.CacheTypeChat,
+					Scope:       req.ChatKey,
+					Description: fmt.Sprintf("Chat: %s (Key: %s)", b.Name, req.ChatKey),
+					Fingerprint: fingerprint,
+					Provider:    "gemini",
 				}, 55*time.Minute)
-				contents = contents[stablePrefixCount:] // Only send new content
+
+				contents = contents[stablePrefixCount:]
 				logrus.WithFields(logrus.Fields{
-					"chat_key":        req.ChatKey,
-					"cache_name":      cachedContentName,
-					"total_chars":     totalChars,
-					"cached_turns":    stablePrefixCount,
-					"remaining_turns": len(contents),
-				}).Debug("[CACHE_CREATED] New context cache created")
-			} else {
-				logrus.WithField("error", cErr.Error()).Warn("[CACHE_ERROR] Failed to create context cache")
+					"chat_key":   req.ChatKey,
+					"cache_name": cachedContentName,
+					"chars":      totalChars,
+					"bot":        b.Name,
+				}).Info("[CACHE_CREATED] New stable context cache created for specific chat")
+			} else if !strings.Contains(cErr.Error(), "too small") {
+				logrus.WithError(cErr).Warn("[CACHE_ERROR] Failed to create context cache")
 			}
 		}
 	}
@@ -218,7 +267,6 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	}
 	if cachedContentName != "" {
 		genConfig.CachedContent = cachedContentName
-		// Si usamos cache, el SystemInstruction y Tools ya están en el cache
 		genConfig.SystemInstruction = nil
 		genConfig.Tools = nil
 	}
@@ -226,17 +274,9 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	p.applyThinking(genConfig, model, "dynamic")
 
 	// --- TOKEN INTELLIGENCE (Estimation) ---
-	estimateTokens := func(text string) int {
-		if text == "" {
-			return 0
-		}
-		return len(text) / 4
-	}
-	systemTokens := estimateTokens(req.SystemPrompt)
+	systemTokens := p.estimateTokens(req.SystemPrompt)
 
-	// Intelligent User Token Estimation:
-	// The orchestrator moves UserText to History for normalization.
-	// If UserText is empty, we treat the last user message in history as the "User Input" for metrics.
+	// Intelligent User Token Estimation
 	textToEstimate := req.UserText
 	if textToEstimate == "" && len(req.History) > 0 {
 		lastTurn := req.History[len(req.History)-1]
@@ -244,7 +284,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 			textToEstimate = lastTurn.Text
 		}
 	}
-	userTokens := estimateTokens(textToEstimate)
+	userTokens := p.estimateTokens(textToEstimate)
 
 	result, err := p.generateContentWithRetry(ctx, client, model, contents, genConfig)
 	if err != nil {
@@ -447,6 +487,7 @@ func (p *GeminiProvider) PreAnalyzeMindset(ctx context.Context, b domainBot.Bot,
 		model = domainBot.DefaultGeminiLiteModel
 	}
 
+	// Build dynamic context for user prompt
 	isBusy := false
 	if input.LastMindset != nil && input.LastMindset.Work {
 		isBusy = true
@@ -472,37 +513,58 @@ func (p *GeminiProvider) PreAnalyzeMindset(ctx context.Context, b domainBot.Bot,
 		langCtx = fmt.Sprintf("\n- PRIMARY LANGUAGE: %s. Use ONLY this language for the acknowledgement.", input.Language)
 	}
 
-	prompt := fmt.Sprintf(`Analyze the following user message and determine the emotional context.
-User message: "%s"
+	// User prompt contains ONLY dynamic data (message, history, context)
+	userPrompt := fmt.Sprintf(`Analyze this user message and provide your analysis.
+
+USER MESSAGE:
+"%s"
 
 CONTEXT:
-- Recent History:
+- Recent conversation history:
 %s
-- Is bot busy with a previous task? %v
+- Is the bot currently busy with a previous task? %v
 - %s%s
 
-Categorize into:
-- pace: 'fast', 'steady', 'deep'.
-- focus: true if topic is high priority.
-- work: true ONLY if message requires NEW tools or deep analysis.
-- acknowledgement: A short, natural, human phrase. 
-  RULES FOR ACK:
-  1. If PRIMARY LANGUAGE is provided, YOU MUST strictly use it for the acknowledgement.
-     - Example (ES): "Un momento, estoy analizando los archivos..."
-     - Example (EN): "One moment, I'm analyzing the files..."
-     - Example (FR): "Un instant, j'analyse les fichiers..."
-  2. ONLY provide if WORK is true. Empty otherwise.
-  3. NEVER provide if this message is a direct answer to your previous question or relates to a task in the Agenda.
-- enqueue_task: If NEW task is requested while BUSY, describe it. Empty otherwise.
-- clear_tasks: true if this message RESOLVES current pending tasks.
-- should_respond: Decisions:
-  1. If message contains info for a task in the BOT AGENDA, set should_respond=true.
-  2. If message contains a NEW COMMAND, UPDATE, or CORRECTION, set should_respond=true.
-  3. If WORK is true, set should_respond=true.
-  4. Set should_respond=false ONLY if (IS_BUSY is true) AND (message is Trivial: "ok", "vale", "gracias", "merci", "cool", "thanks", "ça marche").
-  5. If IS_BUSY is false, ALWAYS set should_respond=true.
+Now categorize this message according to the system rules.`, input.Text, histStr.String(), isBusy, agendaStr.String(), langCtx)
 
-Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, agendaStr.String(), langCtx)
+	// Try to get or create cached content for the system prompt
+	cacheFingerprint := fmt.Sprintf("global:intuition:%s", model)
+	var cacheName string
+	systemCached := false
+
+	if p.contextCache != nil {
+		entry, _ := p.contextCache.Get(ctx, cacheFingerprint)
+		if entry != nil && time.Now().Before(entry.ExpiresAt) {
+			cacheName = entry.Name
+			systemCached = true
+			logrus.WithFields(logrus.Fields{
+				"cache": cacheName,
+				"model": model,
+			}).Info("[GEMINI] Using existing intuition cache")
+		} else {
+			// Create new cache in Gemini
+			logrus.WithField("model", model).Info("[GEMINI] Checking intuition cache eligibility...")
+			cacheName, err = p.createExplicitCache(ctx, client, model, "intuition-system-prompt", intuitionSystemPrompt)
+			if err != nil {
+				logrus.WithError(err).Warn("[GEMINI] Failed to create intuition cache, proceeding without cache")
+			} else if cacheName != "" {
+				// Save to local store
+				ttl := 55 * time.Minute // Slightly less than Gemini's 1 hour default
+				_ = p.contextCache.Save(ctx, cacheFingerprint, &domain.ContextCacheEntry{
+					Name:        cacheName,
+					ExpiresAt:   time.Now().Add(ttl),
+					Model:       model,
+					Type:        domain.CacheTypeGlobal,
+					Scope:       "",
+					Description: "Intuition System Prompt",
+					Fingerprint: cacheFingerprint,
+					Provider:    "gemini",
+				}, ttl)
+				systemCached = true
+				logrus.WithField("cache", cacheName).Info("[GEMINI] Created new intuition cache")
+			}
+		}
+	}
 
 	cfg := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
@@ -521,9 +583,18 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 		},
 	}
 
+	// If we have a cache, use it; otherwise include system instruction directly
+	if cacheName != "" {
+		cfg.CachedContent = cacheName
+	} else {
+		cfg.SystemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: intuitionSystemPrompt}},
+		}
+	}
+
 	p.applyThinking(cfg, model, "off")
 
-	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: prompt}}}}
+	contents := []*genai.Content{{Role: "user", Parts: []*genai.Part{{Text: userPrompt}}}}
 	result, err := p.generateContentWithRetry(ctx, client, model, contents, cfg)
 	if err != nil {
 		// If it's an authentication or permission error, we MUST return it to let the user know.
@@ -532,8 +603,26 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 			return nil, nil, fmt.Errorf("intuition phase failed with critical error: %w", err)
 		}
 
-		logrus.WithError(err).Warn("[GEMINI] Intuition phase failed, using safe fallback")
-		return &domain.Mindset{Pace: "steady", ShouldRespond: true}, nil, nil // Fallback with ShouldRespond=true
+		// If cache-related error, invalidate and retry without cache
+		if strings.Contains(errStr, "cached") || strings.Contains(errStr, "not found") {
+			if p.contextCache != nil {
+				_ = p.contextCache.Delete(ctx, cacheFingerprint)
+			}
+			logrus.Warn("[GEMINI] Cache error, retrying intuition without cache")
+			cfg.CachedContent = ""
+			cfg.SystemInstruction = &genai.Content{
+				Parts: []*genai.Part{{Text: intuitionSystemPrompt}},
+			}
+			result, err = p.generateContentWithRetry(ctx, client, model, contents, cfg)
+			if err != nil {
+				logrus.WithError(err).Warn("[GEMINI] Intuition phase failed, using safe fallback")
+				return &domain.Mindset{Pace: "steady", ShouldRespond: true}, nil, nil
+			}
+			systemCached = false
+		} else {
+			logrus.WithError(err).Warn("[GEMINI] Intuition phase failed, using safe fallback")
+			return &domain.Mindset{Pace: "steady", ShouldRespond: true}, nil, nil
+		}
 	}
 
 	var usage *domain.UsageStats
@@ -541,27 +630,32 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 		usage = p.extractUsage(model, result.UsageMetadata)
 
 		// Token Intelligence for Intuition
-		// Estimate components to breakdown the monolithic prompt
-		estUser := len(input.Text) / 4
-		if estUser == 0 && input.Text != "" {
-			estUser = 1
-		}
-		estHistory := len(histStr.String()) / 4
+		estUser := p.estimateTokens(input.Text)
+		estHistory := p.estimateTokens(histStr.String())
 
 		usage.UserTokens = estUser
 		usage.HistoryTokens = estHistory
-		// The rest is the "System" template logic
-		usage.SystemTokens = usage.InputTokens - estUser - estHistory
-		if usage.SystemTokens < 0 {
-			usage.SystemTokens = 0
+
+		// If system was cached, CachedTokens should reflect the system prompt tokens
+		if systemCached && usage.CachedTokens > 0 {
+			usage.SystemTokens = usage.CachedTokens
+		} else {
+			usage.SystemTokens = usage.InputTokens - estUser - estHistory
+			if usage.SystemTokens < 0 {
+				usage.SystemTokens = 0
+			}
 		}
 
+		// Mark if system prompt came from cache
+		usage.SystemCached = systemCached
+
 		logrus.WithFields(logrus.Fields{
-			"stage":   "intuition",
-			"cost":    usage.CostUSD,
-			"system":  usage.SystemTokens,
-			"user":    usage.UserTokens,
-			"history": usage.HistoryTokens,
+			"stage":         "intuition",
+			"cost":          usage.CostUSD,
+			"system":        usage.SystemTokens,
+			"user":          usage.UserTokens,
+			"history":       usage.HistoryTokens,
+			"system_cached": systemCached,
 		}).Debug("[USAGE] Intuition cost recorded")
 	}
 
@@ -573,7 +667,53 @@ Return ONLY a JSON with these fields.`, input.Text, histStr.String(), isBusy, ag
 	return &mindset, usage, nil
 }
 
+// createExplicitCache creates a new cached content in Gemini for long-lived system prompts.
+func (p *GeminiProvider) createExplicitCache(ctx context.Context, client *genai.Client, model, name, content string) (string, error) {
+	// Gemini requires explicit model version for caching
+	isExplicit := strings.Contains(model, "-001") || strings.Contains(model, "-002") || strings.Contains(model, "-preview") || strings.Contains(model, "-02-05")
+	if !isExplicit && !strings.Contains(model, "flash") && !strings.Contains(model, "pro") {
+		return "", nil
+	}
+
+	// Validate minimum tokens (Google requires at least 2048-32768 depending on the model, usually 4096 for flash)
+	// We use our local estimator to avoid an extra API call.
+	estimated := p.estimateTokens(content)
+	if estimated < 4000 { // Use 4000 as safety threshold
+		logrus.WithFields(logrus.Fields{
+			"tokens": estimated,
+			"name":   name,
+		}).Debug("[GEMINI] Prompt too small for explicit caching, skipping API call")
+		return "", nil
+	}
+
+	ttl := 1 * time.Hour
+	cache, err := client.Caches.Create(ctx, model, &genai.CreateCachedContentConfig{
+		DisplayName: name,
+		SystemInstruction: &genai.Content{
+			Parts: []*genai.Part{{Text: content}},
+		},
+		TTL: ttl,
+	})
+	if err != nil {
+		// If it's still a "too small" error from Google, just ignore it and return empty
+		if strings.Contains(err.Error(), "too small") {
+			logrus.WithField("tokens", estimated).Debug("[GEMINI] Google reported content too small for cache")
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to create cache: %w", err)
+	}
+
+	return cache.Name, nil
+}
+
 // Privados utilitarios
+
+func (p *GeminiProvider) estimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	return len(text) / 4
+}
 
 func (p *GeminiProvider) convertMCPSchemaToAI(input interface{}) *genai.Schema {
 	data, _ := json.Marshal(input)

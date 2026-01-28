@@ -239,7 +239,12 @@ func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
 			logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
 			cred, err := s.credService.GetByID(ctx, b.CredentialID)
 			if err != nil {
-				logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
+				// Handle case where credential record doesn't exist anymore
+				if strings.Contains(err.Error(), "not found") {
+					logrus.Warnf("[BOT] Credential %s linked to bot %s NOT FOUND in database. Falling back to other keys.", b.CredentialID, b.ID)
+				} else {
+					logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
+				}
 			} else {
 				isAI := cred.Kind == domainCredential.KindAI ||
 					cred.Kind == domainCredential.KindGemini ||
