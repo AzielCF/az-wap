@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	AppVersion             = "v2.0.0-beta.11"
+	AppVersion             = "v2.0.0-beta.12"
 	AppPort                = "3000"
 	AppDebug               = false
 	AppOs                  = "AzielCf"
@@ -76,6 +76,13 @@ var (
 	OpenAIAPIKey string
 	ClaudeAPIKey string
 	AIApiKey     string
+
+	// Valkey (Redis-compatible) configuration
+	ValkeyEnabled   bool   = false
+	ValkeyAddress   string = "localhost:6379"
+	ValkeyPassword  string = ""
+	ValkeyDB        int    = 0
+	ValkeyKeyPrefix string = "azwap:"
 )
 
 func init() {
@@ -173,6 +180,30 @@ func init() {
 	}
 	if v := os.Getenv("AI_API_KEY"); v != "" {
 		AIApiKey = v
+	}
+
+	// Load Valkey config from Env
+	if v := os.Getenv("VALKEY_ENABLED"); v != "" {
+		switch strings.ToLower(v) {
+		case "1", "true", "yes", "y", "on":
+			ValkeyEnabled = true
+		case "0", "false", "no", "n", "off":
+			ValkeyEnabled = false
+		}
+	}
+	if v := os.Getenv("VALKEY_ADDRESS"); v != "" {
+		ValkeyAddress = v
+	}
+	if v := os.Getenv("VALKEY_PASSWORD"); v != "" {
+		ValkeyPassword = v
+	}
+	if v := os.Getenv("VALKEY_DB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			ValkeyDB = n
+		}
+	}
+	if v := os.Getenv("VALKEY_KEY_PREFIX"); v != "" {
+		ValkeyKeyPrefix = v
 	}
 }
 
