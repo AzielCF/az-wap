@@ -141,6 +141,13 @@ func (wa *WhatsAppAdapter) SetOnline(ctx context.Context, online bool) error {
 		return nil
 	}
 
+	// CRITICAL: whatsmeow cannot send presence if PushName is not yet synchronized/set.
+	// This happens frequently with new devices or during initial login.
+	if wa.client.Store.PushName == "" {
+		logrus.Debugf("[WHATSAPP] SetOnline(%v) skipped: PushName not set for %s (New device or re-logging)", online, wa.channelID)
+		return nil
+	}
+
 	presence := types.PresenceAvailable
 	if !online {
 		presence = types.PresenceUnavailable
@@ -149,9 +156,10 @@ func (wa *WhatsAppAdapter) SetOnline(ctx context.Context, online bool) error {
 	logrus.Infof("[WHATSAPP] Setting visual presence to %v for channel %s", online, wa.channelID)
 	err := wa.client.SendPresence(ctx, presence)
 	if err != nil {
-		logrus.WithError(err).Errorf("[WHATSAPP] Failed to set visual presence for channel %s", wa.channelID)
+		// Log as warning instead of error if it's a known non-critical business failure
+		logrus.WithError(err).Warnf("[WHATSAPP] Failed to set visual presence for channel %s", wa.channelID)
 	}
-	return err
+	return nil // Don't return error to caller to avoid cascading failures
 }
 
 // Stop removes the event handler

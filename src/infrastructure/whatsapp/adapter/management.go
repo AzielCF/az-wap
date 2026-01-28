@@ -55,7 +55,12 @@ func (wa *WhatsAppAdapter) LoginWithCode(ctx context.Context, phone string) (str
 		return "", fmt.Errorf("client not initialized")
 	}
 
-	// Ensure connected
+	// Ensure connected and clean state
+	if wa.client.IsConnected() && !wa.client.IsLoggedIn() {
+		logrus.Info("[WHATSAPP] Client already connected but not logged in, refreshing connection for pairing code...")
+		wa.client.Disconnect()
+	}
+
 	if !wa.client.IsConnected() {
 		if err := wa.client.Connect(); err != nil {
 			return "", fmt.Errorf("failed to connect: %w", err)
@@ -67,11 +72,27 @@ func (wa *WhatsAppAdapter) LoginWithCode(ctx context.Context, phone string) (str
 	}
 
 	// Request pairing code
-	// Using Chrome client type for broad compatibility.
+	logrus.WithFields(logrus.Fields{
+		"phone":   phone,
+		"length":  len(phone),
+		"channel": wa.channelID,
+	}).Info("[WHATSAPP] Requesting pairing code...")
+
 	code, err := wa.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"phone":   phone,
+			"channel": wa.channelID,
+			"error":   err.Error(),
+		}).Error("[WHATSAPP] Pairing failed (server error)")
 		return "", fmt.Errorf("pairing failed: %w", err)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"phone":   phone,
+		"channel": wa.channelID,
+		"code":    code,
+	}).Info("[WHATSAPP] Pairing code generated successfully")
 
 	return code, nil
 }

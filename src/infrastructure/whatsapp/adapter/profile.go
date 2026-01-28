@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
@@ -248,8 +249,32 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 		return identifier, fmt.Errorf("no client available")
 	}
 
+	// 0. Ensure client is connected and logged in before attempting resolution
+	if !wa.client.IsLoggedIn() {
+		return identifier, fmt.Errorf("client not logged in")
+	}
+
+	if !wa.client.IsConnected() {
+		logrus.Infof("[WHATSAPP] ResolveIdentity: Client disconnected for %s, attempting resume...", wa.channelID)
+		_ = wa.Resume(ctx)
+		// Wait a bit for connection
+		time.Sleep(2 * time.Second)
+		if !wa.client.IsConnected() {
+			return identifier, fmt.Errorf("client not connected and failed to resume")
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"identifier": identifier,
+		"channel":    wa.channelID,
+	}).Info("[WHATSAPP] Resolving identity...")
+
 	var targetJID types.JID
 	var err error
+
+	// Create a sub-context with timeout to avoid getting stuck
+	queryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 
 	// 1. Determine base JID
 	if strings.Contains(identifier, "@") {
@@ -264,37 +289,67 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 			return identifier, fmt.Errorf("could not extract a valid phone number")
 		}
 
-		// Try to verify on WhatsApp
-		resp, err := wa.client.IsOnWhatsApp(ctx, []string{id})
-		if err != nil || len(resp) == 0 || !resp[0].IsIn {
-			// Second attempt: maybe it needs a prefix or is already a partial jid-like
-			if !strings.HasSuffix(id, "@s.whatsapp.net") {
-				testJID := types.NewJID(id, types.DefaultUserServer)
-				info, err := wa.client.GetUserInfo(ctx, []types.JID{testJID})
-				if err == nil && len(info) > 0 {
-					targetJID = testJID
-				} else {
-					return identifier, fmt.Errorf("identity not found on WhatsApp")
-				}
-			} else {
-				return identifier, fmt.Errorf("identity not found on WhatsApp")
-			}
-		} else {
+		// LOGIC: We will try 3 paths to ensure we find the user
+		// Path A: IsOnWhatsApp with raw digits
+		// Path B: IsOnWhatsApp with @s.whatsapp.net suffix
+		// Path C: GetUserInfo directly
+
+		found := false
+
+		// Attempt Path A
+		resp, err := wa.client.IsOnWhatsApp(queryCtx, []string{id})
+		if err == nil && len(resp) > 0 && resp[0].IsIn {
 			targetJID = resp[0].JID
+			found = true
+			logrus.Debugf("[WHATSAPP] Found %s via Path A (Raw IsOnWA)", id)
+		} else {
+			// Attempt Path B
+			jidStr := id + "@s.whatsapp.net"
+			resp, err := wa.client.IsOnWhatsApp(queryCtx, []string{jidStr})
+			if err == nil && len(resp) > 0 && resp[0].IsIn {
+				targetJID = resp[0].JID
+				found = true
+				logrus.Debugf("[WHATSAPP] Found %s via Path B (JID IsOnWA)", id)
+			}
+		}
+
+		if !found {
+			// Attempt Path C: GetUserInfo
+			testJID := types.NewJID(id, types.DefaultUserServer)
+			info, err := wa.client.GetUserInfo(queryCtx, []types.JID{testJID})
+			if err == nil && len(info) > 0 {
+				targetJID = testJID
+				found = true
+				logrus.Debugf("[WHATSAPP] Found %s via Path C (GetUserInfo)", id)
+			}
+		}
+
+		if !found {
+			logrus.Warnf("[WHATSAPP] %s NOT FOUND on WhatsApp after trying all paths.", id)
+			return identifier, fmt.Errorf("identity not found on WhatsApp")
 		}
 	}
 
 	// 2. Resolve LID via GetUserInfo - USER REQUIRES ONLY LID, NEVER JID
-	info, err := wa.client.GetUserInfo(ctx, []types.JID{targetJID})
+	// Use a fresh timeout context for LID resolution too
+	lidCtx, lidCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer lidCancel()
+
+	info, err := wa.client.GetUserInfo(lidCtx, []types.JID{targetJID})
 	if err == nil {
 		if u, ok := info[targetJID]; ok {
 			lid := u.LID
 			if !lid.IsEmpty() {
+				logrus.WithFields(logrus.Fields{
+					"target": targetJID.String(),
+					"lid":    lid.String(),
+				}).Info("[WHATSAPP] LID Resolved successfully")
 				return lid.String(), nil
 			}
 		}
 	}
 
+	logrus.Warnf("[WHATSAPP] Could not resolve LID for %s (JID found: %s, Error: %v)", identifier, targetJID, err)
 	// NO LID found - return error, never fallback to JID
 	return "", fmt.Errorf("could not resolve LID for this identity")
 }
