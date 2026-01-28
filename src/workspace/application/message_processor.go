@@ -150,14 +150,22 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		input.Metadata["session_resources"] = resList
 	}
 
+	processedPaths := make(map[string]bool)
+
 	if msg.Media != nil {
 		if m := p.loadBotMedia(msg.Media); m != nil {
-			input.Medias = append(input.Medias, m)
+			if !processedPaths[m.LocalPath] {
+				input.Medias = append(input.Medias, m)
+				processedPaths[m.LocalPath] = true
+			}
 		}
 	}
 	for _, m := range msg.Medias {
 		if bm := p.loadBotMedia(m); bm != nil {
-			input.Medias = append(input.Medias, bm)
+			if !processedPaths[bm.LocalPath] {
+				input.Medias = append(input.Medias, bm)
+				processedPaths[bm.LocalPath] = true
+			}
 		}
 	}
 
@@ -207,12 +215,46 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 			}
 		}
 
-		// Memory
-		if input.Text != "" {
-			entry.Memory.AddTurn("user", input.Text, 10)
+		// Persistence of Memory and Session State
+		// 1. Add User Turn (Use enriched text from bot if available, otherwise original input)
+		userTextToStore := input.Text
+		if output.UserText != "" {
+			userTextToStore = output.UserText
 		}
+
+		if userTextToStore != "" {
+			entry.Memory.AddTurn("user", userTextToStore, 10)
+		}
+
+		// 2. Add Assistant Turn (Bot Response)
+		// We use assistant text if available
 		if output.Text != "" {
 			entry.Memory.AddTurn("assistant", output.Text, 10)
+		}
+
+		// Update focus and tasks based on Mindset
+		if output.Mindset != nil {
+			if output.Mindset.EnqueueTask != "" {
+				entry.PendingTasks = append(entry.PendingTasks, output.Mindset.EnqueueTask)
+			}
+			if output.Mindset.ClearTasks {
+				entry.PendingTasks = nil
+			}
+			if output.Mindset.Focus {
+				entry.FocusScore += 25
+			}
+			if output.Mindset.Pace == "fast" {
+				entry.FocusScore += 10
+			}
+			if entry.FocusScore > 100 {
+				entry.FocusScore = 100
+			}
+		}
+
+		// CRITICAL: Persist the modified entry back to the store (Valkey/Memory)
+		// Active sessions use a 4-minute sliding window via orchestrator, but we re-save here to persist history
+		if err := p.orchestrator.store.Save(ctx, key, entry, 4*time.Minute); err != nil {
+			logrus.WithError(err).Errorf("[MessageProcessor] Failed to persist session history for %s", key)
 		}
 	}
 
@@ -263,6 +305,11 @@ func (p *MessageProcessor) PrepareSessionFile(workspaceID, channelID, sessionKey
 
 	if friendlyName != "" && fileHash != "" {
 		entry.Memory.AddResource(friendlyName, fileHash, mimeType, fullPath)
+	}
+
+	// CRITICAL: Persist the entry so the bot can see the resources in the session memory
+	if err := p.orchestrator.store.Save(context.Background(), sessionKey, entry, 4*time.Minute); err != nil {
+		logrus.WithError(err).Errorf("[MessageProcessor] Failed to persist session after adding resource %s", friendlyName)
 	}
 
 	return fullPath, nil

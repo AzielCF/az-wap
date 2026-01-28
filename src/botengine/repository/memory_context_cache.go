@@ -70,6 +70,21 @@ func (s *MemoryContextCacheStore) Cleanup(ctx context.Context) error {
 	return nil
 }
 
+// List returns all active (non-expired) cache entries for UI inspection.
+func (s *MemoryContextCacheStore) List(ctx context.Context) ([]*domain.ContextCacheEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	var result []*domain.ContextCacheEntry
+	for _, entry := range s.entries {
+		if now.Before(entry.ExpiresAt) {
+			result = append(result, entry)
+		}
+	}
+	return result, nil
+}
+
 func (s *MemoryContextCacheStore) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()

@@ -290,6 +290,12 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			if usageInt.HistoryTokens > 0 {
 				md["usage_history_tokens"] = fmt.Sprintf("%d", usageInt.HistoryTokens)
 			}
+			if usageInt.SystemCached {
+				md["system_cached"] = "true"
+			}
+			if usageInt.CachedTokens > 0 {
+				md["usage_cached_tokens"] = fmt.Sprintf("%d", usageInt.CachedTokens)
+			}
 		}
 		botmonitor.Record(botmonitor.Event{
 			TraceID:    input.TraceID,
@@ -433,8 +439,8 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		}
 	}
 
-	// A. Construir instrucciones del sistema
-	systemPrompt := e.prompter.BuildSystemInstructions(b, input, mcpInstructions.String())
+	// A. Construir instrucciones del sistema (Separadas en Estable y Dinámica para Cache inteligente)
+	stablePrompt, dynamicCtx := e.prompter.BuildInstructionsSplit(b, input, mcpInstructions.String())
 
 	// B. Interpretar medios y enriquecer input
 	var interpreter *application.Interpreter
@@ -498,12 +504,13 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	}
 
 	req := domain.ChatRequest{
-		SystemPrompt: systemPrompt,
-		History:      chatHistory,
-		Tools:        tools,
-		UserText:     finalUserText,
-		Model:        b.Model,
-		ChatKey:      input.InstanceID + "|" + input.ChatID,
+		SystemPrompt:   stablePrompt,
+		DynamicContext: dynamicCtx,
+		History:        chatHistory,
+		Tools:          tools,
+		UserText:       finalUserText,
+		Model:          b.Model,
+		ChatKey:        input.InstanceID + "|" + input.ChatID,
 	}
 
 	// D. Ejecutar Orquestador (Ciclo de herramientas)

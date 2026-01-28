@@ -27,10 +27,32 @@ func (i *Interpreter) EnrichInput(ctx context.Context, model string, input domai
 		return input.Text, nil, nil
 	}
 
+	// Map for quick friendly name lookup by path
+	friendlyNames := make(map[string]string)
+	if resList, ok := input.Metadata["session_resources"].([]map[string]string); ok {
+		for _, res := range resList {
+			if path, ok := res["path"]; ok {
+				friendlyNames[path] = res["name"]
+			}
+		}
+	}
+
 	var toAnalyze []*domain.BotMedia
 	var resourceNotes []string
 
+	processed := make(map[string]bool)
+
 	for _, m := range input.Medias {
+		if m == nil || processed[m.LocalPath] {
+			continue
+		}
+		processed[m.LocalPath] = true
+
+		displayName := m.FileName
+		if fn, ok := friendlyNames[m.LocalPath]; ok && fn != "" {
+			displayName = fn
+		}
+
 		if m.State == domain.MediaStateAnalyzed {
 			toAnalyze = append(toAnalyze, m)
 		} else {
@@ -38,7 +60,7 @@ func (i *Interpreter) EnrichInput(ctx context.Context, model string, input domai
 			if m.State == domain.MediaStateBlocked {
 				stateLabel = "BLOCKED"
 			}
-			resourceNotes = append(resourceNotes, fmt.Sprintf("[RESOURCE %s: %s (ID: %s)]", stateLabel, m.FileName, m.LocalPath))
+			resourceNotes = append(resourceNotes, fmt.Sprintf("[RESOURCE %s: %s]", stateLabel, displayName))
 		}
 	}
 
@@ -52,26 +74,25 @@ func (i *Interpreter) EnrichInput(ctx context.Context, model string, input domai
 		contextParts = append(contextParts, input.Text)
 
 		for j, t := range res.Transcriptions {
-			contextParts = append(contextParts, fmt.Sprintf("[Audio %d Transcription]: %s", j+1, t))
+			contextParts = append(contextParts, fmt.Sprintf("[Audio %d]: %s", j+1, t))
 		}
 		for j, d := range res.Descriptions {
-			contextParts = append(contextParts, fmt.Sprintf("[Image %d Description]: %s", j+1, d))
+			contextParts = append(contextParts, fmt.Sprintf("[Image %d]: %s", j+1, d))
 		}
 		for j, s := range res.Summaries {
-			contextParts = append(contextParts, fmt.Sprintf("[Document %d Summary]: %s", j+1, s))
+			contextParts = append(contextParts, fmt.Sprintf("[Document %d]: %s", j+1, s))
 		}
 		for j, v := range res.VideoSummaries {
-			contextParts = append(contextParts, fmt.Sprintf("[Video %d Analysis]: %s", j+1, v))
+			contextParts = append(contextParts, fmt.Sprintf("[Video %d]: %s", j+1, v))
 		}
 
 		if len(resourceNotes) > 0 {
-			contextParts = append(contextParts, "\n--- RESOURCE INDEX ---")
 			contextParts = append(contextParts, resourceNotes...)
 		}
 
 		return strings.Join(contextParts, "\n\n"), usage, nil
 	} else if len(resourceNotes) > 0 {
-		return input.Text + "\n\n--- RESOURCE INDEX ---\n" + strings.Join(resourceNotes, "\n"), nil, nil
+		return input.Text + "\n\n" + strings.Join(resourceNotes, "\n"), nil, nil
 	}
 
 	return input.Text, nil, nil

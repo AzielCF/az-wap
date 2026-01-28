@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// CacheType constants for categorizing cache entries
+const (
+	CacheTypeGlobal = "global" // Shared across all bots (e.g., intuition system prompt)
+	CacheTypeBot    = "bot"    // Specific to a bot (e.g., bot's system prompt)
+	CacheTypeChat   = "chat"   // Specific to a chat session (e.g., long conversation history)
+)
+
 // ContextCacheEntry represents a cached context reference for AI providers.
 // This is used to store references to provider-side caches (e.g., Gemini's CachedContent).
 type ContextCacheEntry struct {
@@ -14,6 +21,16 @@ type ContextCacheEntry struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	// Model is the AI model this cache was created for
 	Model string `json:"model,omitempty"`
+	// Type categorizes the cache: "global", "bot", or "chat"
+	Type string `json:"type,omitempty"`
+	// Scope identifies the owner: "" for global, BotID for bot, ChatKey for chat
+	Scope string `json:"scope,omitempty"`
+	// Description is a human-readable label for UI display
+	Description string `json:"description,omitempty"`
+	// Fingerprint is the key used to store this entry (for reference)
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// Provider indicates which AI provider owns this cache (e.g., "gemini", "openai")
+	Provider string `json:"provider,omitempty"`
 }
 
 // ContextCacheStore defines the contract for storing AI context cache references.
@@ -32,4 +49,7 @@ type ContextCacheStore interface {
 
 	// Cleanup removes all expired entries. Called periodically.
 	Cleanup(ctx context.Context) error
+
+	// List returns all active (non-expired) cache entries for UI inspection.
+	List(ctx context.Context) ([]*ContextCacheEntry, error)
 }

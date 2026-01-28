@@ -9,21 +9,26 @@ import (
 
 // ChatRequest es una petición agnóstica de chat
 type ChatRequest struct {
-	SystemPrompt string
-	History      []ChatTurn
-	Tools        []domainMcp.Tool
-	UserText     string
-	Model        string
-	ChatKey      string // Identificador único de sesión (ej: InstanceID|ChatID)
+	SystemPrompt   string
+	DynamicContext string // Contexto dinámico que cambia en cada mensaje (hora, focus score, etc.)
+	History        []ChatTurn
+	Tools          []domainMcp.Tool
+	UserText       string
+	Model          string
+	ChatKey        string // Identificador único de sesión (ej: InstanceID|ChatID)
 }
 
 // UsageStats contiene estadísticas de tokens y costo de una respuesta
 type UsageStats struct {
-	Model        string  `json:"model"` // Nombre del modelo que generó el gasto
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	CachedTokens int     `json:"cached_tokens"`
-	CostUSD      float64 `json:"cost_usd"`
+	Model         string  `json:"model"` // Nombre del modelo que generó el gasto
+	InputTokens   int     `json:"input_tokens"`
+	OutputTokens  int     `json:"output_tokens"`
+	CachedTokens  int     `json:"cached_tokens"` // Tokens recuperados de la caché
+	SystemTokens  int     `json:"system_tokens,omitempty"`
+	UserTokens    int     `json:"user_tokens,omitempty"`
+	HistoryTokens int     `json:"history_tokens,omitempty"`
+	SystemCached  bool    `json:"system_cached,omitempty"` // True if system prompt came from cache
+	CostUSD       float64 `json:"cost_usd"`
 }
 
 // ChatResponse es la respuesta agnóstica de un proveedor de IA

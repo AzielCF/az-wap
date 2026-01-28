@@ -100,6 +100,7 @@ type ExecutionCost struct {
 // BotOutput es la estructura de respuesta generada por el cerebro del bot
 type BotOutput struct {
 	Text        string          `json:"text"`
+	UserText    string          `json:"user_text,omitempty"` // Texto de entrada enriquecido (transcripciones, etc.)
 	Action      string          `json:"action,omitempty"`
 	Metadata    map[string]any  `json:"metadata,omitempty"`
 	Mindset     *Mindset        `json:"mindset,omitempty"`

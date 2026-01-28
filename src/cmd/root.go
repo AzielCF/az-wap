@@ -50,6 +50,7 @@ import (
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 
+	botDomain "github.com/AzielCF/az-wap/botengine/domain"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
@@ -100,12 +101,13 @@ var (
 	botEngine *botengine.Engine
 
 	// Workspace
-	workspaceDB      *sql.DB
-	wkRepo           repository.IWorkspaceRepository
-	workspaceManager *workspace.Manager
-	wkUsecase        *workspaceUsecaseLayer.WorkspaceUsecase
-	typingStore      channel.TypingStore
-	monitorStore     monitoring.MonitoringStore
+	workspaceDB       *sql.DB
+	wkRepo            repository.IWorkspaceRepository
+	workspaceManager  *workspace.Manager
+	wkUsecase         *workspaceUsecaseLayer.WorkspaceUsecase
+	typingStore       channel.TypingStore
+	monitorStore      monitoring.MonitoringStore
+	contextCacheStore botDomain.ContextCacheStore
 
 	// Clients Module
 	appDB          *sql.DB
@@ -146,6 +148,13 @@ func initEnvConfig() {
 	viper.BindEnv("whatsapp_log_level", "WHATSAPP_LOG_LEVEL")
 	viper.BindEnv("db_uri", "DB_URI")
 	viper.BindEnv("db_keys_uri", "DB_KEYS_URI")
+
+	// Valkey settings
+	viper.BindEnv("valkey_enabled", "VALKEY_ENABLED")
+	viper.BindEnv("valkey_address", "VALKEY_ADDRESS")
+	viper.BindEnv("valkey_password", "VALKEY_PASSWORD")
+	viper.BindEnv("valkey_db", "VALKEY_DB")
+	viper.BindEnv("valkey_key_prefix", "VALKEY_KEY_PREFIX")
 
 	// If config already loaded variables via os.Getenv in init(), we sync them with viper if needed
 	// or just ensure viper doesn't overwrite them with empty defaults
@@ -222,6 +231,23 @@ func initEnvConfig() {
 	}
 	if viper.IsSet("whatsapp_account_validation") {
 		globalConfig.WhatsappAccountValidation = viper.GetBool("whatsapp_account_validation")
+	}
+
+	// Valkey settings sync
+	if viper.IsSet("valkey_enabled") {
+		globalConfig.ValkeyEnabled = viper.GetBool("valkey_enabled")
+	}
+	if v := viper.GetString("valkey_address"); v != "" {
+		globalConfig.ValkeyAddress = v
+	}
+	if v := viper.GetString("valkey_password"); v != "" {
+		globalConfig.ValkeyPassword = v
+	}
+	if viper.IsSet("valkey_db") {
+		globalConfig.ValkeyDB = viper.GetInt("valkey_db")
+	}
+	if v := viper.GetString("valkey_key_prefix"); v != "" {
+		globalConfig.ValkeyKeyPrefix = v
 	}
 }
 
@@ -385,7 +411,7 @@ func initApp() {
 	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
 
 	// Initialize context cache store for AI providers (enables Valkey migration later)
-	contextCacheStore := botengineRepo.NewMemoryContextCacheStore()
+	contextCacheStore = botengineRepo.NewMemoryContextCacheStore()
 	geminiProvider := providers.NewGeminiProvider(mcpUsecase, contextCacheStore)
 	openaiProvider := providers.NewOpenAIProvider(mcpUsecase)
 
