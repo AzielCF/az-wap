@@ -154,9 +154,8 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 	}
 
 	// 2. Start typing effect
-	isAudio := h.isAudioText(text)
-	_ = t.SendPresence(ctx, chatID, true, isAudio)
-	defer h.stopTyping(ctx, t, chatID, isAudio)
+	_ = t.SendPresence(ctx, chatID, true, false)
+	defer h.stopTyping(t, chatID)
 
 	// 3. Text analysis
 	charCount := utf8.RuneCountInString(text)
@@ -210,7 +209,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 		}
 
 		if ms >= 200 {
-			_ = t.SendPresence(ctx, chatID, false, isAudio)
+			_ = t.SendPresence(ctx, chatID, false, false)
 		}
 
 		if !h.sleep(ctx, time.Duration(ms)*time.Millisecond) {
@@ -218,7 +217,7 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 		}
 
 		if ms >= 200 {
-			_ = t.SendPresence(ctx, chatID, true, isAudio)
+			_ = t.SendPresence(ctx, chatID, true, false)
 		}
 		return true
 	}
@@ -328,25 +327,17 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 		return false
 	}
 
-	_ = t.SendPresence(ctx, chatID, false, isAudio)
+	_ = t.SendPresence(ctx, chatID, false, false)
 	return h.sleep(ctx, time.Duration(80+h.Rng.Intn(180))*time.Millisecond)
 }
 
-func (h *Humanizer) stopTyping(ctx context.Context, t domain.Transport, chatID string, isAudio bool) {
+func (h *Humanizer) stopTyping(t domain.Transport, chatID string) {
 	if t == nil {
 		return
 	}
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = t.SendPresence(stopCtx, chatID, false, isAudio)
-}
-
-func (h *Humanizer) isAudioText(text string) bool {
-	lower := strings.ToLower(text)
-	return strings.Contains(lower, "audio") ||
-		strings.Contains(lower, "graba") ||
-		strings.Contains(lower, "escucha") ||
-		strings.Contains(lower, "nota de voz")
+	_ = t.SendPresence(stopCtx, chatID, false, false)
 }
 
 func (h *Humanizer) sleep(ctx context.Context, d time.Duration) bool {
