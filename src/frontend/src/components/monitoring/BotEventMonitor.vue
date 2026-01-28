@@ -42,7 +42,7 @@ const filterInstance = ref('')
 const filterChat = ref('')
 const filterProvider = ref('')
 const expandedTraces = ref<Record<string, boolean>>({})
-const expandedSubEvents = ref<Record<string, boolean>>({})
+const expandedSubEvents = ref<any>({})
 const metaMap = ref<Record<string, { wsId: string, wsName: string, channelName: string }>>({})
 
 async function loadWorkspaces() {
@@ -196,7 +196,7 @@ function toggleTrace(traceId: string) {
     expandedTraces.value = { ...expandedTraces.value, [traceId]: !expandedTraces.value[traceId] }
 }
 
-function toggleSubEvent(traceId: string, idx: number) {
+function toggleSubEvent(traceId: string, idx: number | string) {
     const key = `${traceId}-${idx}`
     expandedSubEvents.value = { ...expandedSubEvents.value, [key]: !expandedSubEvents.value[key] }
 }
@@ -366,9 +366,15 @@ function parseMetadata(val: any) {
                                             <Bot class="w-3 h-3 mr-1.5" />
                                             <span class="text-[10px] font-bold uppercase tracking-wide">response</span>
                                         </div>
-                                        <div v-else-if="e.stage === 'intuition'" class="inline-flex items-center px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 shadow-sm">
-                                            <Lightbulb class="w-3 h-3 mr-1.5" />
-                                            <span class="text-[10px] font-bold uppercase tracking-wide">intuition</span>
+                                        <div v-else-if="e.stage === 'intuition'" class="flex items-center gap-2">
+                                            <div class="inline-flex items-center px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 shadow-sm">
+                                                <Lightbulb class="w-3 h-3 mr-1.5" />
+                                                <span class="text-[10px] font-bold uppercase tracking-wide">intuition</span>
+                                            </div>
+                                            <div v-if="e.metadata?.system_cached === 'true'" class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 shadow-sm" title="System prompt served from cache">
+                                                <Database class="w-2.5 h-2.5 mr-1" />
+                                                <span class="text-[8px] font-black uppercase">cached</span>
+                                            </div>
                                         </div>
                                         <div v-else-if="e.stage === 'outbound_ack'" class="inline-flex items-center px-2 py-1 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-sm">
                                             <MessageSquare class="w-3 h-3 mr-1.5" />
@@ -466,7 +472,7 @@ function parseMetadata(val: any) {
 
                                     <!-- Inspect -->
                                     <td class="py-3 pr-6 text-right">
-                                        <button v-if="e.metadata" @click.stop="toggleSubEvent(g.trace_id, Number(idx))" 
+                                        <button v-if="e.metadata" @click.stop="toggleSubEvent(g.trace_id, (idx as any))" 
                                                 class="btn btn-xs bg-white/5 border-white/10 hover:bg-white/10 text-slate-400 hover:text-white normal-case transition-colors">
                                             <span class="mr-1 opacity-50">&lt;/&gt;</span>
                                         </button>
@@ -486,7 +492,7 @@ function parseMetadata(val: any) {
 
                                             <div v-for="(val, key) in e.metadata" :key="key" class="space-y-2">
                                                 <!-- Skip the usage keys we'll show in a better way -->
-                                                <template v-if="!['usage_system_tokens', 'usage_user_tokens', 'usage_history_tokens', 'usage_input_tokens', 'usage_output_tokens', 'usage_cached_tokens', 'usage_cost', 'cost', 'input_tokens', 'output_tokens'].includes(key)">
+                                                <template v-if="!['usage_system_tokens', 'usage_user_tokens', 'usage_history_tokens', 'usage_input_tokens', 'usage_output_tokens', 'usage_cached_tokens', 'usage_cost', 'cost', 'input_tokens', 'output_tokens'].includes(key as string)">
                                                     <div class="text-[10px] font-bold uppercase tracking-widest text-slate-600">{{ String(key).replace(/_/g, ' ') }}</div>
                                                     <pre class="bg-black/40 p-3 rounded border border-white/5 text-[11px] font-mono text-slate-400 overflow-auto max-h-60 select-all custom-scrollbar">{{ parseMetadata(val) }}</pre>
                                                 </template>
@@ -506,15 +512,17 @@ function parseMetadata(val: any) {
                                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                                                     <!-- Detailed Table -->
                                                     <div class="space-y-3">
-                                                       <div class="flex items-center justify-between py-1.5 border-b border-white/5">
-                                                            <span class="text-[10px] font-bold text-slate-500 uppercase">System Prompt</span>
-                                                            <div class="flex items-center gap-3">
-                                                                <span v-if="e.metadata.usage_cached_tokens > 0" class="text-[9px] font-black text-amber-500 uppercase tracking-tighter bg-amber-500/10 px-1.5 rounded border border-amber-500/20 flex items-center gap-1">
-                                                                    <Zap class="w-2.5 h-2.5" /> CACHED
-                                                                </span>
-                                                                <span class="text-xs font-mono text-blue-400">{{ e.metadata.usage_system_tokens || 0 }} tokens</span>
-                                                            </div>
-                                                       </div>
+                                                        <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+                                                             <span class="text-[10px] font-bold text-slate-500 uppercase">System Prompt</span>
+                                                             <div class="flex items-center gap-3">
+                                                                 <span v-if="e.metadata.system_cached === 'true' || e.metadata.usage_cached_tokens > 0" class="text-[9px] font-black text-purple-500 uppercase tracking-tighter bg-purple-500/10 px-1.5 rounded border border-purple-500/20 flex items-center gap-1">
+                                                                     <Database class="w-2.5 h-2.5" /> CACHED
+                                                                 </span>
+                                                                 <span class="text-xs font-mono" :class="e.metadata.system_cached === 'true' ? 'text-purple-400' : 'text-blue-400'">
+                                                                    {{ e.metadata.usage_system_tokens || 0 }} tokens
+                                                                 </span>
+                                                             </div>
+                                                        </div>
                                                        <div class="flex items-center justify-between py-1.5 border-b border-white/5">
                                                             <span class="text-[10px] font-bold text-slate-500 uppercase">User Input</span>
                                                             <span class="text-xs font-mono text-indigo-400">{{ e.metadata.usage_user_tokens || 0 }} tokens</span>
