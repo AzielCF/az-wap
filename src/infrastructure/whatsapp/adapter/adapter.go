@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
@@ -41,6 +42,9 @@ type WhatsAppAdapter struct {
 
 	// Identity cache (LID <-> PN)
 	identityMap sync.Map
+
+	// Connection lock to prevent race conditions during Resume/Hibernate
+	connMu sync.Mutex
 
 	stopSync chan struct{}
 }
@@ -144,6 +148,53 @@ func (wa *WhatsAppAdapter) GetMe() (common.ContactInfo, error) {
 		LID:  lid,
 		Name: "Me",
 	}, nil
+}
+
+// ensureConnected ensures the client is connected before a network operation
+func (wa *WhatsAppAdapter) ensureConnected(ctx context.Context) error {
+	cli := wa.client // Snapshot copy for safety
+	if cli == nil {
+		return fmt.Errorf("client not initialized")
+	}
+
+	// Fast path check
+	if cli.IsConnected() {
+		return nil
+	}
+
+	// Slow path: acquire lock to prevent thundering herd on Resume
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
+	// Re-check state after acquiring lock (double-checked locking)
+	if cli.IsConnected() {
+		return nil
+	}
+
+	logrus.Infof("[WHATSAPP] ensureConnected: Client disconnected for %s, attempting resume...", wa.channelID)
+
+	if err := cli.Connect(); err != nil {
+		// If already connected or connecting, it's not a fatal error for us
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "already connected") || strings.Contains(errMsg, "already connecting") {
+			logrus.Debugf("[WHATSAPP] ensureConnected: Connect() reported %s, waiting for stabilization...", errMsg)
+		} else {
+			return fmt.Errorf("failed to resume connection: %w", err)
+		}
+	}
+
+	// Wait a bit for connection to stabilize
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(1500 * time.Millisecond):
+	}
+
+	if !cli.IsConnected() {
+		return fmt.Errorf("client not connected after resume check")
+	}
+
+	return nil
 }
 
 // CloseSession ends the interaction with a specific chat

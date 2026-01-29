@@ -16,25 +16,27 @@ import (
 )
 
 func (wa *WhatsAppAdapter) SetProfileName(ctx context.Context, name string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
-	return wa.client.SendAppState(ctx, appstate.BuildSettingPushName(name))
+	cli := wa.client
+	return cli.SendAppState(ctx, appstate.BuildSettingPushName(name))
 }
 
 func (wa *WhatsAppAdapter) SetProfileStatus(ctx context.Context, status string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
-	return wa.client.SetStatusMessage(ctx, status)
+	cli := wa.client
+	return cli.SetStatusMessage(ctx, status)
 }
 
 func (wa *WhatsAppAdapter) SetProfilePhoto(ctx context.Context, photo []byte) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
-
-	if !wa.client.IsConnected() {
+	cli := wa.client
+	if !cli.IsConnected() {
 		return "", fmt.Errorf("client not connected")
 	}
 
@@ -45,7 +47,7 @@ func (wa *WhatsAppAdapter) SetProfilePhoto(ctx context.Context, photo []byte) (s
 
 	logrus.Infof("[WHATSAPP_ADAPTER] Setting personal profile photo (using Empty JID standard)")
 
-	resp, err := wa.client.SetGroupPhoto(ctx, targetID, photo)
+	resp, err := cli.SetGroupPhoto(ctx, targetID, photo)
 	if err != nil {
 		logrus.WithError(err).Errorf("[WHATSAPP_ADAPTER] SetGroupPhoto failed for self-profile update")
 		return "", err
@@ -54,10 +56,11 @@ func (wa *WhatsAppAdapter) SetProfilePhoto(ctx context.Context, photo []byte) (s
 }
 
 func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.ContactInfo, error) {
-	if wa.client == nil {
-		return common.ContactInfo{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.ContactInfo{}, err
 	}
-
+	cli := wa.client
+	// ... rest of the function using cli ...
 	// Handle potential combined identity (pn|lid) or just LID/JID
 	targetJID := jid
 	if strings.Contains(jid, "|") {
@@ -80,7 +83,7 @@ func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.C
 	}
 
 	// Try store first
-	contact, err := wa.client.Store.Contacts.GetContact(ctx, parsedJID)
+	contact, err := cli.Store.Contacts.GetContact(ctx, parsedJID)
 	if err == nil && contact.Found {
 		return common.ContactInfo{
 			JID:  parsedJID.String(),
@@ -89,7 +92,7 @@ func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.C
 	}
 
 	// Fallback to network query
-	info, err := wa.client.GetUserInfo(ctx, []types.JID{parsedJID})
+	info, err := cli.GetUserInfo(ctx, []types.JID{parsedJID})
 	if err != nil || len(info) == 0 {
 		return common.ContactInfo{JID: targetJID}, nil
 	}
@@ -108,10 +111,11 @@ func (wa *WhatsAppAdapter) GetContact(ctx context.Context, jid string) (common.C
 }
 
 func (wa *WhatsAppAdapter) GetPrivacySettings(ctx context.Context) (common.PrivacySettings, error) {
-	if wa.client == nil {
-		return common.PrivacySettings{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.PrivacySettings{}, err
 	}
-	resp, err := wa.client.TryFetchPrivacySettings(ctx, true)
+	cli := wa.client
+	resp, err := cli.TryFetchPrivacySettings(ctx, true)
 	if err != nil {
 		return common.PrivacySettings{}, err
 	}
@@ -124,9 +128,11 @@ func (wa *WhatsAppAdapter) GetPrivacySettings(ctx context.Context) (common.Priva
 }
 
 func (wa *WhatsAppAdapter) GetUserInfo(ctx context.Context, jids []string) ([]common.ContactInfo, error) {
-	if wa.client == nil {
-		return nil, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
+	cli := wa.client
+	// ... (parsedJIDs loop here)
 	parsedJIDs := make([]types.JID, 0, len(jids))
 	for _, j := range jids {
 		pj, err := wa.parseJID(j)
@@ -134,7 +140,7 @@ func (wa *WhatsAppAdapter) GetUserInfo(ctx context.Context, jids []string) ([]co
 			parsedJIDs = append(parsedJIDs, pj)
 		}
 	}
-	resp, err := wa.client.GetUserInfo(ctx, parsedJIDs)
+	resp, err := cli.GetUserInfo(ctx, parsedJIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -150,14 +156,15 @@ func (wa *WhatsAppAdapter) GetUserInfo(ctx context.Context, jids []string) ([]co
 }
 
 func (wa *WhatsAppAdapter) GetProfilePictureInfo(ctx context.Context, jid string, preview bool) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
+	cli := wa.client
 	parsedJID, err := wa.parseJID(jid)
 	if err != nil {
 		return "", err
 	}
-	pic, err := wa.client.GetProfilePictureInfo(ctx, parsedJID, &whatsmeow.GetProfilePictureParams{
+	pic, err := cli.GetProfilePictureInfo(ctx, parsedJID, &whatsmeow.GetProfilePictureParams{
 		Preview: preview,
 	})
 	if err != nil {
@@ -170,14 +177,15 @@ func (wa *WhatsAppAdapter) GetProfilePictureInfo(ctx context.Context, jid string
 }
 
 func (wa *WhatsAppAdapter) GetBusinessProfile(ctx context.Context, jid string) (common.BusinessProfile, error) {
-	if wa.client == nil {
-		return common.BusinessProfile{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.BusinessProfile{}, err
 	}
+	cli := wa.client
 	parsedJID, err := wa.parseJID(jid)
 	if err != nil {
 		return common.BusinessProfile{}, err
 	}
-	profile, err := wa.client.GetBusinessProfile(ctx, parsedJID)
+	profile, err := cli.GetBusinessProfile(ctx, parsedJID)
 	if err != nil {
 		return common.BusinessProfile{}, err
 	}
@@ -206,10 +214,11 @@ func (wa *WhatsAppAdapter) GetBusinessProfile(ctx context.Context, jid string) (
 }
 
 func (wa *WhatsAppAdapter) GetAllContacts(ctx context.Context) ([]common.ContactInfo, error) {
-	if wa.client == nil {
-		return nil, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
-	contacts, err := wa.client.Store.Contacts.GetAllContacts(ctx)
+	cli := wa.client
+	contacts, err := cli.Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -224,15 +233,16 @@ func (wa *WhatsAppAdapter) GetAllContacts(ctx context.Context) ([]common.Contact
 }
 
 func (wa *WhatsAppAdapter) IsOnWhatsApp(ctx context.Context, phone string) (bool, error) {
-	if wa.client == nil {
-		return false, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return false, err
 	}
+	cli := wa.client
 	// Basic sanitization
 	phone = strings.ReplaceAll(phone, "+", "")
 	phone = strings.ReplaceAll(phone, " ", "")
 
 	// whatsmeow IsOnWhatsApp needs a context and a slice
-	resp, err := wa.client.IsOnWhatsApp(ctx, []string{phone})
+	resp, err := cli.IsOnWhatsApp(ctx, []string{phone})
 	if err != nil {
 		return false, err
 	}
@@ -245,23 +255,14 @@ func (wa *WhatsAppAdapter) IsOnWhatsApp(ctx context.Context, phone string) (bool
 }
 
 func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier string) (string, error) {
-	if wa.client == nil {
-		return identifier, fmt.Errorf("no client available")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return identifier, err
 	}
+	cli := wa.client
 
 	// 0. Ensure client is connected and logged in before attempting resolution
-	if !wa.client.IsLoggedIn() {
+	if !cli.IsLoggedIn() {
 		return identifier, fmt.Errorf("client not logged in")
-	}
-
-	if !wa.client.IsConnected() {
-		logrus.Infof("[WHATSAPP] ResolveIdentity: Client disconnected for %s, attempting resume...", wa.channelID)
-		_ = wa.Resume(ctx)
-		// Wait a bit for connection
-		time.Sleep(2 * time.Second)
-		if !wa.client.IsConnected() {
-			return identifier, fmt.Errorf("client not connected and failed to resume")
-		}
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -297,7 +298,7 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 		found := false
 
 		// Attempt Path A
-		resp, err := wa.client.IsOnWhatsApp(queryCtx, []string{id})
+		resp, err := cli.IsOnWhatsApp(queryCtx, []string{id})
 		if err == nil && len(resp) > 0 && resp[0].IsIn {
 			targetJID = resp[0].JID
 			found = true
@@ -305,7 +306,7 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 		} else {
 			// Attempt Path B
 			jidStr := id + "@s.whatsapp.net"
-			resp, err := wa.client.IsOnWhatsApp(queryCtx, []string{jidStr})
+			resp, err := cli.IsOnWhatsApp(queryCtx, []string{jidStr})
 			if err == nil && len(resp) > 0 && resp[0].IsIn {
 				targetJID = resp[0].JID
 				found = true
@@ -316,7 +317,7 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 		if !found {
 			// Attempt Path C: GetUserInfo
 			testJID := types.NewJID(id, types.DefaultUserServer)
-			info, err := wa.client.GetUserInfo(queryCtx, []types.JID{testJID})
+			info, err := cli.GetUserInfo(queryCtx, []types.JID{testJID})
 			if err == nil && len(info) > 0 {
 				targetJID = testJID
 				found = true
@@ -335,7 +336,7 @@ func (wa *WhatsAppAdapter) ResolveIdentity(ctx context.Context, identifier strin
 	lidCtx, lidCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer lidCancel()
 
-	info, err := wa.client.GetUserInfo(lidCtx, []types.JID{targetJID})
+	info, err := cli.GetUserInfo(lidCtx, []types.JID{targetJID})
 	if err == nil {
 		if u, ok := info[targetJID]; ok {
 			lid := u.LID

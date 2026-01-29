@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/AzielCF/az-wap/workspace/domain/common"
 	"go.mau.fi/whatsmeow"
@@ -10,9 +9,10 @@ import (
 )
 
 func (wa *WhatsAppAdapter) CreateGroup(ctx context.Context, name string, participants []string) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
+	cli := wa.client
 	pJIDs := make([]types.JID, 0, len(participants))
 	for _, p := range participants {
 		pj, err := wa.parseJID(p)
@@ -20,7 +20,7 @@ func (wa *WhatsAppAdapter) CreateGroup(ctx context.Context, name string, partici
 			pJIDs = append(pJIDs, pj)
 		}
 	}
-	resp, err := wa.client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
+	resp, err := cli.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
 		Name:         name,
 		Participants: pJIDs,
 	})
@@ -31,10 +31,11 @@ func (wa *WhatsAppAdapter) CreateGroup(ctx context.Context, name string, partici
 }
 
 func (wa *WhatsAppAdapter) JoinGroupWithLink(ctx context.Context, link string) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
-	jid, err := wa.client.JoinGroupWithLink(ctx, link)
+	cli := wa.client
+	jid, err := cli.JoinGroupWithLink(ctx, link)
 	if err != nil {
 		return "", err
 	}
@@ -42,25 +43,27 @@ func (wa *WhatsAppAdapter) JoinGroupWithLink(ctx context.Context, link string) (
 }
 
 func (wa *WhatsAppAdapter) LeaveGroup(ctx context.Context, groupID string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return err
 	}
-	return wa.client.LeaveGroup(ctx, jid)
+	cli := wa.client
+	return cli.LeaveGroup(ctx, jid)
 }
 
 func (wa *WhatsAppAdapter) GetGroupInfo(ctx context.Context, groupID string) (common.GroupInfo, error) {
-	if wa.client == nil {
-		return common.GroupInfo{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.GroupInfo{}, err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return common.GroupInfo{}, err
 	}
-	info, err := wa.client.GetGroupInfo(ctx, jid)
+	cli := wa.client
+	info, err := cli.GetGroupInfo(ctx, jid)
 	if err != nil {
 		return common.GroupInfo{}, err
 	}
@@ -84,8 +87,8 @@ func (wa *WhatsAppAdapter) GetGroupInfo(ctx context.Context, groupID string) (co
 }
 
 func (wa *WhatsAppAdapter) UpdateGroupParticipants(ctx context.Context, groupID string, participants []string, action common.ParticipantAction) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	gJID, err := wa.parseJID(groupID)
 	if err != nil {
@@ -109,26 +112,29 @@ func (wa *WhatsAppAdapter) UpdateGroupParticipants(ctx context.Context, groupID 
 		waAction = whatsmeow.ParticipantChangeDemote
 	}
 
-	_, err = wa.client.UpdateGroupParticipants(ctx, gJID, pJIDs, waAction)
+	cli := wa.client
+	_, err = cli.UpdateGroupParticipants(ctx, gJID, pJIDs, waAction)
 	return err
 }
 
 func (wa *WhatsAppAdapter) GetGroupInviteLink(ctx context.Context, groupID string, reset bool) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return "", err
 	}
-	return wa.client.GetGroupInviteLink(ctx, jid, reset)
+	cli := wa.client
+	return cli.GetGroupInviteLink(ctx, jid, reset)
 }
 
 func (wa *WhatsAppAdapter) GetJoinedGroups(ctx context.Context) ([]common.GroupInfo, error) {
-	if wa.client == nil {
-		return nil, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
-	groups, err := wa.client.GetJoinedGroups(ctx)
+	cli := wa.client
+	groups, err := cli.GetJoinedGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -146,10 +152,11 @@ func (wa *WhatsAppAdapter) GetJoinedGroups(ctx context.Context) ([]common.GroupI
 }
 
 func (wa *WhatsAppAdapter) GetGroupInfoFromLink(ctx context.Context, link string) (common.GroupInfo, error) {
-	if wa.client == nil {
-		return common.GroupInfo{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.GroupInfo{}, err
 	}
-	info, err := wa.client.GetGroupInfoFromLink(ctx, link)
+	cli := wa.client
+	info, err := cli.GetGroupInfoFromLink(ctx, link)
 	if err != nil {
 		return common.GroupInfo{}, err
 	}
@@ -161,14 +168,15 @@ func (wa *WhatsAppAdapter) GetGroupInfoFromLink(ctx context.Context, link string
 }
 
 func (wa *WhatsAppAdapter) GetGroupRequestParticipants(ctx context.Context, groupID string) ([]common.GroupRequestParticipant, error) {
-	if wa.client == nil {
-		return nil, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return nil, err
 	}
-	reqs, err := wa.client.GetGroupRequestParticipants(ctx, jid)
+	cli := wa.client
+	reqs, err := cli.GetGroupRequestParticipants(ctx, jid)
 	if err != nil {
 		return nil, err
 	}
@@ -183,10 +191,8 @@ func (wa *WhatsAppAdapter) GetGroupRequestParticipants(ctx context.Context, grou
 }
 
 func (wa *WhatsAppAdapter) UpdateGroupRequestParticipants(ctx context.Context, groupID string, participants []string, action common.ParticipantAction) error {
-	// Not implemented in channel_adapter.go reference or whatsmeow robustly yet?
-	// But let's check wrapper. whatsmeow has ApproveGroupRequest / Reject
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	_, err := wa.parseJID(groupID)
 	if err != nil {
@@ -208,56 +214,61 @@ func (wa *WhatsAppAdapter) UpdateGroupRequestParticipants(ctx context.Context, g
 }
 
 func (wa *WhatsAppAdapter) SetGroupName(ctx context.Context, groupID string, name string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return err
 	}
-	return wa.client.SetGroupName(ctx, jid, name)
+	cli := wa.client
+	return cli.SetGroupName(ctx, jid, name)
 }
 
 func (wa *WhatsAppAdapter) SetGroupLocked(ctx context.Context, groupID string, locked bool) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return err
 	}
-	return wa.client.SetGroupLocked(ctx, jid, locked)
+	cli := wa.client
+	return cli.SetGroupLocked(ctx, jid, locked)
 }
 
 func (wa *WhatsAppAdapter) SetGroupAnnounce(ctx context.Context, groupID string, announce bool) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return err
 	}
-	return wa.client.SetGroupAnnounce(ctx, jid, announce)
+	cli := wa.client
+	return cli.SetGroupAnnounce(ctx, jid, announce)
 }
 
 func (wa *WhatsAppAdapter) SetGroupTopic(ctx context.Context, groupID string, topic string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return err
 	}
-	return wa.client.SetGroupTopic(ctx, jid, "", "", topic)
+	cli := wa.client
+	return cli.SetGroupTopic(ctx, jid, "", "", topic)
 }
 
 func (wa *WhatsAppAdapter) SetGroupPhoto(ctx context.Context, groupID string, photo []byte) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
 	jid, err := wa.parseJID(groupID)
 	if err != nil {
 		return "", err
 	}
-	return wa.client.SetGroupPhoto(ctx, jid, photo)
+	cli := wa.client
+	return cli.SetGroupPhoto(ctx, jid, photo)
 }

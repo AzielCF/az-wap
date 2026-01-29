@@ -40,6 +40,9 @@ func (wa *WhatsAppAdapter) GetQRChannel(ctx context.Context) (<-chan string, err
 }
 
 func (wa *WhatsAppAdapter) Login(ctx context.Context) error {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	if wa.client == nil {
 		return fmt.Errorf("client not started")
 	}
@@ -51,6 +54,9 @@ func (wa *WhatsAppAdapter) Login(ctx context.Context) error {
 }
 
 func (wa *WhatsAppAdapter) LoginWithCode(ctx context.Context, phone string) (string, error) {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	if wa.client == nil {
 		return "", fmt.Errorf("client not initialized")
 	}
@@ -98,6 +104,9 @@ func (wa *WhatsAppAdapter) LoginWithCode(ctx context.Context, phone string) (str
 }
 
 func (wa *WhatsAppAdapter) Logout(ctx context.Context) error {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	if wa.client == nil {
 		return nil
 	}
@@ -122,9 +131,10 @@ func (wa *WhatsAppAdapter) Logout(ctx context.Context) error {
 // Message Management
 
 func (wa *WhatsAppAdapter) MarkRead(ctx context.Context, chatID string, messageIDs []string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return err
@@ -133,13 +143,14 @@ func (wa *WhatsAppAdapter) MarkRead(ctx context.Context, chatID string, messageI
 	for i, id := range messageIDs {
 		ids[i] = types.MessageID(id)
 	}
-	return wa.client.MarkRead(ctx, ids, time.Now(), jid, *wa.client.Store.ID)
+	return cli.MarkRead(ctx, ids, time.Now(), jid, *cli.Store.ID)
 }
 
 func (wa *WhatsAppAdapter) ReactMessage(ctx context.Context, chatID, messageID, emoji string) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return "", err
@@ -156,7 +167,7 @@ func (wa *WhatsAppAdapter) ReactMessage(ctx context.Context, chatID, messageID, 
 			SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
 		},
 	}
-	resp, err := wa.client.SendMessage(ctx, jid, msg)
+	resp, err := cli.SendMessage(ctx, jid, msg)
 	if err != nil {
 		return "", err
 	}
@@ -164,14 +175,15 @@ func (wa *WhatsAppAdapter) ReactMessage(ctx context.Context, chatID, messageID, 
 }
 
 func (wa *WhatsAppAdapter) RevokeMessage(ctx context.Context, chatID, messageID string) (string, error) {
-	if wa.client == nil {
-		return "", fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return "", err
 	}
-	resp, err := wa.client.SendMessage(ctx, jid, wa.client.BuildRevoke(jid, types.EmptyJID, messageID))
+	resp, err := cli.SendMessage(ctx, jid, cli.BuildRevoke(jid, types.EmptyJID, messageID))
 	if err != nil {
 		return "", err
 	}
@@ -179,9 +191,10 @@ func (wa *WhatsAppAdapter) RevokeMessage(ctx context.Context, chatID, messageID 
 }
 
 func (wa *WhatsAppAdapter) DeleteMessageForMe(ctx context.Context, chatID, messageID string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return err
@@ -196,7 +209,7 @@ func (wa *WhatsAppAdapter) DeleteMessageForMe(ctx context.Context, chatID, messa
 		Timestamp: time.Now(),
 		Type:      appstate.WAPatchRegularHigh,
 		Mutations: []appstate.MutationInfo{{
-			Index: []string{appstate.IndexDeleteMessageForMe, jid.String(), messageID, isFromMe, wa.client.Store.ID.String()},
+			Index: []string{appstate.IndexDeleteMessageForMe, jid.String(), messageID, isFromMe, cli.Store.ID.String()},
 			Value: &waSyncAction.SyncActionValue{
 				DeleteMessageForMeAction: &waSyncAction.DeleteMessageForMeAction{
 					DeleteMedia:      proto.Bool(true),
@@ -205,13 +218,14 @@ func (wa *WhatsAppAdapter) DeleteMessageForMe(ctx context.Context, chatID, messa
 			},
 		}},
 	}
-	return wa.client.SendAppState(ctx, patchInfo)
+	return cli.SendAppState(ctx, patchInfo)
 }
 
 func (wa *WhatsAppAdapter) StarMessage(ctx context.Context, chatID, messageID string, starred bool) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return err
@@ -222,11 +236,15 @@ func (wa *WhatsAppAdapter) StarMessage(ctx context.Context, chatID, messageID st
 		isFromMe = false
 	}
 
-	patchInfo := appstate.BuildStar(jid.ToNonAD(), *wa.client.Store.ID, messageID, isFromMe, starred)
-	return wa.client.SendAppState(ctx, patchInfo)
+	patchInfo := appstate.BuildStar(jid.ToNonAD(), *cli.Store.ID, messageID, isFromMe, starred)
+	return cli.SendAppState(ctx, patchInfo)
 }
 
 func (wa *WhatsAppAdapter) DownloadMedia(ctx context.Context, messageID, chatID string) (string, error) {
+	if err := wa.ensureConnected(ctx); err != nil {
+		return "", err
+	}
+	cli := wa.client
 	storage := wa.getChatStorage()
 	if storage == nil {
 		return "", fmt.Errorf("chat storage not initialized for this adapter")
@@ -293,7 +311,7 @@ func (wa *WhatsAppAdapter) DownloadMedia(ctx context.Context, messageID, chatID 
 		return "", fmt.Errorf("unsupported media type: %s", msg.MediaType)
 	}
 
-	res, err := pkgUtils.ExtractMedia(ctx, wa.client, dateDir, downloadableMsg.(whatsmeow.DownloadableMessage), wa.config.MaxDownloadSize)
+	res, err := pkgUtils.ExtractMedia(ctx, cli, dateDir, downloadableMsg.(whatsmeow.DownloadableMessage), wa.config.MaxDownloadSize)
 	if err != nil {
 		return "", err
 	}
@@ -302,22 +320,24 @@ func (wa *WhatsAppAdapter) DownloadMedia(ctx context.Context, messageID, chatID 
 }
 
 func (wa *WhatsAppAdapter) PinChat(ctx context.Context, chatID string, pinned bool) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
+	cli := wa.client
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
 		return err
 	}
 	patchInfo := appstate.BuildPin(jid, pinned)
-	return wa.client.SendAppState(ctx, patchInfo)
+	return cli.SendAppState(ctx, patchInfo)
 }
 
 func (wa *WhatsAppAdapter) FetchNewsletters(ctx context.Context) ([]common.NewsletterInfo, error) {
-	if wa.client == nil {
-		return nil, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return nil, err
 	}
-	newsletters, err := wa.client.GetSubscribedNewsletters(ctx)
+	cli := wa.client
+	newsletters, err := cli.GetSubscribedNewsletters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -339,12 +359,13 @@ func (wa *WhatsAppAdapter) FetchNewsletters(ctx context.Context) ([]common.Newsl
 }
 
 func (wa *WhatsAppAdapter) UnfollowNewsletter(ctx context.Context, jid string) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
 	}
+	cli := wa.client
 	targetJID, err := wa.parseJID(jid)
 	if err != nil {
 		return err
 	}
-	return wa.client.UnfollowNewsletter(ctx, targetJID)
+	return cli.UnfollowNewsletter(ctx, targetJID)
 }

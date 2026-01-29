@@ -15,8 +15,12 @@ import (
 
 // SendMessage sends a text message
 func (wa *WhatsAppAdapter) SendMessage(ctx context.Context, chatID, text, quoteMessageID string) (common.SendResponse, error) {
-	if wa.client == nil {
-		return common.SendResponse{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.SendResponse{}, err
+	}
+	cli := wa.client
+	if cli == nil {
+		return common.SendResponse{}, fmt.Errorf("client not initialized")
 	}
 
 	jid, err := types.ParseJID(chatID)
@@ -39,7 +43,7 @@ func (wa *WhatsAppAdapter) SendMessage(ctx context.Context, chatID, text, quoteM
 		}
 	}
 
-	resp, err := wa.client.SendMessage(ctx, jid, msg)
+	resp, err := cli.SendMessage(ctx, jid, msg)
 	if err != nil {
 		return common.SendResponse{}, err
 	}
@@ -52,8 +56,12 @@ func (wa *WhatsAppAdapter) SendMessage(ctx context.Context, chatID, text, quoteM
 
 // SendMedia sends a media message
 func (wa *WhatsAppAdapter) SendMedia(ctx context.Context, chatID string, media common.MediaUpload, quoteMessageID string) (common.SendResponse, error) {
-	if wa.client == nil {
-		return common.SendResponse{}, fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.SendResponse{}, err
+	}
+	cli := wa.client
+	if cli == nil {
+		return common.SendResponse{}, fmt.Errorf("client not initialized")
 	}
 
 	jid, err := types.ParseJID(chatID)
@@ -91,7 +99,7 @@ func (wa *WhatsAppAdapter) SendMedia(ctx context.Context, chatID string, media c
 		}
 	}
 
-	uploaded, err = wa.client.Upload(ctx, media.Data, mType)
+	uploaded, err = cli.Upload(ctx, media.Data, mType)
 	if err != nil {
 		return common.SendResponse{}, fmt.Errorf("failed to upload media: %w", err)
 	}
@@ -174,7 +182,7 @@ func (wa *WhatsAppAdapter) SendMedia(ctx context.Context, chatID string, media c
 			msg.DocumentMessage.ContextInfo = ctxInfo
 		}
 	}
-	resp, err := wa.client.SendMessage(ctx, jid, &msg)
+	resp, err := cli.SendMessage(ctx, jid, &msg)
 	if err != nil {
 		return common.SendResponse{}, err
 	}
@@ -186,8 +194,12 @@ func (wa *WhatsAppAdapter) SendMedia(ctx context.Context, chatID string, media c
 }
 
 func (wa *WhatsAppAdapter) SendPresence(ctx context.Context, chatID string, typing bool, isAudio bool) error {
-	if wa.client == nil {
-		return fmt.Errorf("no client")
+	if err := wa.ensureConnected(ctx); err != nil {
+		return err
+	}
+	cli := wa.client
+	if cli == nil {
+		return fmt.Errorf("client not initialized")
 	}
 	jid, err := wa.parseJID(chatID)
 	if err != nil {
@@ -205,7 +217,7 @@ func (wa *WhatsAppAdapter) SendPresence(ctx context.Context, chatID string, typi
 	}
 
 	logrus.Debugf("[WHATSAPP] Sending chat presence (Typing: %v, Audio: %v) to %s", typing, isAudio, chatID)
-	return wa.client.SendChatPresence(ctx, jid, presence, media)
+	return cli.SendChatPresence(ctx, jid, presence, media)
 }
 
 func (wa *WhatsAppAdapter) SendContact(ctx context.Context, chatID, contactName, contactPhone string, quoteMessageID string) (common.SendResponse, error) {

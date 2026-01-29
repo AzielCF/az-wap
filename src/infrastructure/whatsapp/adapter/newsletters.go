@@ -15,6 +15,14 @@ import (
 
 // SendNewsletterMessage sends a message (text or media) to a newsletter
 func (wa *WhatsAppAdapter) SendNewsletterMessage(ctx context.Context, newsletterID, text string, mediaPath string) (common.SendResponse, error) {
+	if err := wa.ensureConnected(ctx); err != nil {
+		return common.SendResponse{}, err
+	}
+	cli := wa.client
+	if cli == nil {
+		return common.SendResponse{}, fmt.Errorf("client not initialized")
+	}
+
 	jid, err := types.ParseJID(newsletterID)
 	if err != nil {
 		return common.SendResponse{}, err
@@ -32,7 +40,7 @@ func (wa *WhatsAppAdapter) SendNewsletterMessage(ctx context.Context, newsletter
 		// Detect MimeType
 		mimeType := http.DetectContentType(data)
 
-		uploaded, err := wa.client.Upload(ctx, data, whatsmeow.MediaImage) // Defaulting to Image
+		uploaded, err := cli.Upload(ctx, data, whatsmeow.MediaImage) // Defaulting to Image
 
 		if err != nil {
 			return common.SendResponse{}, fmt.Errorf("media upload failed: %w", err)
@@ -57,7 +65,7 @@ func (wa *WhatsAppAdapter) SendNewsletterMessage(ctx context.Context, newsletter
 		}
 	}
 
-	resp, err := wa.client.SendMessage(ctx, jid, msg)
+	resp, err := cli.SendMessage(ctx, jid, msg)
 	if err != nil {
 		return common.SendResponse{}, err
 	}

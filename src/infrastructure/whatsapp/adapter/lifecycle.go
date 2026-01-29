@@ -21,7 +21,9 @@ import (
 
 // Status returns the connection status
 func (wa *WhatsAppAdapter) Status() channel.ChannelStatus {
-	if wa.client == nil {
+	// Local copy for safety
+	cli := wa.client
+	if cli == nil {
 		return channel.ChannelStatusDisconnected
 	}
 
@@ -33,13 +35,13 @@ func (wa *WhatsAppAdapter) Status() channel.ChannelStatus {
 		}
 	}
 
-	if !wa.client.IsConnected() {
+	if !cli.IsConnected() {
 		if isHib {
 			return channel.ChannelStatusHibernating
 		}
 		return channel.ChannelStatusDisconnected
 	}
-	if !wa.client.IsLoggedIn() {
+	if !cli.IsLoggedIn() {
 		// If DB session is missing or invalid, it's disconnected
 		return channel.ChannelStatusDisconnected
 	}
@@ -56,6 +58,9 @@ func (wa *WhatsAppAdapter) IsLoggedIn() bool {
 
 // Start ensures the client is connected
 func (wa *WhatsAppAdapter) Start(ctx context.Context, config channel.ChannelConfig) error {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	wa.config = config
 
 	// 1. Si ya tenemos cliente, solo aseguramos conexión
@@ -180,6 +185,10 @@ func (wa *WhatsAppAdapter) Stop(ctx context.Context) error {
 
 // Cleanup removes all persistent data (WhatsApp DB and ChatStorage DB)
 func (wa *WhatsAppAdapter) Cleanup(ctx context.Context) error {
+	// Acquire lock to ensure we don't cleanup while a connection attempt is in progress
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	// 1. Stop the client first (removes event handlers, stops sync)
 	_ = wa.Stop(ctx)
 
@@ -282,6 +291,9 @@ func (wa *WhatsAppAdapter) WaitIdle(ctx context.Context, chatID string, duration
 
 // Hibernate physically closes the socket to keep a low profile on WhatsApp servers
 func (wa *WhatsAppAdapter) Hibernate(ctx context.Context) error {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	if wa.client == nil || !wa.client.IsConnected() {
 		return nil
 	}
@@ -293,6 +305,9 @@ func (wa *WhatsAppAdapter) Hibernate(ctx context.Context) error {
 
 // Resume physically reconnects the socket if it was hibernated
 func (wa *WhatsAppAdapter) Resume(ctx context.Context) error {
+	wa.connMu.Lock()
+	defer wa.connMu.Unlock()
+
 	if wa.client == nil {
 		return fmt.Errorf("client not initialized")
 	}
