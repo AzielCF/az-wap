@@ -28,7 +28,9 @@ func InitRestMessage(app fiber.Router, service domainMessage.IMessageUsecase) Me
 func (controller *Message) RevokeMessage(c *fiber.Ctx) error {
 	var request domainMessage.RevokeRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	token := c.Get("X-Instance-Token")
@@ -39,7 +41,9 @@ func (controller *Message) RevokeMessage(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.RevokeMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -52,13 +56,17 @@ func (controller *Message) RevokeMessage(c *fiber.Ctx) error {
 func (controller *Message) DeleteMessage(c *fiber.Ctx) error {
 	var request domainMessage.DeleteRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 
 	err = controller.Service.DeleteMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -71,13 +79,17 @@ func (controller *Message) DeleteMessage(c *fiber.Ctx) error {
 func (controller *Message) UpdateMessage(c *fiber.Ctx) error {
 	var request domainMessage.UpdateMessageRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.UpdateMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -90,13 +102,17 @@ func (controller *Message) UpdateMessage(c *fiber.Ctx) error {
 func (controller *Message) ReactMessage(c *fiber.Ctx) error {
 	var request domainMessage.ReactionRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.ReactMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -109,13 +125,17 @@ func (controller *Message) ReactMessage(c *fiber.Ctx) error {
 func (controller *Message) MarkAsRead(c *fiber.Ctx) error {
 	var request domainMessage.MarkAsReadRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.MarkAsRead(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -128,7 +148,9 @@ func (controller *Message) MarkAsRead(c *fiber.Ctx) error {
 func (controller *Message) StarMessage(c *fiber.Ctx) error {
 	var request domainMessage.StarRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
@@ -140,7 +162,9 @@ func (controller *Message) StarMessage(c *fiber.Ctx) error {
 	request.Token = token
 
 	err = controller.Service.StarMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -153,7 +177,9 @@ func (controller *Message) StarMessage(c *fiber.Ctx) error {
 func (controller *Message) UnstarMessage(c *fiber.Ctx) error {
 	var request domainMessage.StarRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.MessageID = c.Params("message_id")
 	utils.SanitizePhone(&request.Phone)
@@ -164,7 +190,9 @@ func (controller *Message) UnstarMessage(c *fiber.Ctx) error {
 	}
 	request.Token = token
 	err = controller.Service.StarMessage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -187,7 +215,9 @@ func (controller *Message) DownloadMedia(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.DownloadMedia(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

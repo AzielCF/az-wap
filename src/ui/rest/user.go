@@ -29,7 +29,9 @@ func InitRestUser(app fiber.Router, service domainUser.IUserUsecase) User {
 func (controller *User) UserInfo(c *fiber.Ctx) error {
 	var request domainUser.InfoRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -40,7 +42,9 @@ func (controller *User) UserInfo(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.Info(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -53,7 +57,9 @@ func (controller *User) UserInfo(c *fiber.Ctx) error {
 func (controller *User) UserAvatar(c *fiber.Ctx) error {
 	var request domainUser.AvatarRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -64,7 +70,9 @@ func (controller *User) UserAvatar(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.Avatar(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -77,10 +85,14 @@ func (controller *User) UserAvatar(c *fiber.Ctx) error {
 func (controller *User) UserChangeAvatar(c *fiber.Ctx) error {
 	var request domainUser.ChangeAvatarRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.Avatar, err = c.FormFile("avatar")
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -89,7 +101,9 @@ func (controller *User) UserChangeAvatar(c *fiber.Ctx) error {
 	request.Token = token
 
 	err = controller.Service.ChangeAvatar(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -104,7 +118,9 @@ func (controller *User) UserMyPrivacySetting(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	response, err := controller.Service.MyPrivacySetting(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -120,7 +136,9 @@ func (controller *User) UserMyListGroups(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	response, err := controller.Service.MyListGroups(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -136,7 +154,9 @@ func (controller *User) UserMyListNewsletter(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	response, err := controller.Service.MyListNewsletter(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -152,7 +172,9 @@ func (controller *User) UserMyListContacts(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	response, err := controller.Service.MyListContacts(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -165,7 +187,9 @@ func (controller *User) UserMyListContacts(c *fiber.Ctx) error {
 func (controller *User) UserChangePushName(c *fiber.Ctx) error {
 	var request domainUser.ChangePushNameRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -174,7 +198,9 @@ func (controller *User) UserChangePushName(c *fiber.Ctx) error {
 	request.Token = token
 
 	err = controller.Service.ChangePushName(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -186,7 +212,9 @@ func (controller *User) UserChangePushName(c *fiber.Ctx) error {
 func (controller *User) UserCheck(c *fiber.Ctx) error {
 	var request domainUser.CheckRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -195,7 +223,9 @@ func (controller *User) UserCheck(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.IsOnWhatsApp(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -208,7 +238,9 @@ func (controller *User) UserCheck(c *fiber.Ctx) error {
 func (controller *User) UserBusinessProfile(c *fiber.Ctx) error {
 	var request domainUser.BusinessProfileRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	utils.SanitizePhone(&request.Phone)
 
@@ -219,7 +251,9 @@ func (controller *User) UserBusinessProfile(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.BusinessProfile(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

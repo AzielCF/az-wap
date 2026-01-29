@@ -127,7 +127,9 @@ func (h *Bot) ListModels(c *fiber.Ctx) error {
 
 func (h *Bot) ListBots(c *fiber.Ctx) error {
 	bots, err := h.Service.List(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -391,7 +393,9 @@ func (h *Bot) HandleWebhook(c *fiber.Ctx) error {
 func (h *Bot) ListBotMCPs(c *fiber.Ctx) error {
 	id := c.Params("id")
 	servers, err := h.MCPService.ListServersForBot(c.UserContext(), id)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
@@ -409,7 +413,9 @@ func (h *Bot) AddBotMCP(c *fiber.Ctx) error {
 		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
 	}
 	err := h.MCPService.ToggleServerForBot(c.UserContext(), id, req.ServerID, req.Enabled)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP toggled"})
 }
 
@@ -433,7 +439,9 @@ func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
 		CustomHeaders: req.CustomHeaders,
 		Instructions:  req.Instructions,
 	})
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP config updated"})
 }
 
@@ -441,6 +449,8 @@ func (h *Bot) RemoveBotMCP(c *fiber.Ctx) error {
 	id := c.Params("id")
 	serverID := c.Params("server_id")
 	err := h.MCPService.ToggleServerForBot(c.UserContext(), id, serverID, false)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{Status: 200, Message: "Bot MCP removed"})
 }

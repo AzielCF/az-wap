@@ -30,7 +30,9 @@ func InitRestSend(app fiber.Router, service domainSend.ISendUsecase) Send {
 func (controller *Send) SendText(c *fiber.Ctx) error {
 	var request domainSend.MessageRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -41,7 +43,9 @@ func (controller *Send) SendText(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendText(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -56,7 +60,9 @@ func (controller *Send) SendImage(c *fiber.Ctx) error {
 	request.Compress = true
 
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	file, err := c.FormFile("image")
 	if err == nil {
@@ -72,7 +78,9 @@ func (controller *Send) SendImage(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendImage(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -85,10 +93,14 @@ func (controller *Send) SendImage(c *fiber.Ctx) error {
 func (controller *Send) SendFile(c *fiber.Ctx) error {
 	var request domainSend.FileRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	file, err := c.FormFile("file")
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	request.File = file
 
@@ -101,7 +113,9 @@ func (controller *Send) SendFile(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendFile(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -114,7 +128,9 @@ func (controller *Send) SendFile(c *fiber.Ctx) error {
 func (controller *Send) SendVideo(c *fiber.Ctx) error {
 	var request domainSend.VideoRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	// Try to get file but ignore error if not provided
 	if videoFile, errFile := c.FormFile("video"); errFile == nil {
@@ -130,7 +146,9 @@ func (controller *Send) SendVideo(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendVideo(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -143,7 +161,9 @@ func (controller *Send) SendVideo(c *fiber.Ctx) error {
 func (controller *Send) SendSticker(c *fiber.Ctx) error {
 	var request domainSend.StickerRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	// Try to get file but ignore error if not provided
 	if stickerFile, errFile := c.FormFile("sticker"); errFile == nil {
@@ -159,7 +179,9 @@ func (controller *Send) SendSticker(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendSticker(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -172,7 +194,9 @@ func (controller *Send) SendSticker(c *fiber.Ctx) error {
 func (controller *Send) SendContact(c *fiber.Ctx) error {
 	var request domainSend.ContactRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -183,7 +207,9 @@ func (controller *Send) SendContact(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendContact(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -196,7 +222,9 @@ func (controller *Send) SendContact(c *fiber.Ctx) error {
 func (controller *Send) SendLink(c *fiber.Ctx) error {
 	var request domainSend.LinkRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -207,7 +235,9 @@ func (controller *Send) SendLink(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendLink(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -220,7 +250,9 @@ func (controller *Send) SendLink(c *fiber.Ctx) error {
 func (controller *Send) SendLocation(c *fiber.Ctx) error {
 	var request domainSend.LocationRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -231,7 +263,9 @@ func (controller *Send) SendLocation(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendLocation(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -244,7 +278,9 @@ func (controller *Send) SendLocation(c *fiber.Ctx) error {
 func (controller *Send) SendAudio(c *fiber.Ctx) error {
 	var request domainSend.AudioRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	// Try to get file but ignore error if not provided
 	if audioFile, errFile := c.FormFile("audio"); errFile == nil {
@@ -277,7 +313,9 @@ func (controller *Send) SendAudio(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendAudio(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -290,12 +328,16 @@ func (controller *Send) SendAudio(c *fiber.Ctx) error {
 func (controller *Send) SendPoll(c *fiber.Ctx) error {
 	var request domainSend.PollRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendPoll(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -308,7 +350,9 @@ func (controller *Send) SendPoll(c *fiber.Ctx) error {
 func (controller *Send) SendPresence(c *fiber.Ctx) error {
 	var request domainSend.PresenceRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -317,7 +361,9 @@ func (controller *Send) SendPresence(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.SendPresence(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -330,7 +376,9 @@ func (controller *Send) SendPresence(c *fiber.Ctx) error {
 func (controller *Send) SendChatPresence(c *fiber.Ctx) error {
 	var request domainSend.ChatPresenceRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -341,7 +389,9 @@ func (controller *Send) SendChatPresence(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.Phone)
 
 	response, err := controller.Service.SendChatPresence(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

@@ -46,7 +46,9 @@ func InitRestGroup(app fiber.Router, service domainGroup.IGroupUsecase) Group {
 func (controller *Group) JoinGroupWithLink(c *fiber.Ctx) error {
 	var request domainGroup.JoinGroupWithLinkRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -55,7 +57,9 @@ func (controller *Group) JoinGroupWithLink(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.JoinGroupWithLink(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -70,7 +74,9 @@ func (controller *Group) JoinGroupWithLink(c *fiber.Ctx) error {
 func (controller *Group) GetGroupInfoFromLink(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupInfoFromLinkRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -79,7 +85,9 @@ func (controller *Group) GetGroupInfoFromLink(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.GetGroupInfoFromLink(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -92,7 +100,9 @@ func (controller *Group) GetGroupInfoFromLink(c *fiber.Ctx) error {
 func (controller *Group) LeaveGroup(c *fiber.Ctx) error {
 	var request domainGroup.LeaveGroupRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -103,7 +113,9 @@ func (controller *Group) LeaveGroup(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.LeaveGroup(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -115,7 +127,9 @@ func (controller *Group) LeaveGroup(c *fiber.Ctx) error {
 func (controller *Group) CreateGroup(c *fiber.Ctx) error {
 	var request domainGroup.CreateGroupRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -124,7 +138,9 @@ func (controller *Group) CreateGroup(c *fiber.Ctx) error {
 	request.Token = token
 
 	groupID, err := controller.Service.CreateGroup(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -139,7 +155,9 @@ func (controller *Group) CreateGroup(c *fiber.Ctx) error {
 func (controller *Group) ListParticipants(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupParticipantsRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -158,7 +176,9 @@ func (controller *Group) ListParticipants(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	result, err := controller.Service.GetGroupParticipants(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -171,7 +191,9 @@ func (controller *Group) ListParticipants(c *fiber.Ctx) error {
 func (controller *Group) ExportParticipants(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupParticipantsRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -190,12 +212,16 @@ func (controller *Group) ExportParticipants(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	result, err := controller.Service.GetGroupParticipants(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
 
-	utils.PanicIfNeeded(writer.Write([]string{"participant_jid", "phone_number", "lid", "display_name", "role"}))
+	if err := writer.Write([]string{"participant_jid", "phone_number", "lid", "display_name", "role"}); err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	for _, participant := range result.Participants {
 		role := "member"
@@ -213,11 +239,15 @@ func (controller *Group) ExportParticipants(c *fiber.Ctx) error {
 			role,
 		}
 
-		utils.PanicIfNeeded(writer.Write(record))
+		if err := writer.Write(record); err != nil {
+			return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+		}
 	}
 
 	writer.Flush()
-	utils.PanicIfNeeded(writer.Error())
+	if err := writer.Error(); err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	fileName := fmt.Sprintf("group-%s-participants.csv", strings.ReplaceAll(result.GroupID, "@", "_"))
 
@@ -246,7 +276,9 @@ func (controller *Group) DemoteParticipants(c *fiber.Ctx) error {
 func (controller *Group) ListParticipantRequests(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupRequestParticipantsRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	if request.GroupID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(utils.ResponseData{
@@ -259,7 +291,9 @@ func (controller *Group) ListParticipantRequests(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	result, err := controller.Service.GetGroupRequestParticipants(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -281,7 +315,9 @@ func (controller *Group) RejectParticipantRequests(c *fiber.Ctx) error {
 func (controller *Group) manageParticipants(c *fiber.Ctx, action whatsmeow.ParticipantChange, successMsg string) error {
 	var request domainGroup.ParticipantRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -292,7 +328,9 @@ func (controller *Group) manageParticipants(c *fiber.Ctx, action whatsmeow.Parti
 	utils.SanitizePhone(&request.GroupID)
 	request.Action = action
 	result, err := controller.Service.ManageParticipant(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
@@ -305,7 +343,9 @@ func (controller *Group) manageParticipants(c *fiber.Ctx, action whatsmeow.Parti
 func (controller *Group) handleRequestedParticipants(c *fiber.Ctx, action whatsmeow.ParticipantRequestChange, successMsg string) error {
 	var request domainGroup.GroupRequestParticipantsRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -316,7 +356,9 @@ func (controller *Group) handleRequestedParticipants(c *fiber.Ctx, action whatsm
 	utils.SanitizePhone(&request.GroupID)
 	request.Action = action
 	result, err := controller.Service.ManageGroupRequestParticipants(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
@@ -328,7 +370,9 @@ func (controller *Group) handleRequestedParticipants(c *fiber.Ctx, action whatsm
 func (controller *Group) SetGroupPhoto(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupPhotoRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -361,8 +405,8 @@ func (controller *Group) SetGroupPhoto(c *fiber.Ctx) error {
 	pictureID, err := controller.Service.SetGroupPhoto(c.UserContext(), request)
 	if err != nil {
 		logrus.Printf("ERROR: WhatsApp service failed to set group photo - %v", err)
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
 	}
-	utils.PanicIfNeeded(err)
 
 	message := "Success update group photo"
 	if request.Photo == nil {
@@ -383,7 +427,9 @@ func (controller *Group) SetGroupPhoto(c *fiber.Ctx) error {
 func (controller *Group) SetGroupName(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupNameRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -394,7 +440,9 @@ func (controller *Group) SetGroupName(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupName(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -406,7 +454,9 @@ func (controller *Group) SetGroupName(c *fiber.Ctx) error {
 func (controller *Group) SetGroupLocked(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupLockedRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -417,7 +467,9 @@ func (controller *Group) SetGroupLocked(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupLocked(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	message := "Success set group as unlocked"
 	if request.Locked {
@@ -434,7 +486,9 @@ func (controller *Group) SetGroupLocked(c *fiber.Ctx) error {
 func (controller *Group) SetGroupAnnounce(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupAnnounceRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -445,7 +499,9 @@ func (controller *Group) SetGroupAnnounce(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupAnnounce(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	message := "Success disable announce mode"
 	if request.Announce {
@@ -462,7 +518,9 @@ func (controller *Group) SetGroupAnnounce(c *fiber.Ctx) error {
 func (controller *Group) SetGroupTopic(c *fiber.Ctx) error {
 	var request domainGroup.SetGroupTopicRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -473,7 +531,9 @@ func (controller *Group) SetGroupTopic(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	err = controller.Service.SetGroupTopic(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	message := "Success update group topic"
 	if request.Topic == "" {
@@ -491,7 +551,9 @@ func (controller *Group) SetGroupTopic(c *fiber.Ctx) error {
 func (controller *Group) GroupInfo(c *fiber.Ctx) error {
 	var request domainGroup.GroupInfoRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -502,7 +564,9 @@ func (controller *Group) GroupInfo(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	response, err := controller.Service.GroupInfo(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -515,7 +579,9 @@ func (controller *Group) GroupInfo(c *fiber.Ctx) error {
 func (controller *Group) GetGroupInviteLink(c *fiber.Ctx) error {
 	var request domainGroup.GetGroupInviteLinkRequest
 	err := c.QueryParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	token := c.Get("X-Instance-Token")
 	if token == "" {
@@ -526,7 +592,9 @@ func (controller *Group) GetGroupInviteLink(c *fiber.Ctx) error {
 	utils.SanitizePhone(&request.GroupID)
 
 	response, err := controller.Service.GetGroupInviteLink(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

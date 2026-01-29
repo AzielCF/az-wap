@@ -127,12 +127,14 @@ func (h *ChannelHandler) mapChannelToLegacy(ch channel.Channel) LegacyInstanceRe
 func (handler *ChannelHandler) CreateInstance(c *fiber.Ctx) error {
 	var request CreateInstanceRequest
 	if err := c.BodyParser(&request); err != nil {
-		utils.PanicIfNeeded(err)
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
 	}
 
 	// Use default workspace for legacy creates
 	workspaces, err := handler.WorkspaceUsecase.ListWorkspaces(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	wsID := ""
 	if len(workspaces) > 0 {
@@ -140,12 +142,16 @@ func (handler *ChannelHandler) CreateInstance(c *fiber.Ctx) error {
 	} else {
 		// Create default if none
 		ws, err := handler.WorkspaceUsecase.CreateWorkspace(c.UserContext(), "Default Workspace", "Legacy default", "system")
-		utils.PanicIfNeeded(err)
+		if err != nil {
+			return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+		}
 		wsID = ws.ID
 	}
 
 	ch, err := handler.WorkspaceUsecase.CreateChannel(c.UserContext(), wsID, channel.ChannelTypeWhatsApp, request.Name)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	// Ensure instance_id setting for backward compat adapter creation
 	if ch.Config.Settings == nil {
@@ -175,7 +181,9 @@ func (handler *ChannelHandler) CreateInstance(c *fiber.Ctx) error {
 func (handler *ChannelHandler) ListInstances(c *fiber.Ctx) error {
 	// List from all workspaces
 	workspaces, err := handler.WorkspaceUsecase.ListWorkspaces(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	var results []LegacyInstanceResponse
 	for _, ws := range workspaces {

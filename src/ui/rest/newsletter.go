@@ -23,10 +23,14 @@ func InitRestNewsletter(app fiber.Router, service domainNewsletter.INewsletterUs
 func (controller *Newsletter) Unfollow(c *fiber.Ctx) error {
 	var request domainNewsletter.UnfollowRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	err = controller.Service.Unfollow(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -46,7 +50,9 @@ func (controller *Newsletter) List(c *fiber.Ctx) error {
 	}
 
 	newsletters, err := controller.Service.List(c.UserContext(), channelID)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -59,10 +65,14 @@ func (controller *Newsletter) List(c *fiber.Ctx) error {
 func (controller *Newsletter) SchedulePost(c *fiber.Ctx) error {
 	var request domainNewsletter.SchedulePostRequest
 	err := c.BodyParser(&request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
+	}
 
 	post, err := controller.Service.SchedulePost(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -83,7 +93,9 @@ func (controller *Newsletter) ListScheduled(c *fiber.Ctx) error {
 	}
 
 	posts, err := controller.Service.ListScheduled(c.UserContext(), channelID)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -104,7 +116,9 @@ func (controller *Newsletter) CancelScheduled(c *fiber.Ctx) error {
 	}
 
 	err := controller.Service.CancelScheduled(c.UserContext(), postID)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

@@ -37,7 +37,9 @@ func (controller *Chat) ListChats(c *fiber.Ctx) error {
 	request.Token = token
 
 	response, err := controller.Service.ListChats(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -80,7 +82,9 @@ func (controller *Chat) GetChatMessages(c *fiber.Ctx) error {
 	}
 
 	response, err := controller.Service.GetChatMessages(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -107,7 +111,9 @@ func (controller *Chat) PinChat(c *fiber.Ctx) error {
 	}
 
 	response, err := controller.Service.PinChat(c.UserContext(), request)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

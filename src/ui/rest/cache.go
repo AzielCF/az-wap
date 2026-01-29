@@ -24,7 +24,9 @@ func InitRestCache(app fiber.Router, service domainCache.ICacheUsecase) Cache {
 
 func (handler *Cache) GetGlobalStats(c *fiber.Ctx) error {
 	stats, err := handler.Service.GetGlobalStats(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -36,7 +38,9 @@ func (handler *Cache) GetGlobalStats(c *fiber.Ctx) error {
 
 func (handler *Cache) ClearGlobalCache(c *fiber.Ctx) error {
 	err := handler.Service.ClearGlobalCache(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -48,7 +52,9 @@ func (handler *Cache) ClearGlobalCache(c *fiber.Ctx) error {
 func (handler *Cache) GetInstanceStats(c *fiber.Ctx) error {
 	id := c.Params("id")
 	stats, err := handler.Service.GetInstanceStats(c.UserContext(), id)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -61,7 +67,9 @@ func (handler *Cache) GetInstanceStats(c *fiber.Ctx) error {
 func (handler *Cache) ClearInstanceCache(c *fiber.Ctx) error {
 	id := c.Params("id")
 	err := handler.Service.ClearInstanceCache(c.UserContext(), id)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -72,7 +80,9 @@ func (handler *Cache) ClearInstanceCache(c *fiber.Ctx) error {
 
 func (handler *Cache) GetSettings(c *fiber.Ctx) error {
 	settings, err := handler.Service.GetSettings(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -93,7 +103,9 @@ func (handler *Cache) UpdateSettings(c *fiber.Ctx) error {
 	}
 
 	err := handler.Service.SaveSettings(c.UserContext(), settings)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,

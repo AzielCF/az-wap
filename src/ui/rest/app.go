@@ -41,7 +41,9 @@ func (handler *App) Login(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	response, err := handler.Service.Login(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -60,7 +62,9 @@ func (handler *App) LoginWithCode(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	pairCode, err := handler.Service.LoginWithCode(c.UserContext(), token, c.Query("phone"))
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -78,7 +82,9 @@ func (handler *App) Logout(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	err := handler.Service.Logout(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -94,7 +100,9 @@ func (handler *App) Reconnect(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	err := handler.Service.Reconnect(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -110,7 +118,9 @@ func (handler *App) Devices(c *fiber.Ctx) error {
 		token = c.Query("token")
 	}
 	devices, err := handler.Service.FetchDevices(c.UserContext(), token)
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -149,7 +159,9 @@ func (handler *App) ConnectionStatus(c *fiber.Ctx) error {
 
 func (handler *App) GetSettings(c *fiber.Ctx) error {
 	settings, err := handler.Service.GetSettings(c.UserContext())
-	utils.PanicIfNeeded(err)
+	if err != nil {
+		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+	}
 	return c.JSON(settings)
 }
 
@@ -161,7 +173,9 @@ func (handler *App) UpdateSettings(c *fiber.Ctx) error {
 
 	for k, v := range body {
 		err := handler.Service.UpdateSettings(c.UserContext(), k, v)
-		utils.PanicIfNeeded(err)
+		if err != nil {
+			return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+		}
 	}
 
 	return c.JSON(fiber.Map{"status": "ok"})

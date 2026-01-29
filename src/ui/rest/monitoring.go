@@ -1,6 +1,7 @@
 package rest
 
 import (
+	botdomain "github.com/AzielCF/az-wap/botengine/domain"
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
@@ -8,13 +9,14 @@ import (
 )
 
 type MonitoringHandler struct {
-	store monitoring.MonitoringStore
-	wm    *workspace.Manager
+	store    monitoring.MonitoringStore
+	wm       *workspace.Manager
+	aiCaches botdomain.ContextCacheStore
 }
 
 // InitRestMonitoring registra los endpoints unificados de monitoreo del sistema
-func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *workspace.Manager) {
-	h := &MonitoringHandler{store: store, wm: wm}
+func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *workspace.Manager, aiCaches botdomain.ContextCacheStore) {
+	h := &MonitoringHandler{store: store, wm: wm, aiCaches: aiCaches}
 
 	g := app.Group("/monitoring")
 
@@ -26,6 +28,9 @@ func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *
 
 	// Feed de eventos (mantenemos botmonitor por ahora para el log de eventos recientes)
 	g.Get("/events", h.GetRecentEvents)
+
+	// AI Cache Inspector
+	g.Get("/ai-caches", h.GetAICaches)
 }
 
 func (h *MonitoringHandler) GetServers(c *fiber.Ctx) error {
@@ -64,4 +69,18 @@ func (h *MonitoringHandler) GetTypingStatus(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(active)
+}
+
+// GetAICaches returns all active AI provider caches for inspection
+func (h *MonitoringHandler) GetAICaches(c *fiber.Ctx) error {
+	if h.aiCaches == nil {
+		return c.JSON([]interface{}{})
+	}
+
+	caches, err := h.aiCaches.List(c.UserContext())
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(caches)
 }
