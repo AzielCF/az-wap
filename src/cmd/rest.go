@@ -153,7 +153,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestHealth(apiGroup, healthUsecase)
 
 	// Unified Monitoring System (Multi-server aware)
-	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager)
+	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
 
 	// Register Workspace Handlers
 	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
