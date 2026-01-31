@@ -6,6 +6,7 @@ type ScheduledPostStatus string
 
 const (
 	ScheduledPostStatusPending    ScheduledPostStatus = "pending"
+	ScheduledPostStatusEnqueued   ScheduledPostStatus = "enqueued"
 	ScheduledPostStatusSent       ScheduledPostStatus = "sent"
 	ScheduledPostStatusFailed     ScheduledPostStatus = "failed"
 	ScheduledPostStatusCancelled  ScheduledPostStatus = "cancelled"
