@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	globalConfig "github.com/AzielCF/az-wap/config"
 	waUtils "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter/utils"
@@ -145,6 +146,17 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 		if wa.eventHandler == nil || v.Info.IsFromMe || pkgUtils.IsGroupJID(v.Info.Chat.String()) {
 			return
 		}
+
+		// 0. LOCAL DEDUPLICATION: Prevent processing the same Message ID twice in this adapter
+		if _, loaded := wa.eventDedup.LoadOrStore(v.Info.ID, time.Now()); loaded {
+			logrus.Debugf("[WHATSAPP] Dropping duplicate event for message %s", v.Info.ID)
+			return
+		}
+		// Cleanup dedup entry after 1 minute
+		go func() {
+			time.Sleep(1 * time.Minute)
+			wa.eventDedup.Delete(v.Info.ID)
+		}()
 
 		text := pkgUtils.ExtractMessageTextFromEvent(v)
 

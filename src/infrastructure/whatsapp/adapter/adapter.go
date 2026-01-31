@@ -46,6 +46,9 @@ type WhatsAppAdapter struct {
 	// Connection lock to prevent race conditions during Resume/Hibernate
 	connMu sync.Mutex
 
+	// LOCAL DEDUPLICATION: Prevents multiple events for the same Message ID
+	eventDedup sync.Map
+
 	stopSync chan struct{}
 }
 

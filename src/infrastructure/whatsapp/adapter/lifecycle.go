@@ -121,8 +121,8 @@ func (wa *WhatsAppAdapter) Start(ctx context.Context, config channel.ChannelConf
 	wa.client.AutoTrustIdentity = true
 	wa.dbContainer = container // Store reference for cleanup
 
-	// Registrar handlers internos
-	wa.handlerID = wa.client.AddEventHandler(wa.handleEvent)
+	// Event handler will be registered via RegisterAdapter -> OnMessage
+	// wa.handlerID = wa.client.AddEventHandler(wa.handleEvent)
 
 	if err := wa.client.Connect(); err != nil {
 		return fmt.Errorf("failed to connect new client: %w", err)
