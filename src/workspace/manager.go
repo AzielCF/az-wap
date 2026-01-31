@@ -2,18 +2,23 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	globalConfig "github.com/AzielCF/az-wap/config"
+	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/application"
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
+	sessionDomain "github.com/AzielCF/az-wap/workspace/domain/session" // Added this import to resolve sessionDomain.SessionStore
 	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/infrastructure"
 	"github.com/AzielCF/az-wap/workspace/repository"
@@ -22,7 +27,7 @@ import (
 
 type AdapterFactory = application.AdapterFactory
 
-// ClientResolver es una interfaz para resolver el contexto del cliente
+// ClientResolver is an interface to resolve the client context
 type ClientResolver interface {
 	Resolve(ctx context.Context, platformID, secondaryID string, platformType string, channelID string) (*botengineDomain.ClientContext, string, error)
 }
@@ -39,6 +44,8 @@ type Manager struct {
 	monitor        monitoring.MonitoringStore
 	serverID       string
 	startTime      time.Time
+	valkeyClient   *valkey.Client // Holds Valkey client for cleanup on shutdown
+	messageDedup   sync.Map       // Local deduplication for non-Valkey environments
 }
 
 func NewManager(
@@ -47,10 +54,9 @@ func NewManager(
 	clientResolver ClientResolver,
 	typingStore channelDomain.TypingStore,
 	monitor monitoring.MonitoringStore,
+	vkClient *valkey.Client,
+	serverID string,
 ) *Manager {
-	// Generate a unique ID for this server instance
-	serverID := "azwap-" + time.Now().Format("05.000")
-
 	m := &Manager{
 		repo:           repo,
 		botEngine:      botEngine,
@@ -59,24 +65,27 @@ func NewManager(
 		monitor:        monitor,
 		serverID:       serverID,
 		startTime:      time.Now(),
+		valkeyClient:   vkClient,
 	}
 
-	// 1. Initialize Presence Manager
-	// Inyectar MemoryPresenceStore en el constructor de PresenceManager
-	m.presence = application.NewPresenceManager(repository.NewMemoryPresenceStore())
+	// 2. Initialize Internal Distributed Stores (Sessions, Presence)
+	sessionStore, presenceStore := m.initInternalDistributedStores()
 
-	// 2. Initialize Session Orchestrator
-	m.sessions = application.NewSessionOrchestrator(botEngine)
+	// 3. Initialize Presence Manager
+	m.presence = application.NewPresenceManager(presenceStore)
 
-	// 3. Initialize Message Processor
+	// 4. Initialize Session Orchestrator with the stores
+	m.sessions = application.NewSessionOrchestratorWithStore(botEngine, sessionStore, m.typingStore)
+
+	// 5. Initialize Message Processor
 	m.processor = application.NewMessageProcessor(repo, m.sessions)
 
-	// 4. Initialize Channel Service
+	// 6. Initialize Channel Service
 	m.channels = application.NewChannelService(repo, botEngine, func(adapter channelDomain.ChannelAdapter) botengineDomain.Transport {
 		return &infrastructure.BotTransportAdapter{Adapter: adapter}
 	})
 
-	// 5. Wire up Callbacks
+	// 7. Wire up Callbacks
 	m.sessions.OnProcessFinal = m.processFinalBridge
 	m.sessions.OnInactivityWarn = m.sendInactivityWarning
 	m.sessions.OnCleanupFiles = m.cleanupSessionFiles
@@ -102,7 +111,7 @@ func NewManager(
 		}
 	}
 
-	// 6. Start Internal Loops
+	// 8. Start Internal Loops
 	m.StartPresenceLoop(context.Background())
 
 	// Initialize Monitoring Hooks for Global Pool
@@ -114,6 +123,28 @@ func NewManager(
 	logrus.Infof("[WS_MANAGER] Initialized with ServerID: %s", serverID)
 
 	return m
+}
+
+// initInternalDistributedStores initializes the internal storage backends based on configuration.
+func (m *Manager) initInternalDistributedStores() (sessionDomain.SessionStore, channelDomain.PresenceStore) {
+	if m.valkeyClient == nil {
+		logrus.Info("[WS_MANAGER] Valkey client not provided, using in-memory stores for Sessions and Presence")
+		return repository.NewMemorySessionStore(), repository.NewMemoryPresenceStore()
+	}
+
+	logrus.Info("[WS_MANAGER] Using Valkey for distributed Sessions and Presence Management")
+
+	return repository.NewValkeySessionStore(m.valkeyClient),
+		repository.NewValkeyPresenceStore(m.valkeyClient)
+}
+
+// Close releases resources held by the Manager (e.g., Valkey connection).
+// Should be called when the application shuts down.
+func (m *Manager) Close() {
+	if m.valkeyClient != nil {
+		m.valkeyClient.Close()
+		logrus.Info("[WS_MANAGER] Valkey connection closed")
+	}
 }
 
 func (m *Manager) startHeartbeat() {
@@ -173,10 +204,10 @@ func (m *Manager) UnregisterAdapter(channelID string) {
 	m.presence.UnregisterAdapter(channelID)
 }
 
-// UnregisterAndCleanup stops the adapter and deletes all persistent data (DBs, files)
+// UnregisterAndCleanup stops the adapter and deletes all persistent data (DBs, files, and presence)
 func (m *Manager) UnregisterAndCleanup(channelID string) {
 	m.channels.UnregisterAndCleanup(channelID)
-	m.presence.UnregisterAdapter(channelID)
+	_ = m.presence.DeleteStatus(context.Background(), channelID)
 }
 
 func (m *Manager) GetAdapter(channelID string) (channelDomain.ChannelAdapter, bool) {
@@ -201,6 +232,14 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 	m.presence.HandleIncomingActivity(msg.ChannelID)
 
 	logrus.Infof("[WorkspaceManager] Processing incoming message from channel %s (Sender: %s, Text: %s)", msg.ChannelID, msg.SenderID, msg.Text)
+
+	messageID, _ := msg.Metadata["message_id"].(string)
+	if messageID != "" {
+		if !m.tryLockMessage(msg.ChannelID, messageID, msg.SenderID, msg.Text) {
+			logrus.Debugf("[WorkspaceManager] Skipping duplicate message %s for channel %s", messageID, msg.ChannelID)
+			return
+		}
+	}
 
 	ctx := context.Background()
 	ch, err := m.repo.GetChannel(ctx, msg.ChannelID)
@@ -554,4 +593,72 @@ func (m *Manager) WaitIdle(ctx context.Context, channelID, chatID string, timeou
 
 func (m *Manager) SetProfilePhoto(ctx context.Context, channelID string, photo []byte) (string, error) {
 	return m.channels.SetProfilePhoto(ctx, channelID, photo)
+}
+
+func (m *Manager) tryLockMessage(channelID, messageID, senderID, text string) bool {
+	if messageID == "" {
+		return true
+	}
+
+	// 1. LAYER 1: ID LOCK (Compact key 'd:i:', 2m TTL)
+	if !m.acquireLock("d:i:"+messageID, 2*time.Minute) {
+		logrus.Debugf("[WorkspaceManager] Drop retry ID: %s", messageID)
+		return false
+	}
+
+	// 2. LAYER 2: CONTENT LOCK (Compact key 'd:c:', 5s TTL)
+	if len(text) > 0 && len(text) < 1000 {
+		// NORMALIZE SENDER: Remove @server and :device suffix to match JID/LID/PN
+		cleanSender := senderID
+		if idx := strings.Index(cleanSender, "@"); idx != -1 {
+			cleanSender = cleanSender[:idx]
+		}
+		if idx := strings.Index(cleanSender, ":"); idx != -1 {
+			cleanSender = cleanSender[:idx]
+		}
+
+		hasher := sha256.New()
+		hasher.Write([]byte(cleanSender + ":" + text))
+		contentHash := hex.EncodeToString(hasher.Sum(nil))[:12]
+		contentKey := "d:c:" + channelID + ":" + contentHash
+
+		if !m.acquireLock(contentKey, 5*time.Second) {
+			logrus.Warnf("[WorkspaceManager] Drop content ghost from %s (normalized: %s)", senderID, cleanSender)
+			return false
+		}
+	}
+
+	return true
+}
+
+// acquireLock optimized for Valkey memory
+func (m *Manager) acquireLock(key string, expiration time.Duration) bool {
+	if m.valkeyClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		valkeyKey := m.valkeyClient.Key(key)
+		// Use empty value "" to save memory. NX + EX handles the logic.
+		res := m.valkeyClient.Inner().Do(ctx, m.valkeyClient.Inner().B().Set().Key(valkeyKey).Value("").Nx().Ex(expiration).Build())
+
+		if err := res.Error(); err != nil {
+			if valkey.IsNil(err) {
+				return false
+			}
+			logrus.WithError(err).Warnf("[WS] Valkey lock fail: %s", key)
+		} else {
+			return !valkey.IsNil(res.Error())
+		}
+	}
+
+	if _, loaded := m.messageDedup.LoadOrStore(key, time.Now()); loaded {
+		return false
+	}
+
+	go func() {
+		time.Sleep(expiration + 30*time.Second)
+		m.messageDedup.Delete(key)
+	}()
+
+	return true
 }
