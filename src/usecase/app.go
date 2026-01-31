@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,9 +13,6 @@ import (
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
-	fiberUtils "github.com/gofiber/fiber/v2/utils"
-	"github.com/sirupsen/logrus"
-	"github.com/skip2/go-qrcode"
 )
 
 type serviceApp struct {
@@ -84,21 +80,8 @@ func (service *serviceApp) Login(ctx context.Context, token string) (response do
 	select {
 	case code := <-qrChan:
 		response.Code = code
-		response.Duration = 20 // Default WhatsApp QR duration approx
-
-		qrPath := fmt.Sprintf("%s/scan-qr-%s.png", config.PathQrCode, fiberUtils.UUIDv4())
-		err = qrcode.WriteFile(code, qrcode.Medium, 512, qrPath)
-		if err != nil {
-			logrus.Error("Error when write qr code to file: ", err)
-		}
-
-		response.ImagePath = qrPath
-
-		// Cleanup timer
-		go func() {
-			time.Sleep(20 * time.Second)
-			_ = os.Remove(qrPath)
-		}()
+		response.Duration = 20    // Default WhatsApp QR duration approx
+		response.ImagePath = code // Devolver el código directamente como "path" para retrocompatibilidad simple o mejorando el campo después
 
 	case <-time.After(30 * time.Second):
 		return response, fmt.Errorf("timeout waiting for QR code")

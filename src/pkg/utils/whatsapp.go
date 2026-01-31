@@ -765,14 +765,6 @@ func CheckLogin(client *whatsmeow.Client) error {
 	return nil
 }
 
-// MustLogin is a wrapper for CheckLogin that maintains backward compatibility but is discouraged.
-// It will still panic to support code that hasn't been migrated, but we should migrate all callers.
-func MustLogin(client *whatsmeow.Client) {
-	if err := CheckLogin(client); err != nil {
-		panic(err)
-	}
-}
-
 // Internal message types for event handling
 type EvtMessage struct {
 	Text          string `json:"text"`
