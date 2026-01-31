@@ -190,74 +190,85 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 		model = domainBot.DefaultGeminiModel
 	}
 
-	// CONTEXT CACHING LOGIC
-	// Google requires at least 32,768 tokens for some models, but Flash 1.5/2.0 can work with ~4000.
-	// Set threshold to 5,000 chars for better responsiveness.
-	totalChars := 0
-	for _, c := range contents {
+	// --- CONTEXT CACHING INTELLIGENCE (Checkpoint Logic) ---
+	// Google (Gemini) requires a minimum of 1024 tokens for caching in Flash models.
+	// We'll use Valkey to track "maturation" before actually hitting the Google API.
+
+	// 1. Calculate tokens for the STABLE prefix (Instruction + Past History)
+	// We exclude the last turn to keep the cache stable while the conversation flows.
+	stablePrefixCount := len(contents) - 1
+	if stablePrefixCount < 0 {
+		stablePrefixCount = 0
+	}
+	stablePrefix := contents[:stablePrefixCount]
+
+	// Estimate tokens (1 token ≈ 4 characters for Gemini)
+	estimatedHistoryChars := 0
+	for _, c := range stablePrefix {
 		for _, p := range c.Parts {
-			totalChars += len(p.Text)
+			estimatedHistoryChars += len(p.Text)
 		}
 	}
-	totalChars += len(req.SystemPrompt)
+	systemTokens := p.estimateTokens(req.SystemPrompt)
+	historyTokens := estimatedHistoryChars / 4
+	totalStableTokens := systemTokens + historyTokens
 
 	var cachedContentName string
-	if totalChars > 5000 && p.contextCache != nil {
-		stablePrefixCount := len(contents) - 1
-		stablePrefix := contents[:stablePrefixCount]
+	if p.contextCache != nil {
+		maturationKey := fmt.Sprintf("maturation:%s", req.ChatKey)
+		// distributed lock to prevent races in maturation logic
+		locked, _ := p.contextCache.Lock(ctx, maturationKey, 10*time.Second)
+		if locked {
+			defer p.contextCache.Unlock(ctx, maturationKey)
+		}
 
 		fingerprint := p.calculateFingerprint(req.ChatKey, req.SystemPrompt, stablePrefix, functionDecls)
 
-		// Try to load from cache store
-		if entry, err := p.contextCache.Get(ctx, fingerprint); err == nil && entry != nil {
+		// 1. Check if we already have a REAL cache name in Valkey (via Precise Fingerprint)
+		entry, err := p.contextCache.Get(ctx, fingerprint)
+		if err == nil && entry != nil && entry.Name != "" && !strings.HasPrefix(entry.Name, "SIMULATED_") {
 			if time.Now().Before(entry.ExpiresAt) {
 				cachedContentName = entry.Name
 				contents = contents[stablePrefixCount:]
 				logrus.WithFields(logrus.Fields{
-					"chat_key":       req.ChatKey,
-					"cache_name":     cachedContentName,
-					"cached_actions": stablePrefixCount,
-				}).Info("[CACHE_HIT] Reusing chat context cache")
+					"chat_key":   req.ChatKey,
+					"cache_name": cachedContentName,
+					"tokens":     totalStableTokens,
+				}).Info("[CACHE_HIT] Reusing existing Google context cache")
 			}
 		}
 
+		// 2. If no real cache, update/overwrite the Maturation Status for this chat
 		if cachedContentName == "" {
-			ttl := 1 * time.Hour
-			cReq := &genai.CreateCachedContentConfig{
-				DisplayName: fmt.Sprintf("chat:%s", req.ChatKey),
-				Contents:    stablePrefix,
-				TTL:         ttl,
-			}
-			if req.SystemPrompt != "" {
-				cReq.SystemInstruction = genai.NewContentFromText(req.SystemPrompt, "")
-			}
-			if len(functionDecls) > 0 {
-				cReq.Tools = []*genai.Tool{{FunctionDeclarations: functionDecls}}
-			}
-
-			cache, cErr := client.Caches.Create(ctx, model, cReq)
-			if cErr == nil {
-				cachedContentName = cache.Name
-				_ = p.contextCache.Save(ctx, fingerprint, &domain.ContextCacheEntry{
-					Name:        cache.Name,
-					ExpiresAt:   time.Now().Add(55 * time.Minute),
-					Model:       model,
-					Type:        domain.CacheTypeChat,
-					Scope:       req.ChatKey,
-					Description: fmt.Sprintf("Chat: %s (Key: %s)", b.Name, req.ChatKey),
-					Fingerprint: fingerprint,
-					Provider:    "gemini",
-				}, 55*time.Minute)
-
-				contents = contents[stablePrefixCount:]
+			minTokenThreshold := 1024 // Gemini 1.5/2.5 Flash minimum
+			if totalStableTokens < minTokenThreshold {
 				logrus.WithFields(logrus.Fields{
-					"chat_key":   req.ChatKey,
-					"cache_name": cachedContentName,
-					"chars":      totalChars,
-					"bot":        b.Name,
-				}).Info("[CACHE_CREATED] New stable context cache created for specific chat")
-			} else if !strings.Contains(cErr.Error(), "too small") {
-				logrus.WithError(cErr).Warn("[CACHE_ERROR] Failed to create context cache")
+					"chat_key": req.ChatKey,
+					"current":  totalStableTokens,
+					"required": minTokenThreshold,
+				}).Debug("[CACHE_MATURING] Context too small for Google Cache")
+
+				// Save "maturation" state in Valkey using the STABLE ChatKey to OVERWRITE
+				_ = p.contextCache.Save(ctx, maturationKey, &domain.ContextCacheEntry{
+					Name:        fmt.Sprintf("SIM_P_%d", totalStableTokens),
+					ExpiresAt:   time.Now().Add(30 * time.Minute),
+					Fingerprint: fingerprint,
+				}, 30*time.Minute)
+			} else {
+				// REACHED THRESHOLD!
+				logrus.WithFields(logrus.Fields{
+					"chat_key":       req.ChatKey,
+					"total_tokens":   totalStableTokens,
+					"system_tokens":  systemTokens,
+					"history_tokens": historyTokens,
+				}).Warn("[CACHE_PROPOSED] Stable context reached threshold! READY for Google sync.")
+
+				// Update "PROPOSED" state in Valkey (Overwrites current maturation)
+				_ = p.contextCache.Save(ctx, maturationKey, &domain.ContextCacheEntry{
+					Name:        fmt.Sprintf("SIM_R_%d", totalStableTokens),
+					ExpiresAt:   time.Now().Add(30 * time.Minute),
+					Fingerprint: fingerprint,
+				}, 30*time.Minute)
 			}
 		}
 	}
@@ -274,7 +285,10 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	p.applyThinking(genConfig, model, "dynamic")
 
 	// --- TOKEN INTELLIGENCE (Estimation) ---
-	systemTokens := p.estimateTokens(req.SystemPrompt)
+	// Already calculated above in caching logic for some cases, but ensuring it's available here
+	if systemTokens == 0 {
+		systemTokens = p.estimateTokens(req.SystemPrompt)
+	}
 
 	// Intelligent User Token Estimation
 	textToEstimate := req.UserText
@@ -533,6 +547,13 @@ Now categorize this message according to the system rules.`, input.Text, histStr
 	systemCached := false
 
 	if p.contextCache != nil {
+		// global lock for intuition cache creation
+		lockKey := "lock:" + cacheFingerprint
+		locked, _ := p.contextCache.Lock(ctx, lockKey, 2*time.Minute)
+		if locked {
+			defer p.contextCache.Unlock(ctx, lockKey)
+		}
+
 		entry, _ := p.contextCache.Get(ctx, cacheFingerprint)
 		if entry != nil && time.Now().Before(entry.ExpiresAt) {
 			cacheName = entry.Name
@@ -553,12 +574,7 @@ Now categorize this message according to the system rules.`, input.Text, histStr
 				_ = p.contextCache.Save(ctx, cacheFingerprint, &domain.ContextCacheEntry{
 					Name:        cacheName,
 					ExpiresAt:   time.Now().Add(ttl),
-					Model:       model,
-					Type:        domain.CacheTypeGlobal,
-					Scope:       "",
-					Description: "Intuition System Prompt",
 					Fingerprint: cacheFingerprint,
-					Provider:    "gemini",
 				}, ttl)
 				systemCached = true
 				logrus.WithField("cache", cacheName).Info("[GEMINI] Created new intuition cache")

@@ -24,14 +24,13 @@ var (
 	AppTrustedProxies      []string // Trusted proxy IP ranges (e.g., "0.0.0.0/0" for all, or specific CIDRs)
 	AppBaseUrl             = "http://localhost:3000"
 	AppCorsAllowedOrigins  = "http://localhost:3000, http://localhost:5173"
+	AppServerID            = ""
 
 	McpPort = "8080"
 	McpHost = "localhost"
 
 	PathStatics   = "statics"
-	PathQrCode    = "statics/qrcode"
 	PathSendItems = "statics/senditems"
-	PathMedia     = "statics/media"
 	PathStorages  = "storages"
 
 	DBURI     = "file:storages/whatsapp.db?_foreign_keys=on"
@@ -159,6 +158,10 @@ func init() {
 		case "1", "true", "yes", "y", "on":
 			AppDebug = true
 		}
+	}
+
+	if val := os.Getenv("SERVER_ID"); val != "" {
+		AppServerID = val
 	}
 	if val := os.Getenv("WHATSAPP_LOG_LEVEL"); val != "" {
 		WhatsappLogLevel = strings.ToUpper(val)

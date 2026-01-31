@@ -16,21 +16,19 @@ const (
 // This is used to store references to provider-side caches (e.g., Gemini's CachedContent).
 type ContextCacheEntry struct {
 	// Name is the provider-assigned identifier for the cached content
-	Name string `json:"name"`
+	Name string `json:"n"`
 	// ExpiresAt is when this cache entry should be considered invalid
-	ExpiresAt time.Time `json:"expires_at"`
+	ExpiresAt time.Time `json:"e"`
 	// Model is the AI model this cache was created for
-	Model string `json:"model,omitempty"`
+	Model string `json:"m,omitempty"`
 	// Type categorizes the cache: "global", "bot", or "chat"
-	Type string `json:"type,omitempty"`
+	Type string `json:"t,omitempty"`
 	// Scope identifies the owner: "" for global, BotID for bot, ChatKey for chat
-	Scope string `json:"scope,omitempty"`
-	// Description is a human-readable label for UI display
-	Description string `json:"description,omitempty"`
+	Scope string `json:"s,omitempty"`
 	// Fingerprint is the key used to store this entry (for reference)
-	Fingerprint string `json:"fingerprint,omitempty"`
+	Fingerprint string `json:"f,omitempty"`
 	// Provider indicates which AI provider owns this cache (e.g., "gemini", "openai")
-	Provider string `json:"provider,omitempty"`
+	Provider string `json:"p,omitempty"`
 }
 
 // ContextCacheStore defines the contract for storing AI context cache references.
@@ -52,4 +50,11 @@ type ContextCacheStore interface {
 
 	// List returns all active (non-expired) cache entries for UI inspection.
 	List(ctx context.Context) ([]*ContextCacheEntry, error)
+
+	// Lock attempts to acquire a distributed lock for the given fingerprint.
+	// Returns true if acquired, false if already locked.
+	Lock(ctx context.Context, fingerprint string, ttl time.Duration) (bool, error)
+
+	// Unlock releases a previously acquired lock.
+	Unlock(ctx context.Context, fingerprint string) error
 }

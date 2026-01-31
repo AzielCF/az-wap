@@ -162,6 +162,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	clientHandler.RegisterRoutes(apiGroup)
 
 	// Websocket
+	websocket.SetValkeyClient(vkClient, serverID)
 	websocket.RegisterRoutes(apiGroup, appUsecase)
 	go websocket.RunHub()
 

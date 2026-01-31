@@ -85,6 +85,31 @@ func (s *MemoryContextCacheStore) List(ctx context.Context) ([]*domain.ContextCa
 	return result, nil
 }
 
+func (s *MemoryContextCacheStore) Lock(ctx context.Context, fingerprint string, ttl time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	lockKey := "lock:" + fingerprint
+	entry, ok := s.entries[lockKey]
+	if ok && time.Now().Before(entry.ExpiresAt) {
+		return false, nil
+	}
+
+	// Create a dummy entry to act as a lock
+	s.entries[lockKey] = &domain.ContextCacheEntry{
+		ExpiresAt: time.Now().Add(ttl),
+	}
+	return true, nil
+}
+
+func (s *MemoryContextCacheStore) Unlock(ctx context.Context, fingerprint string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.entries, "lock:"+fingerprint)
+	return nil
+}
+
 func (s *MemoryContextCacheStore) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()

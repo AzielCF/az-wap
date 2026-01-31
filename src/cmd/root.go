@@ -49,6 +49,7 @@ import (
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
+	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botDomain "github.com/AzielCF/az-wap/botengine/domain"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
@@ -115,6 +116,10 @@ var (
 	subService     *clientsApp.SubscriptionService
 	clientResolver *clientsApp.ClientResolver
 	clientHandler  *clientsRest.ClientHandler
+
+	// Shared Infra
+	vkClient *valkey.Client
+	serverID string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -365,6 +370,9 @@ func initFlags() {
 }
 
 func initApp() {
+	// Generate or Load a persistent unique ID for this server instance
+	serverID = utils.GetPersistentServerID(globalConfig.AppServerID, globalConfig.PathStorages)
+
 	// Priority: Explicit WHATSAPP_LOG_LEVEL > APP_DEBUG logic
 	if globalConfig.AppDebug {
 		logrus.SetLevel(logrus.DebugLevel)
@@ -381,7 +389,7 @@ func initApp() {
 	}
 
 	//preparing folder if not exist
-	err := utils.CreateFolder(globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathStorages)
+	err := utils.CreateFolder(globalConfig.PathSendItems, globalConfig.PathStorages)
 	if err != nil {
 		logrus.Errorln(err)
 	}
@@ -410,8 +418,29 @@ func initApp() {
 	// 2. Bot Engine Initialization (Needs BotUsecase, MCPUsecase)
 	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
 
-	// Initialize context cache store for AI providers (enables Valkey migration later)
-	contextCacheStore = botengineRepo.NewMemoryContextCacheStore()
+	// Initialize Shared Infrastrucutre (Valkey)
+	if globalConfig.ValkeyEnabled {
+		var vkErr error
+		vkClient, vkErr = valkey.NewClient(valkey.Config{
+			Address:        globalConfig.ValkeyAddress,
+			Password:       globalConfig.ValkeyPassword,
+			DB:             globalConfig.ValkeyDB,
+			KeyPrefix:      globalConfig.ValkeyKeyPrefix,
+			ConnectTimeout: 5 * time.Second,
+		})
+		if vkErr != nil {
+			logrus.WithError(vkErr).Warn("[STARTUP] Failed to connect to Valkey, some features will use in-memory fallback")
+		}
+	}
+
+	// Initialize context cache store for AI providers
+	if vkClient != nil {
+		contextCacheStore = botengineRepo.NewValkeyContextCacheStore(vkClient)
+		logrus.Info("[STARTUP] Using Valkey for AI context caching")
+	} else {
+		contextCacheStore = botengineRepo.NewMemoryContextCacheStore()
+		logrus.Info("[STARTUP] Using in-memory store for AI context caching")
+	}
 	geminiProvider := providers.NewGeminiProvider(mcpUsecase, contextCacheStore)
 	openaiProvider := providers.NewOpenAIProvider(mcpUsecase)
 
@@ -451,12 +480,20 @@ func initApp() {
 
 	logrus.Info("[CLIENTS] Client module initialized successfully")
 
-	// 3. Monitoring and Typing
-	typingStore = repository.NewMemoryTypingStore()
-	monitorStore = repository.NewMemoryMonitoringStore()
+	// 3. Monitoring and Typing (Distributed if Valkey is available)
+	if vkClient != nil {
+		typingStore = repository.NewValkeyTypingStore(vkClient)
+		monitorStore = repository.NewValkeyMonitoringStore(vkClient)
+		botmonitor.SetValkeyClient(vkClient, serverID) // Sync events across nodes
+		logrus.Info("[STARTUP] Using Valkey for distributed Monitoring and Typing")
+	} else {
+		typingStore = repository.NewMemoryTypingStore()
+		monitorStore = repository.NewMemoryMonitoringStore()
+		logrus.Info("[STARTUP] Using in-memory stores for Monitoring and Typing")
+	}
 
-	// 4. Workspace Manager (Needs wkRepo, BotEngine, ClientResolver, stores)
-	workspaceManager = workspace.NewManager(wkRepo, botEngine, clientResolver, typingStore, monitorStore)
+	// 4. Workspace Manager (Needs wkRepo, BotEngine, ClientResolver, stores, serverID)
+	workspaceManager = workspace.NewManager(wkRepo, botEngine, clientResolver, typingStore, monitorStore, vkClient, serverID)
 
 	// 5. Connect Bot Monitor to Cluster Stats
 	botmonitor.OnIncrement = func(key string) {
@@ -469,7 +506,7 @@ func initApp() {
 	chatUsecase = usecase.NewChatService(workspaceManager)
 	userUsecase = usecase.NewUserService(workspaceManager)
 	groupUsecase = usecase.NewGroupService(workspaceManager)
-	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, monitorStore)
+	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, monitorStore, vkClient)
 	sendUsecase = usecase.NewSendService(appUsecase, workspaceManager)
 	messageUsecase = usecase.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)
@@ -580,14 +617,22 @@ func initApp() {
 		}
 	}()
 
-	// Start Newsletter Scheduler
+	// Start Newsletter Scheduler (Promoter and Worker)
 	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
+		ticker := time.NewTicker(1 * time.Hour) // Promoter runs once per hour
 		defer ticker.Stop()
+		// Initial promotion run
+		_ = newsletterUsecase.ProcessScheduledPosts(context.Background())
 		for range ticker.C {
 			if err := newsletterUsecase.ProcessScheduledPosts(context.Background()); err != nil {
 				logrus.WithError(err).Error("[SCHEDULER] Failed to process posts")
 			}
+		}
+	}()
+
+	go func() {
+		if err := newsletterUsecase.RunTaskWorker(ctx); err != nil {
+			logrus.WithError(err).Error("[SCHEDULER] Worker failed")
 		}
 	}()
 
@@ -622,6 +667,17 @@ func StopApp() {
 	// 3. Shutdown MCP Usecase (closes persistent SSE connections)
 	if mcpUsecase != nil {
 		mcpUsecase.Shutdown()
+	}
+
+	// 4. Report shutdown to monitoring then close Valkey
+	if monitorStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = monitorStore.RemoveServer(ctx, serverID)
+		cancel()
+	}
+
+	if vkClient != nil {
+		vkClient.Close()
 	}
 
 	logrus.Info("[APP] Application stopped cleanly.")
