@@ -1,20 +1,63 @@
 package botmonitor
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/sirupsen/logrus"
+	valkeylib "github.com/valkey-io/valkey-go"
 )
 
 // OnIncrement es un hook opcional para reportar métricas a sistemas externos (ej: cluster monitor)
 var OnIncrement func(key string)
 
+var (
+	vkClient  *valkey.Client
+	eventChan = "azwap:bot_events"
+	localID   string
+)
+
+// SetValkeyClient sets the valkey client for distributed monitoring
+func SetValkeyClient(client *valkey.Client, serverID string) {
+	vkClient = client
+	localID = serverID
+	// Start subscriber if client is provided
+	if client != nil {
+		startDistributedSubscriber()
+	}
+}
+
+func startDistributedSubscriber() {
+	logrus.Info("[MONITOR] Starting distributed event subscriber")
+	go func() {
+		err := vkClient.Inner().Receive(context.Background(), vkClient.Inner().B().Subscribe().Channel(eventChan).Build(), func(msg valkeylib.PubSubMessage) {
+			var e Event
+			if err := json.Unmarshal([]byte(msg.Message), &e); err == nil {
+				// Avoid processing our own messages (loop protection)
+				if e.ServerID == localID {
+					return
+				}
+				// Record locally without re-publishing
+				defaultMonitor.recordInternal(e, false)
+			}
+		})
+		if err != nil {
+			logrus.Errorf("[MONITOR] Distributed subscriber failed: %v", err)
+		}
+	}()
+}
+
 type Event struct {
 	Timestamp  time.Time         `json:"timestamp"`
 	TraceID    string            `json:"trace_id"`
+	ServerID   string            `json:"server_id"`
 	InstanceID string            `json:"instance_id"`
 	ChatJID    string            `json:"chat_jid"`
 	Provider   string            `json:"provider"`
@@ -56,7 +99,16 @@ func New(size int) *Monitor {
 }
 
 func (m *Monitor) Record(e Event) {
-	e.Timestamp = time.Now().UTC()
+	m.recordInternal(e, true)
+}
+
+func (m *Monitor) recordInternal(e Event, publish bool) {
+	if e.Timestamp.IsZero() {
+		e.Timestamp = time.Now().UTC()
+	}
+	if e.ServerID == "" {
+		e.ServerID = localID
+	}
 
 	switch e.Stage {
 	case "inbound":
@@ -90,6 +142,17 @@ func (m *Monitor) Record(e Event) {
 		m.count++
 	}
 	m.eventsMu.Unlock()
+
+	// Distribute event via Valkey if it's a local event
+	if publish && vkClient != nil {
+		go func() {
+			data, _ := json.Marshal(e)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			cmd := vkClient.Inner().B().Publish().Channel(eventChan).Message(string(data)).Build()
+			_ = vkClient.Inner().Do(ctx, cmd)
+		}()
+	}
 }
 
 func (m *Monitor) GetStats() Stats {
