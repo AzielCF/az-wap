@@ -9,6 +9,7 @@ import {
 import BotEventMonitor from '@/components/monitoring/BotEventMonitor.vue'
 import InfrastructureMonitor from '@/components/monitoring/InfrastructureMonitor.vue'
 import SessionMonitor from '@/components/monitoring/SessionMonitor.vue'
+import AICacheInspector from '@/components/monitoring/AICacheInspector.vue'
 
 const api = useApi()
 const botEvents = ref<any>({ results: [], total: 0 })
@@ -119,6 +120,11 @@ onUnmounted(() => {
 
     <!-- Bot Monitor Log Section -->
     <BotEventMonitor :stats="botEvents" :auto-sync="botAutoRefresh" @toggle-sync="toggleBotSync" />
+
+    <!-- AI Cache Inspector -->
+    <div class="pt-8 border-t border-white/5">
+      <AICacheInspector />
+    </div>
 
     <!-- Cluster Pools Monitor -->
     <div class="pt-12 border-t border-white/5">
