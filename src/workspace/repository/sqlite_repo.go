@@ -464,7 +464,7 @@ func (r *SQLiteRepository) ListPendingScheduledPosts(ctx context.Context) ([]com
 }
 
 func (r *SQLiteRepository) ListUpcomingScheduledPosts(ctx context.Context, limitTime time.Time) ([]common.ScheduledPost, error) {
-	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at FROM scheduled_posts WHERE status = 'pending' AND scheduled_at <= ?`
+	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at FROM scheduled_posts WHERE status IN ('pending', 'enqueued') AND scheduled_at <= ?`
 	rows, err := r.db.QueryContext(ctx, query, limitTime)
 	if err != nil {
 		return nil, err

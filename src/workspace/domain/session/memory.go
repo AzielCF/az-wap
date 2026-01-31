@@ -11,18 +11,23 @@ type SessionMemory struct {
 	Resources map[string]ResourceInfo // Key: FriendlyName (o Hash si hay colisión?) -> Info
 }
 
-// AddTurn añade un nuevo mensaje al historial y mantiene el límite.
+// AddTurn añade un nuevo mensaje de texto al historial y mantiene el límite.
 func (sm *SessionMemory) AddTurn(role, text string, limit int) {
+	sm.AddFullTurn(botengineDomain.ChatTurn{
+		Role: role,
+		Text: text,
+	}, limit)
+}
+
+// AddFullTurn añade un turno completo (con herramientas/etc) al historial.
+func (sm *SessionMemory) AddFullTurn(turn botengineDomain.ChatTurn, limit int) {
 	if sm.History == nil {
 		sm.History = make([]botengineDomain.ChatTurn, 0)
 	}
 
-	sm.History = append(sm.History, botengineDomain.ChatTurn{
-		Role: role,
-		Text: text,
-	})
+	sm.History = append(sm.History, turn)
 
-	// Mantener límite de ventana de contexto (default 10)
+	// Keep context window limit (default 10)
 	if limit <= 0 {
 		limit = 10
 	}
