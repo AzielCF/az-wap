@@ -97,6 +97,11 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 		}
 
 	case *events.Message:
+		// Notify activity to presence manager to reset sleep timers
+		if wa.manager != nil {
+			wa.manager.PokeActivity(wa.channelID)
+		}
+
 		// Check for status/stories/broadcasts
 		isStatus := v.Info.Chat.String() == "status@broadcast" || v.Info.Sender.String() == "status@broadcast" || v.Info.IsIncomingBroadcast()
 		if isStatus {

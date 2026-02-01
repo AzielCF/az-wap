@@ -94,10 +94,16 @@ func (service serviceNewsletter) SchedulePost(ctx context.Context, request domai
 	// 2. If within 24h window, push to Valkey
 	if service.vk != nil && post.ScheduledAt.Before(time.Now().Add(24*time.Hour)) {
 		key := service.vk.Key("scheduler:tasks")
+		signalKey := service.vk.Key("scheduler:signal")
+
+		// Enqueue task
 		err := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zadd().Key(key).ScoreMember().ScoreMember(float64(post.ScheduledAt.Unix()), post.ID).Build()).Error()
 		if err == nil {
 			post.Status = wsCommonDomain.ScheduledPostStatusEnqueued
 			_ = service.repo.UpdateScheduledPost(ctx, post)
+
+			// NUDGE: Send an instant signal to wake up the scheduler worker
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Publish().Channel(signalKey).Message("new_task").Build())
 		} else {
 			logrus.WithError(err).Warnf("[SCHEDULER] Failed to enqueue post %s in Valkey", post.ID)
 		}
@@ -148,19 +154,76 @@ func (service serviceNewsletter) CancelScheduled(ctx context.Context, postID str
 	}
 
 	// 1. Remove from Valkey if enqueued
-	if service.vk != nil && post.Status == wsCommonDomain.ScheduledPostStatusEnqueued {
+	if service.vk != nil {
 		key := service.vk.Key("scheduler:tasks")
-		_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build()).Error()
+		_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build())
 	}
 
-	post.Status = wsCommonDomain.ScheduledPostStatusCancelled
-	post.UpdatedAt = time.Now().UTC()
+	// 2. Mark as cancelled or delete (User preferred deletion for cleanup)
+	return service.repo.DeleteScheduledPost(ctx, postID)
+}
 
-	return service.repo.UpdateScheduledPost(ctx, post)
+// ProcessScheduledTasks checks Valkey for tasks ready to be sent and executes them.
+// Following the user requirement: once sent, it is DELETED from the database to keep it clean.
+func (service serviceNewsletter) ProcessScheduledTasks(ctx context.Context) error {
+	if service.vk == nil {
+		return nil
+	}
+
+	key := service.vk.Key("scheduler:tasks")
+	now := float64(time.Now().Unix())
+
+	// 1. Get tasks where Score (Time) <= current time
+	res := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrangebyscore().Key(key).Min("-inf").Max(fmt.Sprintf("%f", now)).Build())
+	taskIDs, err := res.AsStrSlice()
+	if err != nil && !valkey.IsNil(err) {
+		return err
+	}
+
+	for _, postID := range taskIDs {
+		// 2. Try to process each task
+		post, err := service.repo.GetScheduledPost(ctx, postID)
+		if err != nil {
+			logrus.Warnf("[SCHEDULER] Task %s found in Valkey but missing in DB. Cleaning up Valkey.", postID)
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(postID).Build())
+			continue
+		}
+
+		// 3. Execution (Send through adapter)
+		adapter, err := service.getAdapterForToken(ctx, post.ChannelID)
+		if err != nil {
+			logrus.Errorf("[SCHEDULER] No adapter for channel %s in task %s", post.ChannelID, post.ID)
+			continue
+		}
+
+		logrus.Infof("[SCHEDULER] Executing scheduled post %s for %s", post.ID, post.TargetID)
+
+		var sendErr error
+		if post.MediaPath != "" {
+			_, sendErr = adapter.SendNewsletterMessage(ctx, post.TargetID, post.Text, post.MediaPath)
+		} else {
+			_, sendErr = adapter.SendNewsletterMessage(ctx, post.TargetID, post.Text, "")
+		}
+
+		if sendErr != nil {
+			logrus.WithError(sendErr).Errorf("[SCHEDULER] Failed to send post %s", post.ID)
+			post.Status = wsCommonDomain.ScheduledPostStatusFailed
+			post.Error = sendErr.Error()
+			_ = service.repo.UpdateScheduledPost(ctx, post)
+			// Don't delete on failure, so user can see what happened
+		} else {
+			// 4. CLEANUP: Delete from both DB and Valkey on success
+			logrus.Infof("[SCHEDULER] Task %s sent successfully. Cleaning up record.", post.ID)
+			_ = service.repo.DeleteScheduledPost(ctx, post.ID)
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build())
+		}
+	}
+
+	return nil
 }
 
 // ProcessScheduledPosts (The Promoter)
-// It moves tasks from SQLite to Valkey for the next 24h window.
+// It moves tasks from SQLite to Valkey for the next 24h window to be ready for execution.
 func (service serviceNewsletter) ProcessScheduledPosts(ctx context.Context) error {
 	if service.vk == nil {
 		return nil
