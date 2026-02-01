@@ -46,6 +46,7 @@ type Manager struct {
 	startTime      time.Time
 	valkeyClient   *valkey.Client // Holds Valkey client for cleanup on shutdown
 	messageDedup   sync.Map       // Local deduplication for non-Valkey environments
+	scheduler      *application.TaskScheduler
 }
 
 func NewManager(
@@ -91,7 +92,7 @@ func NewManager(
 	m.sessions.OnCleanupFiles = m.cleanupSessionFiles
 	m.sessions.OnChannelIdle = func(channelID string) {
 		m.presence.CheckChannelPresence(channelID)
-		m.presence.CheckChannelSocket(channelID)
+		m.presence.EnsureChannelConnectivity(channelID)
 	}
 
 	m.presence.IsChannelActive = func(channelID string) bool {
@@ -111,7 +112,10 @@ func NewManager(
 		}
 	}
 
-	// 8. Start Internal Loops
+	// 8. Initialize Scheduler
+	m.scheduler = application.NewTaskScheduler(repo, vkClient, m.channels, m.acquireLock)
+
+	// 9. Start Internal Loops
 	m.StartPresenceLoop(context.Background())
 
 	// Initialize Monitoring Hooks for Global Pool
@@ -427,6 +431,14 @@ func (m *Manager) ClearWorkspaceBotMemory(workspaceID, botID string) {
 	logrus.Infof("[WS_MANAGER] Cleared memory for bot %s in workspace %s", botID, workspaceID)
 }
 
+// PokeActivity notifies the presence manager that activity has been detected for a channel.
+// This is used to reset hibernation and idle timers instantly.
+func (m *Manager) PokeActivity(channelID string) {
+	if m.presence != nil {
+		m.presence.HandleIncomingActivity(channelID)
+	}
+}
+
 func (m *Manager) GetActiveChats(channelID string) []string {
 	var chats []string
 	for _, s := range m.sessions.GetActiveSessions() {
@@ -543,12 +555,21 @@ func (m *Manager) StartPresenceLoop(ctx context.Context) {
 			case <-ticker.C:
 				adapters := m.channels.GetAdapters()
 				for _, adapter := range adapters {
+					// Trigger idle presence and self-healing checks
 					m.presence.CheckChannelPresence(adapter.ID())
-					m.presence.CheckChannelSocket(adapter.ID())
+					m.presence.EnsureChannelConnectivity(adapter.ID())
 				}
 			}
 		}
 	}()
+}
+
+// StartSchedulerLoop initiates the reactive background worker for scheduled tasks.
+// It delegates the logic to the TaskScheduler component.
+func (m *Manager) StartSchedulerLoop(ctx context.Context) {
+	if m.scheduler != nil {
+		m.scheduler.StartLoop(ctx)
+	}
 }
 
 func (m *Manager) GetChannelPresence(ctx context.Context, channelID string) (*channelDomain.ChannelPresence, error) {
