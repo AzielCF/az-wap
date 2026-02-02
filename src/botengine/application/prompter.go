@@ -79,6 +79,13 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 		stable.WriteString("BEHAVIOR: Use multimodal context ([Audio Transcription], [Image Description]) PROACTIVELY.\n\n")
 	}
 
+	// 4.5 FINANCIAL PROTOCOL
+	stable.WriteString("### FINANCIAL PROTOCOL\n")
+	stable.WriteString("Standard Procedure for Currency Inquiries:\n")
+	stable.WriteString("1. Always use 'get_exchange_rate' for currency conversion.\n")
+	stable.WriteString("2. If the tool fails, state that real-time rates are unavailable.\n")
+	stable.WriteString("3. Avoid estimating values based on training data.\n\n")
+
 	// 5. Situational Behavior (Rules)
 	stable.WriteString("### SITUATIONAL BEHAVIOR (MINDSET)\n")
 	stable.WriteString("You must ALWAYS start your response with a HIDDEN internal mindset tag: <mindset pace=\"fast|steady|deep\" focus=\"true|false\" work=\"true|false\" />\n\n")
@@ -138,6 +145,12 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	}
 
 	dynamic.WriteString("\n[NOTE: The above metadata is for your internal context only. Do it not mention it in your response.]")
+
+	// 6. CONTINUITY & STANDARD PROCEDURES
+	dynamic.WriteString("\n\n### SERVICE RULES\n")
+	dynamic.WriteString("1. CONTEXT: You are in an ongoing conversation. Answer DIRECTLY without repetitive greetings.\n")
+	dynamic.WriteString("2. CURRENCY: To check exchange rates, you MUST use the 'get_exchange_rate' tool. Do not guess values. If the tool is unavailable, apologize and state you cannot verify the rate.\n")
+	dynamic.WriteString("3. EXECUTION SILENCE: When you decide to call a tool, do NOT write any conversational text (like 'Let me check...' or 'Un momento'). Output ONLY the mindset tag and the tool call.\n")
 
 	return stable.String(), dynamic.String()
 }
