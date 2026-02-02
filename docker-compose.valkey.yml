@@ -3,7 +3,7 @@
 
 services:
   valkey:
-    image: valkey/valkey:latest
+    image: valkey/valkey-bundle:latest
     container_name: azwap-valkey
     ports:
       - "6379:6379"
