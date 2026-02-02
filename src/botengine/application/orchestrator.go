@@ -181,10 +181,24 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 					},
 				})
 			} else if o.nativeToolCaller != nil {
-				// 2. Intentar Herramienta Nativa
-				logrus.Infof("[GEMINI] Executing native tool: %s", tc.Name) // Log exacto del original
+				// 2. Try Native Tool
+				logrus.Infof("[GEMINI] Executing native tool: %s", tc.Name)
+
+				// Inject bot (Channel) time context for tools
+				toolInput := input
+				if toolInput.Metadata == nil {
+					toolInput.Metadata = make(map[string]interface{})
+				}
+				// Clone metadata to ensure thread safety and avoid side effects
+				toolMetadata := make(map[string]interface{})
+				for k, v := range toolInput.Metadata {
+					toolMetadata[k] = v
+				}
+				toolMetadata["bot_timezone"] = b.Timezone
+				toolInput.Metadata = toolMetadata
+
 				startCall := time.Now()
-				nRes, nErr := o.nativeToolCaller(ctx, tc.Name, input, tc.Args)
+				nRes, nErr := o.nativeToolCaller(ctx, tc.Name, toolInput, tc.Args)
 				duration := time.Since(startCall).Milliseconds()
 
 				if nErr != nil {
