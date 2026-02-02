@@ -61,8 +61,10 @@ ANALYSIS RULES:
   1. If message contains info for a task in the BOT AGENDA: true
   2. If message contains a NEW COMMAND, UPDATE, or CORRECTION: true
   3. If WORK is true: true
-  4. Set false ONLY if (IS_BUSY is true) AND (message is trivial: "ok", "vale", "gracias", "thanks", "cool")
-  5. If IS_BUSY is false: ALWAYS true
+  4. Set false ONLY if (IS_BUSY is true) AND (message is trivial/acknowledgement) AND (User is NOT answering a question) AND (User is NOT greeting).
+  5. ALWAYS CHECK HISTORY: If the last Bot message was a QUESTION or PROPOSAL, then "si", "ok", "thumbs up", "no" are ANSWERS. Set should_respond: true.
+  6. GREETINGS ARE PRIORITARY: "Hola", "Hello", "Hi", "Buenas" must ALWAYS be answered (should_respond: true), even if busy.
+  7. If IS_BUSY is false: ALWAYS true
 
 Return ONLY a JSON object with these fields: pace, focus, work, acknowledgement, should_respond, enqueue_task, clear_tasks.`
 
@@ -81,9 +83,16 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	}
 
 	var genConfig *genai.GenerateContentConfig
-	if req.SystemPrompt != "" {
+
+	// Combine System Prompt + Dynamic Context (Time, Tasks, etc.)
+	fullSystemPrompt := req.SystemPrompt
+	if req.DynamicContext != "" {
+		fullSystemPrompt += "\n\n" + req.DynamicContext
+	}
+
+	if fullSystemPrompt != "" {
 		genConfig = &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(req.SystemPrompt, ""),
+			SystemInstruction: genai.NewContentFromText(fullSystemPrompt, ""),
 		}
 	}
 
@@ -178,10 +187,12 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 			Role:  genai.RoleUser,
 			Parts: []*genai.Part{{Text: text}},
 		})
-	} else if req.DynamicContext != "" {
+	} else if req.DynamicContext != "" && len(req.History) == 0 {
+		// Only inject pure context as a user message if it's the VERY FIRST turn (Start of conversation)
+		// Otherwise, injecting it as a standalone user message confuses the model into thinking it needs to greet.
 		contents = append(contents, &genai.Content{
 			Role:  genai.RoleUser,
-			Parts: []*genai.Part{{Text: "[SESS_REFRESH]\n" + req.DynamicContext}},
+			Parts: []*genai.Part{{Text: "[SESS_INIT]\n" + req.DynamicContext}},
 		})
 	}
 
@@ -226,7 +237,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 
 		// 1. Check if we already have a REAL cache name in Valkey (via Precise Fingerprint)
 		entry, err := p.contextCache.Get(ctx, fingerprint)
-		if err == nil && entry != nil && entry.Name != "" && !strings.HasPrefix(entry.Name, "SIMULATED_") {
+		if err == nil && entry != nil && entry.Name != "" && !strings.HasPrefix(entry.Name, "SIM_") {
 			if time.Now().Before(entry.ExpiresAt) {
 				cachedContentName = entry.Name
 				contents = contents[stablePrefixCount:]
@@ -239,8 +250,11 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 		}
 
 		// 2. If no real cache, update/overwrite the Maturation Status for this chat
+		// IMPORTANT: Always use original ChatKey for maturation to overwrite it correctly
 		if cachedContentName == "" {
-			minTokenThreshold := 1024 // Gemini 1.5/2.5 Flash minimum
+			// DISABLING CACHE TEMPORARILY FOR STABILITY
+			// minTokenThreshold := 1024
+			minTokenThreshold := 999999 // Effectively disable cache for now
 			if totalStableTokens < minTokenThreshold {
 				logrus.WithFields(logrus.Fields{
 					"chat_key": req.ChatKey,
@@ -276,7 +290,8 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	if genConfig == nil {
 		genConfig = &genai.GenerateContentConfig{}
 	}
-	if cachedContentName != "" {
+	// ONLY clear tools and instructions if we have a VALID external cache name
+	if cachedContentName != "" && !strings.HasPrefix(cachedContentName, "SIM_") {
 		genConfig.CachedContent = cachedContentName
 		genConfig.SystemInstruction = nil
 		genConfig.Tools = nil
