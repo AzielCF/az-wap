@@ -1,0 +1,23 @@
+# Docker Compose for Valkey (Redis-compatible) - Development/Testing
+# Run with: docker-compose -f docker-compose.valkey.yml up -d
+
+services:
+  valkey:
+    image: valkey/valkey-bundle:latest
+    container_name: azwap-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: valkey-server --appendonly yes
+    restart: unless-stopped
+
+  insight:
+    image: redis/redisinsight:latest
+    container_name: azwap-valkey-insight
+    ports:
+      - "8001:5540"
+    restart: unless-stopped
+
+volumes:
+  valkey_data:

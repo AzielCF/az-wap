@@ -7,6 +7,7 @@ import (
 
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	globalConfig "github.com/AzielCF/az-wap/config"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 )
 
@@ -31,12 +32,16 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 						"type":        "string",
 						"description": "The CONTENT of the reminder message. IMPORTANT: This message will be sent IN THE FUTURE when the reminder triggers. Do NOT include relative time phrases like 'in 10 minutes'. Instead of 'Meeting in 10 minutes', write 'It is time for your meeting!' or 'You have a meeting now'. Write it as if it's happening at that moment.",
 					},
-					"scheduled_at": map[string]interface{}{
+					"date": map[string]interface{}{
 						"type":        "string",
-						"description": "ISO 8601 formatted date string for when to remind (must be in future)",
+						"description": "Date in 'YYYY-MM-DD' format. YOU MUST CALCULATE THIS based on 'TODAY' in your system prompt + the user's relative request (e.g., 'tomorrow'). DO NOT ASK THE USER FOR THE DATE.",
+					},
+					"time": map[string]interface{}{
+						"type":        "string",
+						"description": "Time to remind. YOU MUST CALCULATE THIS based on 'TIME_NOW' + duration (e.g., 'in 5 mins'). DO NOT ASK THE USER.",
 					},
 				},
-				"required": []string{"text", "scheduled_at"},
+				"required": []string{"text", "date", "time"},
 			},
 		},
 		Handler: func(ctx context.Context, ctxData map[string]interface{}, args map[string]interface{}) (map[string]interface{}, error) {
@@ -45,24 +50,57 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 				return nil, fmt.Errorf("instance_id not available in context")
 			}
 
-			// The sender is the target for a reminder
 			senderID, ok := ctxData["sender_id"].(string)
 			if !ok || senderID == "" {
-				return nil, fmt.Errorf("sender_id not available in context. Cannot schedule reminder for unknown user.")
+				return nil, fmt.Errorf("sender_id not available in context")
 			}
 
 			text, _ := args["text"].(string)
-			scheduledAtStr, _ := args["scheduled_at"].(string)
+			dateStr, _ := args["date"].(string)
+			timeStr, _ := args["time"].(string)
 
-			scheduledAt, err := time.Parse(time.RFC3339, scheduledAtStr)
+			fullStr := fmt.Sprintf("%s %s", dateStr, timeStr)
+
+			// FIX: Load Location from Config to prevent UTC mismatch
+			locName := globalConfig.AITimezone
+			if locName == "" {
+				locName = "America/Lima" // Default Fallback
+			}
+			loc, err := time.LoadLocation(locName)
 			if err != nil {
-				return nil, fmt.Errorf("invalid date format, use ISO 8601 (RFC3339): %v", err)
+				loc = time.UTC // Fallback if invalid
+			}
+
+			// Try multiple formats including AM/PM
+			var scheduledAt time.Time
+
+			formats := []string{
+				"2006-01-02 15:04",    // 24h standard
+				"2006-01-02 15:04:05", // 24h with seconds
+				"2006-01-02 03:04 PM", // 12h with space and uppercase
+				"2006-01-02 03:04 pm", // 12h with space and lowercase
+				"2006-01-02 03:04PM",  // 12h no space
+				"2006-01-02 3:04 PM",  // 12h single digit hour
+			}
+
+			parsed := false
+			for _, f := range formats {
+				// Use ParseInLocation
+				scheduledAt, err = time.ParseInLocation(f, fullStr, loc)
+				if err == nil {
+					parsed = true
+					break
+				}
+			}
+
+			if !parsed {
+				return nil, fmt.Errorf("invalid time format. Received: %s. Please use 'HH:MM' (24h) or 'HH:MM PM' (12h)", fullStr)
 			}
 
 			req := domainNewsletter.SchedulePostRequest{
 				ChannelID:   instanceID,
-				TargetID:    senderID, // Target is the user themselves
-				SenderID:    senderID, // Track who created it
+				TargetID:    senderID,
+				SenderID:    senderID,
 				Text:        text,
 				ScheduledAt: scheduledAt,
 			}
@@ -110,7 +148,6 @@ func (t *ReminderTools) ListRemindersTool() *domain.NativeTool {
 				return nil, err
 			}
 
-			// Format for display
 			var result []map[string]interface{}
 			for _, p := range posts {
 				result = append(result, map[string]interface{}{

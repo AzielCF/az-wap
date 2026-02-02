@@ -87,6 +87,11 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	if mcpInstructions != "" {
 		stable.WriteString("## MCP TOOL GUIDELINES")
 		stable.WriteString(mcpInstructions)
+		stable.WriteString("\n")
+		stable.WriteString("### ERROR HANDLING STRATEGY\n")
+		stable.WriteString("- SILENT RETRY: If a tool fails, you may try to fix the parameters ONCE immediately in the next turn.\n")
+		stable.WriteString("- GIVE UP: If the second attempt also fails, STOP retrying. Inform the user about the error and ask for clarification.\n")
+		stable.WriteString("- ONLY speak to the user when the action is SUCCESSFUL, or if you have Failed TWICE.\n")
 		stable.WriteString("\n\n")
 	}
 
@@ -105,8 +110,10 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	moment := getMomentOfDay(now.Hour())
 
 	dynamic.WriteString("## SESSION_METADATA\n")
-	dynamic.WriteString(fmt.Sprintf("- Current_Time: %s\n", now.Format(time.RFC3339)))
-	dynamic.WriteString(fmt.Sprintf("- Timeformat: %s\n", tz))
+	// Use a very explicit, human-friendly date format to verify current time
+	dynamic.WriteString(fmt.Sprintf("- TODAY: %s\n", now.Format("Monday, 02 January 2006")))
+	// Provide both 12h and 24h formats so the AI can adapt to the user's locale culture automatically
+	dynamic.WriteString(fmt.Sprintf("- TIME_NOW: %s / %s (%s)\n", now.Format("15:04"), now.Format("03:04 PM"), tz))
 	dynamic.WriteString(fmt.Sprintf("- Day_Moment: %s\n", moment))
 
 	// 2. Client Identity

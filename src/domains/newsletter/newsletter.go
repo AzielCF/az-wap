@@ -15,6 +15,7 @@ type INewsletterUsecase interface {
 	ListScheduledBySender(ctx context.Context, channelID, senderID string) ([]wsDomainCommon.ScheduledPost, error)
 	CancelScheduled(ctx context.Context, postID string) error
 	ProcessScheduledPosts(ctx context.Context) error
+	RunTaskWorker(ctx context.Context) error
 }
 
 type UnfollowRequest struct {

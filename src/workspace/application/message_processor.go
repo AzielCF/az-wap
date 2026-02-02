@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,6 +108,19 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 			"is_registered": cc.IsRegistered,
 			"has_sub":       cc.HasSubscription,
 		}).Debugf("[MessageProcessor] Attaching ClientContext to BotInput")
+	} else if rawCC, ok := safeMetadata["client_context"].(map[string]any); ok {
+		// Handle case where ClientContext was deserialized as a map (e.g. from Valkey/Redis)
+		var cc botengineDomain.ClientContext
+		jsonData, _ := json.Marshal(rawCC)
+		if err := json.Unmarshal(jsonData, &cc); err == nil {
+			input.ClientContext = &cc
+			if cc.Language != "" {
+				input.Language = cc.Language
+			}
+			logrus.Debugf("[MessageProcessor] Restored ClientContext from map for client %s", cc.ClientID)
+		} else {
+			logrus.Warnf("[MessageProcessor] Failed to restore ClientContext from map: %v", err)
+		}
 	} else if safeMetadata["client_context"] != nil {
 		logrus.Warnf("[MessageProcessor] client_context found in metadata but type is %T, expected *botengineDomain.ClientContext", safeMetadata["client_context"])
 	}
@@ -122,9 +136,10 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 	input.Metadata["trace_id"] = input.TraceID // Ensure trace is in metadata too
 
 	input.OnChatOpen = func() {
-		if entry, ok := p.orchestrator.GetEntry(key); ok {
-			entry.ChatOpen = true
-			if len(entry.MessageIDs) > 0 && markRead != nil {
+		_ = p.orchestrator.store.UpdateField(ctx, key, "chat_open", true)
+		// Mark messages as read if we have any
+		if entry, ok := p.orchestrator.GetEntry(key); ok && len(entry.MessageIDs) > 0 {
+			if markRead != nil {
 				markRead(ctx, msg.ChatID, entry.MessageIDs)
 			}
 		}
@@ -193,27 +208,9 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		}
 		return output, nil
 	}
-
 	if entry, ok := p.orchestrator.GetEntry(key); ok {
 		entry.LastReplyTime = time.Now()
 		entry.LastMindset = output.Mindset
-		if output.Mindset != nil {
-			if output.Mindset.EnqueueTask != "" {
-				entry.PendingTasks = append(entry.PendingTasks, output.Mindset.EnqueueTask)
-			}
-			if output.Mindset.ClearTasks {
-				entry.PendingTasks = nil
-			}
-			if output.Mindset.Focus {
-				entry.FocusScore += 25
-			}
-			if output.Mindset.Pace == "fast" {
-				entry.FocusScore += 10
-			}
-			if entry.FocusScore > 100 {
-				entry.FocusScore = 100
-			}
-		}
 
 		// Persistence of Memory and Session State
 		// 1. Add User Turn (Use enriched text from bot if available, otherwise original input)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
@@ -21,13 +22,15 @@ type serviceNewsletter struct {
 	workspaceMgr *workspace.Manager
 	repo         wsRepo.IWorkspaceRepository
 	monitor      monitoring.MonitoringStore
+	vk           *valkey.Client
 }
 
-func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository, monitor monitoring.MonitoringStore) domainNewsletter.INewsletterUsecase {
+func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository, monitor monitoring.MonitoringStore, vk *valkey.Client) domainNewsletter.INewsletterUsecase {
 	return &serviceNewsletter{
 		workspaceMgr: workspaceMgr,
 		repo:         repo,
 		monitor:      monitor,
+		vk:           vk,
 	}
 }
 
@@ -77,14 +80,33 @@ func (service serviceNewsletter) SchedulePost(ctx context.Context, request domai
 		SenderID:    request.SenderID,
 		Text:        request.Text,
 		MediaPath:   request.MediaPath,
-		ScheduledAt: request.ScheduledAt,
+		ScheduledAt: request.ScheduledAt.UTC(), // Always UTC
 		Status:      wsCommonDomain.ScheduledPostStatusPending,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 
+	// 1. Persist to DB
 	if err := service.repo.CreateScheduledPost(ctx, post); err != nil {
 		return wsCommonDomain.ScheduledPost{}, err
+	}
+
+	// 2. If within 24h window, push to Valkey
+	if service.vk != nil && post.ScheduledAt.Before(time.Now().Add(24*time.Hour)) {
+		key := service.vk.Key("scheduler:tasks")
+		signalKey := service.vk.Key("scheduler:signal")
+
+		// Enqueue task
+		err := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zadd().Key(key).ScoreMember().ScoreMember(float64(post.ScheduledAt.Unix()), post.ID).Build()).Error()
+		if err == nil {
+			post.Status = wsCommonDomain.ScheduledPostStatusEnqueued
+			_ = service.repo.UpdateScheduledPost(ctx, post)
+
+			// NUDGE: Send an instant signal to wake up the scheduler worker
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Publish().Channel(signalKey).Message("new_task").Build())
+		} else {
+			logrus.WithError(err).Warnf("[SCHEDULER] Failed to enqueue post %s in Valkey", post.ID)
+		}
 	}
 
 	return post, nil
@@ -127,59 +149,192 @@ func (service serviceNewsletter) CancelScheduled(ctx context.Context, postID str
 		return err
 	}
 
-	if post.Status != wsCommonDomain.ScheduledPostStatusPending {
+	if post.Status != wsCommonDomain.ScheduledPostStatusPending && post.Status != wsCommonDomain.ScheduledPostStatusEnqueued {
 		return fmt.Errorf("cannot cancel post in status %s", post.Status)
 	}
 
-	post.Status = wsCommonDomain.ScheduledPostStatusCancelled
-	post.UpdatedAt = time.Now()
+	// 1. Remove from Valkey if enqueued
+	if service.vk != nil {
+		key := service.vk.Key("scheduler:tasks")
+		_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build())
+	}
 
-	return service.repo.UpdateScheduledPost(ctx, post)
+	// 2. Mark as cancelled or delete (User preferred deletion for cleanup)
+	return service.repo.DeleteScheduledPost(ctx, postID)
 }
 
-// ProcessScheduledPosts checks for pending posts and schedules them for execution.
-// It uses a look-ahead window to load upcoming posts into memory for precise execution.
+// ProcessScheduledTasks checks Valkey for tasks ready to be sent and executes them.
+// Following the user requirement: once sent, it is DELETED from the database to keep it clean.
+func (service serviceNewsletter) ProcessScheduledTasks(ctx context.Context) error {
+	if service.vk == nil {
+		return nil
+	}
+
+	key := service.vk.Key("scheduler:tasks")
+	now := float64(time.Now().Unix())
+
+	// 1. Get tasks where Score (Time) <= current time
+	res := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrangebyscore().Key(key).Min("-inf").Max(fmt.Sprintf("%f", now)).Build())
+	taskIDs, err := res.AsStrSlice()
+	if err != nil && !valkey.IsNil(err) {
+		return err
+	}
+
+	for _, postID := range taskIDs {
+		// 2. Try to process each task
+		post, err := service.repo.GetScheduledPost(ctx, postID)
+		if err != nil {
+			logrus.Warnf("[SCHEDULER] Task %s found in Valkey but missing in DB. Cleaning up Valkey.", postID)
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(postID).Build())
+			continue
+		}
+
+		// 3. Execution (Send through adapter)
+		adapter, err := service.getAdapterForToken(ctx, post.ChannelID)
+		if err != nil {
+			logrus.Errorf("[SCHEDULER] No adapter for channel %s in task %s", post.ChannelID, post.ID)
+			continue
+		}
+
+		logrus.Infof("[SCHEDULER] Executing scheduled post %s for %s", post.ID, post.TargetID)
+
+		var sendErr error
+		if post.MediaPath != "" {
+			_, sendErr = adapter.SendNewsletterMessage(ctx, post.TargetID, post.Text, post.MediaPath)
+		} else {
+			_, sendErr = adapter.SendNewsletterMessage(ctx, post.TargetID, post.Text, "")
+		}
+
+		if sendErr != nil {
+			logrus.WithError(sendErr).Errorf("[SCHEDULER] Failed to send post %s", post.ID)
+			post.Status = wsCommonDomain.ScheduledPostStatusFailed
+			post.Error = sendErr.Error()
+			_ = service.repo.UpdateScheduledPost(ctx, post)
+			// Don't delete on failure, so user can see what happened
+		} else {
+			// 4. CLEANUP: Delete from both DB and Valkey on success
+			logrus.Infof("[SCHEDULER] Task %s sent successfully. Cleaning up record.", post.ID)
+			_ = service.repo.DeleteScheduledPost(ctx, post.ID)
+			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build())
+		}
+	}
+
+	return nil
+}
+
+// ProcessScheduledPosts (The Promoter)
+// It moves tasks from SQLite to Valkey for the next 24h window to be ready for execution.
 func (service serviceNewsletter) ProcessScheduledPosts(ctx context.Context) error {
+	if service.vk == nil {
+		return nil
+	}
+
 	// 0. Update global counter for monitoring
 	if count, err := service.repo.CountPendingScheduledPosts(ctx); err == nil {
 		_ = service.monitor.UpdateStat(ctx, "pending", count)
 	}
 
-	// Look ahead 2 minutes to load upcoming posts "hot"
-	lookAhead := time.Now().Add(2 * time.Minute)
+	// 1. Acceder al lock para evitar ejecutor múltiple
+	lockKey := service.vk.Key("lock:scheduler:promo")
+	err := service.vk.Inner().Do(ctx, service.vk.Inner().B().Set().Key(lockKey).Value("1").Nx().Ex(55*time.Second).Build()).Error()
+	if err != nil {
+		if valkey.IsNil(err) {
+			// Already locked by another node
+			return nil
+		}
+		return err
+	}
+
+	// Horizon: 24h from now
+	lookAhead := time.Now().Add(24 * time.Hour).UTC()
 
 	posts, err := service.repo.ListUpcomingScheduledPosts(ctx, lookAhead)
 	if err != nil {
 		return err
 	}
 
+	key := service.vk.Key("scheduler:tasks")
 	for _, post := range posts {
-		// 1. Mark as processing IMMEDIATELY to prevent re-fetching by next ticker
-		post.Status = wsCommonDomain.ScheduledPostStatusProcessing
-		post.UpdatedAt = time.Now()
-		if err := service.repo.UpdateScheduledPost(ctx, post); err != nil {
-			logrus.Errorf("Failed to mark post %s as processing: %v", post.ID, err)
+		if post.Status == wsCommonDomain.ScheduledPostStatusPending {
+			// Atomic update in DB to avoid race conditions
+			post.Status = wsCommonDomain.ScheduledPostStatusEnqueued
+			post.UpdatedAt = time.Now().UTC()
+			if err := service.repo.UpdateScheduledPost(ctx, post); err != nil {
+				continue
+			}
+		} else if post.Status != wsCommonDomain.ScheduledPostStatusEnqueued {
+			// Skip other statuses (sent, failed, cancelled)
 			continue
 		}
 
-		// 2. Schedule execution
-		waitDuration := time.Until(post.ScheduledAt)
-		if waitDuration < 0 {
-			waitDuration = 0
+		// Push (or re-push) to Valkey
+		score := float64(post.ScheduledAt.Unix())
+		err := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zadd().Key(key).ScoreMember().ScoreMember(score, post.ID).Build()).Error()
+		if err != nil {
+			logrus.WithError(err).Errorf("[SCHEDULER] Failed to move post %s to Valkey", post.ID)
 		}
-
-		logrus.Infof("[SCHEDULER] Hot-loading post %s. Scheduled in %v", post.ID, waitDuration)
-
-		// Launch in goroutine
-		go func(p wsCommonDomain.ScheduledPost, wait time.Duration) {
-			if wait > 0 {
-				time.Sleep(wait)
-			}
-			service.executePost(context.Background(), p)
-		}(post, waitDuration)
 	}
 
 	return nil
+}
+
+// RunTaskWorker (The Worker)
+// Pollea Valkey y ejecuta las tareas cuyo timestamp ya pasó.
+func (service serviceNewsletter) RunTaskWorker(ctx context.Context) error {
+	if service.vk == nil {
+		logrus.Warn("[SCHEDULER] Valkey not available, Worker disabled")
+		return nil
+	}
+
+	key := service.vk.Key("scheduler:tasks")
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			now := float64(time.Now().Unix())
+			// Get IDs of tasks that should be executed
+			resp, err := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrangebyscore().Key(key).Min("-inf").Max(fmt.Sprintf("%f", now)).Limit(0, 10).Build()).AsStrSlice()
+			if err != nil {
+				if !valkey.IsNil(err) {
+					logrus.WithError(err).Error("[SCHEDULER] Failed to poll Valkey ZSET")
+				}
+				continue
+			}
+
+			for _, id := range resp {
+				// Try to claim the task atómically
+				remErr := service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(id).Build()).Error()
+				if remErr == nil {
+					// We claimed it!
+					go func(taskID string) {
+						taskCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+						defer cancel()
+						service.executeTaskByID(taskCtx, taskID)
+					}(id)
+				}
+			}
+		}
+	}
+}
+
+func (service serviceNewsletter) executeTaskByID(ctx context.Context, id string) {
+	post, err := service.repo.GetScheduledPost(ctx, id)
+	if err != nil {
+		logrus.Errorf("[SCHEDULER] Failed to fetch task %s from DB: %v", id, err)
+		return
+	}
+
+	// Check eligibility
+	if post.Status != wsCommonDomain.ScheduledPostStatusEnqueued {
+		// Already cancelled or processed
+		return
+	}
+
+	service.executePost(ctx, post)
 }
 
 func (service serviceNewsletter) executePost(ctx context.Context, post wsCommonDomain.ScheduledPost) {

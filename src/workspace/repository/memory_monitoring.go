@@ -52,6 +52,13 @@ func (s *MemoryMonitoringStore) GetActiveServers(ctx context.Context) ([]monitor
 	return active, nil
 }
 
+func (s *MemoryMonitoringStore) RemoveServer(ctx context.Context, serverID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.servers, serverID)
+	return nil
+}
+
 func (s *MemoryMonitoringStore) UpdateWorkerActivity(ctx context.Context, activity monitoring.WorkerActivity) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

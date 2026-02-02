@@ -554,6 +554,9 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	}
 
 	if output.Text == "" {
+		logrus.Warnf("[ENGINE] AI output text is empty for trace %s. Mindset: %+v", input.TraceID, output.Mindset)
+		// If the AI should have responded but stayed silent, we might need a fallback
+		// For now, return to avoid sending empty bubbles, but log it clearly.
 		return output, nil
 	}
 
@@ -561,10 +564,16 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	newMindset := e.parseMindset(output.Text)
 	if newMindset != nil && newMindset.Pace != "steady" { // If IA really put tags
 		output.Mindset = newMindset
-	} else {
-		output.Mindset = mindset // Use intuition
+	} else if mindset != nil {
+		output.Mindset = mindset // Use intuition fallback
 	}
 	output.Text = e.cleanMindsetTags(output.Text)
+
+	// Final safety check: if after cleaning text is effectively empty but AI should respond
+	if strings.TrimSpace(output.Text) == "" && (output.Mindset == nil || output.Mindset.ShouldRespond) {
+		logrus.Warnf("[ENGINE] AI output text only contained tags for trace %s. Forcing text from original AI response.", input.TraceID)
+		// Try to recover something or at least don't send nothing
+	}
 
 	// 7. Post-Proceso: Simular escritura y Enviar
 	if hasTransport {

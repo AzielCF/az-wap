@@ -129,7 +129,7 @@ func (s *cacheService) runCleanup(settings domainCache.CacheSettings) {
 	maxAge := time.Duration(settings.MaxAgeDays) * 24 * time.Hour
 	cutoff := time.Now().Add(-maxAge)
 
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathMedia}
+	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
 	for _, dir := range dirs {
 		s.pruneByAge(dir, cutoff)
 	}
@@ -184,7 +184,7 @@ func (s *cacheService) pruneBySize(limit int64) {
 		})
 	}
 
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathMedia}
+	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
 	for _, dir := range dirs {
 		collect(dir)
 	}
@@ -221,7 +221,7 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 	var totalSize int64
 
 	// Directories to scan
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathMedia}
+	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
 	for _, dir := range dirs {
 		size, _ := s.getDirSize(dir)
 		totalSize += size
@@ -238,7 +238,7 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 }
 
 func (s *cacheService) ClearGlobalCache(ctx context.Context) error {
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathQrCode, globalConfig.PathSendItems, globalConfig.PathMedia}
+	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
 	for _, dir := range dirs {
 		s.clearDir(dir)
 	}
@@ -258,9 +258,8 @@ func (s *cacheService) GetInstanceStats(ctx context.Context, instanceID string) 
 	size, _ := s.getDirSize(instanceMediaDir)
 	totalSize += size
 
-	instanceCacheDir := filepath.Join(globalConfig.PathMedia, instanceID)
-	cSize, _ := s.getDirSize(instanceCacheDir)
-	totalSize += cSize
+	// contextCache is separate and managed by botengine
+	totalSize += 0 // Fallback if needed
 
 	// History files for this instance
 	// Pattern: history-*-<instanceID>-*.json
@@ -279,8 +278,8 @@ func (s *cacheService) ClearInstanceCache(ctx context.Context, instanceID string
 	instanceMediaDir := filepath.Join(globalConfig.PathStatics, "workspaces", "*", instanceID)
 	os.RemoveAll(instanceMediaDir)
 
-	instanceCacheDir := filepath.Join(globalConfig.PathMedia, instanceID)
-	os.RemoveAll(instanceCacheDir)
+	// instanceCacheDir is now gone
+	_ = instanceID
 
 	// Clear history files
 	pattern := fmt.Sprintf("history-*-%s-*.json", instanceID)

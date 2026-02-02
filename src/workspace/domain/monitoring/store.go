@@ -39,6 +39,7 @@ type MonitoringStore interface {
 
 	// Servers: Get list of active servers
 	GetActiveServers(ctx context.Context) ([]ServerInfo, error)
+	RemoveServer(ctx context.Context, serverID string) error
 
 	// Workers: Track what each worker is doing
 	UpdateWorkerActivity(ctx context.Context, activity WorkerActivity) error
