@@ -513,8 +513,25 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		ChatKey:        input.InstanceID + "|" + input.ChatID,
 	}
 
-	// D. Ejecutar Orquestador (Ciclo de herramientas)
+	// D. Ejecutar Orquestador (Ciclo de herramientas) con AUTO-RETRY
+	// Si la IA falla "en silencio" (sin texto), reintentamos una vez forzándola.
 	output, err := e.orchestrator.Execute(ctx, p, b, input, req, serverMap)
+
+	// Check for "Silent Failure" -> No Text, No Error, but Mindset says Respond (or is nil/default)
+	// Note: We access the *output* text. The orchestrator sets output.Text.
+	isSilentFailure := err == nil && output.Text == "" && output.Action == "" && (mindset == nil || mindset.ShouldRespond)
+
+	if isSilentFailure {
+		logrus.Warnf("[ENGINE] AI returned EMPTY response (Silent Failure) for trace %s. Retrying execution with enforcement...", input.TraceID)
+
+		// Create a retry request with a strict directive
+		retryReq := req
+		retryReq.SystemPrompt += "\n\nSYSTEM CRITICAL: Your previous response was EMPTY. You MUST generate text or use a tool. Do NOT stay silent. Respond to the user NOW."
+
+		// Retry
+		output, err = e.orchestrator.Execute(ctx, p, b, input, retryReq, serverMap)
+	}
+
 	if err != nil {
 		// Defensive copy for error metadata
 		errorMeta := map[string]string{
@@ -527,7 +544,14 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			Stage: "ai_execution", Status: "error", Error: err.Error(),
 			Metadata: errorMeta,
 		})
-		return domain.BotOutput{}, fmt.Errorf("orchestrator failed: %w", err)
+
+		// CRITICAL FIX: If orchestrator fails (e.g. API error), DO NOT return empty.
+		// Reply to user informing about the error so they know what happened.
+		logrus.Errorf("[ENGINE] Orchestrator fatal error for trace %s: %v. Recovering with error message.", input.TraceID, err)
+		return domain.BotOutput{
+			Text:    "⚠️ Lo siento, ocurrió un error técnico al conectar con mi cerebro (API Error). Por favor intenta de nuevo en unos segundos.",
+			Mindset: &domain.Mindset{ShouldRespond: true, Pace: "steady"},
+		}, nil
 	}
 
 	// AFTER EXECUTION: Record Detailed usage in Monitor if present in Output
@@ -555,9 +579,16 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 
 	if output.Text == "" {
 		logrus.Warnf("[ENGINE] AI output text is empty for trace %s. Mindset: %+v", input.TraceID, output.Mindset)
-		// If the AI should have responded but stayed silent, we might need a fallback
-		// For now, return to avoid sending empty bubbles, but log it clearly.
-		return output, nil
+
+		// FAIL-SAFE: If the AI failed to generate text (e.g., tool error -> silent give up),
+		// we MUST inform the user instead of doing nothing.
+		if output.Mindset == nil || output.Mindset.ShouldRespond {
+			// output.Text = "..." <-- REMOVED PER USER REQUEST
+			// Just log WARN, no forced text.
+		} else {
+			// If intuition specifically said "Do Not Respond", we respect silence.
+			return output, nil
+		}
 	}
 
 	// Extract Mindset if IA provided it in text (overrides intuition)

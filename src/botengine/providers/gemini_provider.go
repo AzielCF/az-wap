@@ -161,7 +161,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 				})
 			}
 			contents = append(contents, &genai.Content{
-				Role:  "user",
+				Role:  "function", // CORRECT ROLE for function responses (was "user")
 				Parts: parts,
 			})
 			continue
@@ -348,6 +348,28 @@ func (p *GeminiProvider) Chat(ctx context.Context, b domainBot.Bot, req domain.C
 	}
 
 	candidate := result.Candidates[0]
+
+	// SAFETY CHECK: If the model refused to respond due to safety or other reasons
+	if candidate.FinishReason != genai.FinishReasonStop && candidate.FinishReason != genai.FinishReasonMaxTokens {
+		// Log safety ratings for debugging
+		for _, rating := range candidate.SafetyRatings {
+			logrus.Warnf("[GEMINI] Safety Rating: %s - %s (Blocked: %v)", rating.Category, rating.Probability, rating.Blocked)
+		}
+
+		// Map FinishReason to a human-readable error
+		reasonStr := "Unknown"
+		switch candidate.FinishReason {
+		case genai.FinishReasonSafety:
+			reasonStr = "Safety Filter Triggered"
+		case genai.FinishReasonRecitation:
+			reasonStr = "Recitation (Copyright)"
+		case genai.FinishReasonOther:
+			reasonStr = "Other/Unknown"
+		}
+
+		// Return error so the Engine/Orchestrator knows it failed
+		return domain.ChatResponse{}, fmt.Errorf("gemini blocked response. reason: %s", reasonStr)
+	}
 
 	// Extraer texto manualmente de las partes (más robusto que result.Text())
 	var fullText string
