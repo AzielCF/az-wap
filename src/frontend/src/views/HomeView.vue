@@ -28,6 +28,7 @@ const recentActivity = ref<any[]>([
 
 async function loadStats() {
   try {
+    // 1. Load Workspaces and Channels
     const ws = await api.get('/workspaces')
     if (ws && Array.isArray(ws)) {
       if (stats.value[1]) stats.value[1].value = ws.length.toString()
@@ -43,6 +44,50 @@ async function loadStats() {
       }
       if (stats.value[2]) stats.value[2].value = totalCh.toString()
     }
+
+    // 2. Load Real-time Monitoring Data (Health & Sessions)
+    const [healthRes, sessionsRes] = await Promise.allSettled([
+        api.get('/api/health/status'),
+        api.get('/workspaces/active-sessions')
+    ])
+
+    // Health Logic (Real-time memory based)
+    if (healthRes.status === 'fulfilled' && healthRes.value) {
+        const data = healthRes.value as any
+        if (data.results && Array.isArray(data.results)) {
+            const systems = data.results
+            const total = systems.length
+            const healthy = systems.filter((s: any) => s.status === 'OK' || s.status === 'HEALTHY').length
+            
+            const health = total > 0 ? (healthy / total) * 100 : 100
+            
+            if (stats.value[3]) {
+                stats.value[3].value = Math.round(health) + '%'
+                
+                if (health >= 99.5) {
+                    stats.value[3].delta = 'Optimal'
+                    stats.value[3].trend = 'up'
+                } else if (health >= 90) {
+                    stats.value[3].delta = 'Good'
+                    stats.value[3].trend = 'neutral'
+                } else {
+                    stats.value[3].delta = 'Degraded'
+                    stats.value[3].trend = 'down'
+                }
+            }
+        }
+    }
+
+    // Active Sessions Logic
+    if (sessionsRes.status === 'fulfilled' && Array.isArray(sessionsRes.value)) {
+        if (stats.value[0]) {
+            const activeCount = sessionsRes.value.length
+            stats.value[0].value = activeCount.toString()
+            stats.value[0].delta = activeCount > 0 ? 'Live' : 'Idle'
+            stats.value[0].trend = activeCount > 0 ? 'up' : 'neutral'
+        }
+    }
+
   } catch (err) {
     console.error('Home stats load error:', err)
   }
