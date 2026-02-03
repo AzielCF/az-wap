@@ -144,7 +144,7 @@ func (s *SessionOrchestrator) GetOrCreateEntry(key string, msg message.IncomingM
 		State:      StateDebouncing,
 		FocusScore: 0,
 	}
-	_ = s.store.Save(ctx, key, e, 4*time.Minute)
+	_ = s.store.Save(ctx, key, e, 5*time.Minute)
 	return e, false
 }
 
@@ -271,7 +271,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	debounceBase := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
 	if debounceBase <= 0 {
 		// Save state before processing
-		_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+		_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
 
 		if s.OnProcessFinal != nil {
 			_, _ = s.OnProcessFinal(ctx, ch, msg, botID)
@@ -291,7 +291,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 			e.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
 		}
 
-		_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+		_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
 
 		tb := &timerBundle{}
 		if s.OnInactivityWarn != nil {
@@ -388,7 +388,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	}
 
 	// Save updated entry
-	_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+	_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
 
 	if e.State == StateProcessing {
 		logrus.Infof("[SessionOrchestrator] Message enqueued during processing for %s (Session extended, Focus: %d)", key, e.FocusScore)
@@ -460,7 +460,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 	}
 
 	// Save updated state
-	_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
+	_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
 
 	msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
 		InstanceID: ch.ID,
@@ -491,7 +491,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						}
 						curr.State = StateDebouncing
 						debounce := (time.Duration(globalConfig.AIDebounceMs) * time.Millisecond) + readingPause
-						_ = s.store.Save(storeCtx, key, curr, 4*time.Minute)
+						_ = s.store.Save(storeCtx, key, curr, 5*time.Minute)
 
 						tb := &timerBundle{
 							debounce: time.AfterFunc(debounce, func() {
@@ -515,7 +515,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 							curr.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
 						}
 
-						_ = s.store.Save(storeCtx, key, curr, 4*time.Minute)
+						_ = s.store.Save(storeCtx, key, curr, 5*time.Minute)
 
 						tb := &timerBundle{}
 						if s.OnInactivityWarn != nil {
