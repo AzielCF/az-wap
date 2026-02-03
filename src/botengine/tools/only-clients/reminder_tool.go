@@ -61,11 +61,25 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 
 			fullStr := fmt.Sprintf("%s %s", dateStr, timeStr)
 
-			// FIX: Load Location from Config to prevent UTC mismatch
-			locName := globalConfig.AITimezone
-			if locName == "" {
-				locName = "America/Lima" // Default Fallback
+			// FIX: Load Location from Context (Client/Channel) > Config > Default UTC
+			locName := "UTC"
+
+			// Try to get metadata map first
+			if meta, ok := ctxData["metadata"].(map[string]interface{}); ok {
+				if tz, ok := meta["bot_timezone"].(string); ok && tz != "" {
+					locName = tz
+				}
 			}
+
+			// If not found in metadata, check root (backwards compatibility) or config
+			if locName == "UTC" {
+				if tz, ok := ctxData["bot_timezone"].(string); ok && tz != "" {
+					locName = tz
+				} else if globalConfig.AITimezone != "" {
+					locName = globalConfig.AITimezone
+				}
+			}
+
 			loc, err := time.LoadLocation(locName)
 			if err != nil {
 				loc = time.UTC // Fallback if invalid

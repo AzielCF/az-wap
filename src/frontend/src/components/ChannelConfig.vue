@@ -52,13 +52,25 @@ const config = ref<any>({
   allowed_extensions: [],
   max_download_size: 50 * 1024 * 1024,
   default_language: 'en',
+  timezone: '',
   inactivity_warning: {
       enabled: true,
       default_lang: 'en',
       templates: {
           en: '',
           es: '',
-          fr: ''
+          fr: '',
+          ru: ''
+      }
+  },
+  session_closing: {
+      enabled: true,
+      default_lang: 'es',
+      templates: {
+          en: '',
+          es: '',
+          fr: '',
+          ru: ''
       }
   }
 })
@@ -128,6 +140,7 @@ function loadInitialConfig() {
         if (!config.value.allowed_extensions) config.value.allowed_extensions = []
         if (!config.value.max_download_size) config.value.max_download_size = 50 * 1024 * 1024
         if (!config.value.default_language) config.value.default_language = 'en'
+        if (!config.value.timezone) config.value.timezone = ''
         if (!config.value.inactivity_warning) {
             config.value.inactivity_warning = {
                 enabled: true,
@@ -475,8 +488,35 @@ onMounted(loadInitialConfig)
                     <option value="fr">Français</option>
                     <option value="it">Italiano</option>
                     <option value="de">Deutsch</option>
+                    <option value="ru">Русский</option>
                 </select>
                 <p class="text-[10px] text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Fallback language for non-registered clients or general channel vibe.</p>
+            </div>
+
+            <div class="form-control w-full">
+                <label class="label-premium">Default Timezone</label>
+                <select v-model="config.timezone" class="select-premium h-14 w-full">
+                    <option value="">System Default (UTC)</option>
+                    <option value="America/New_York">🇺🇸 (GMT-05:00) America/New_York</option>
+                    <option value="America/Los_Angeles">🇺🇸 (GMT-08:00) America/Los_Angeles</option>
+                    <option value="America/Chicago">🇺🇸 (GMT-06:00) America/Chicago</option>
+                    <option value="America/Lima">🇵🇪 (GMT-05:00) America/Lima</option>
+                    <option value="America/Bogota">🇨🇴 (GMT-05:00) America/Bogota</option>
+                    <option value="America/Mexico_City">🇲🇽 (GMT-06:00) America/Mexico_City</option>
+                    <option value="America/Santo_Domingo">🇩🇴 (GMT-04:00) America/Santo_Domingo</option>
+                    <option value="America/Sao_Paulo">🇧🇷 (GMT-03:00) America/Sao_Paulo</option>
+                    <option value="America/Buenos_Aires">🇦🇷 (GMT-03:00) America/Buenos_Aires</option>
+                    <option value="America/Santiago">🇨🇱 (GMT-04:00) America/Santiago</option>
+                    <option value="Europe/London">🇬🇧 (GMT+00:00) Europe/London</option>
+                    <option value="Europe/Paris">🇫🇷 (GMT+01:00) Europe/Paris</option>
+                    <option value="Europe/Madrid">🇪🇸 (GMT+01:00) Europe/Madrid</option>
+                    <option value="Europe/Berlin">🇩🇪 (GMT+01:00) Europe/Berlin</option>
+                    <option value="Asia/Tokyo">🇯🇵 (GMT+09:00) Asia/Tokyo</option>
+                    <option value="Asia/Shanghai">🇨🇳 (GMT+08:00) Asia/Shanghai</option>
+                    <option value="Asia/Dubai">🇦🇪 (GMT+04:00) Asia/Dubai</option>
+                    <option value="Australia/Sydney">🇦🇺 (GMT+10:00) Australia/Sydney</option>
+                </select>
+                <p class="text-[10px] text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Timezone for AI tools and time-sensitive operations. Clients can override this individually.</p>
             </div>
 
             <!-- Inactivity Warning Section -->
@@ -498,28 +538,60 @@ onMounted(loadInitialConfig)
                             <option value="en">English (US)</option>
                             <option value="es">Español</option>
                             <option value="fr">Français</option>
+                            <option value="ru">Русский</option>
                         </select>
                     </div>
 
                     <div class="space-y-4">
-                        <label class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">Custom Message Templates</label>
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">Custom Message Template ({{ config.inactivity_warning.default_lang === 'en' ? 'ENGLISH' : config.inactivity_warning.default_lang === 'es' ? 'SPANISH' : config.inactivity_warning.default_lang === 'fr' ? 'FRENCH' : 'RUSSIAN' }})</label>
                         
-                        <div class="grid grid-cols-1 gap-4">
-                            <div v-for="lang in ['en', 'es', 'fr']" :key="lang" class="space-y-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-black uppercase text-primary tracking-widest">{{ lang === 'en' ? 'ENGLISH' : lang === 'es' ? 'SPANISH' : 'FRENCH' }}</span>
-                                    <span v-if="!config.inactivity_warning.templates[lang]" class="text-[9px] text-slate-600 font-bold uppercase tracking-tighter">(USING SYSTEM DEFAULT)</span>
-                                </div>
-                                <textarea 
-                                    v-model="config.inactivity_warning.templates[lang]"
-                                    placeholder="Enter custom warning message..."
-                                    class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-20 w-full resize-none transition-all"
-                                ></textarea>
-                            </div>
+                        <div class="space-y-2">
+                             <textarea 
+                                v-model="config.inactivity_warning.templates[config.inactivity_warning.default_lang]"
+                                :placeholder="config.inactivity_warning.default_lang === 'es' ? '¿Sigues ahí? Cerraré la sesión pronto...' : 'Are you still there? Session closing soon...'"
+                                class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-24 w-full resize-none transition-all"
+                            ></textarea>
+                            <p class="text-[10px] text-slate-500 font-medium uppercase px-1">Use this to personalize the warning for the primary audience.</p>
                         </div>
                     </div>
                 </div>
             </section>
+
+             <!-- Session Closing Message Section -->
+             <section class="space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Session Closing Message</h4>
+                        <p class="text-[10px] text-slate-500 font-medium uppercase mt-1">Final message sent when session is terminated due to inactivity</p>
+                    </div>
+                    <input type="checkbox" v-model="config.session_closing.enabled" class="toggle toggle-primary toggle-sm" />
+                </div>
+
+                <div v-if="config.session_closing.enabled" class="space-y-6 p-6 bg-black/20 rounded-2xl border border-white/5 animate-in fade-in slide-in-from-top-4">
+                    <div class="form-control">
+                        <label class="label-premium">Closing Message Language</label>
+                        <select v-model="config.session_closing.default_lang" class="select-premium h-12 w-full text-sm">
+                            <option value="en">English (US)</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-4">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">Custom Message Template ({{ config.session_closing.default_lang === 'en' ? 'ENGLISH' : config.session_closing.default_lang === 'es' ? 'SPANISH' : config.session_closing.default_lang === 'fr' ? 'FRENCH' : 'RUSSIAN' }})</label>
+                        
+                        <div class="space-y-2">
+                             <textarea 
+                                v-model="config.session_closing.templates[config.session_closing.default_lang]"
+                                :placeholder="config.session_closing.default_lang === 'es' ? 'La sesión ha sido cerrada por inactividad.' : 'Session closed due to inactivity.'"
+                                class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-24 w-full resize-none transition-all"
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             
             <div class="p-6 bg-white/[0.02] rounded-2xl border border-white/5 flex items-center justify-between">
                 <div>

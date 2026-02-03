@@ -609,6 +609,10 @@ func initApp() {
 	botEngine.RegisterNativeTool(cTools.GetMyInfoTool())
 	botEngine.RegisterNativeTool(cTools.DeleteMyFieldTool())
 
+	// Register Currency Tools
+	cxTools := onlyClients.NewExchangeRateTools()
+	botEngine.RegisterNativeTool(cxTools.GetExchangeRateTool())
+
 	// Workspace Channels Auto-Start
 	go func() {
 		time.Sleep(5 * time.Second) // Small delay to ensure all infrastructure is ready

@@ -37,6 +37,8 @@ type Client struct {
 	Metadata        map[string]any `json:"metadata"`
 	Notes           string         `json:"notes,omitempty"`
 	Language        string         `json:"language,omitempty"` // Idioma preferido (es, en, etc.)
+	Timezone        string         `json:"timezone,omitempty"` // IANA timezone (e.g. America/Lima)
+	Country         string         `json:"country,omitempty"`  // ISO 3166-1 alpha-2 (e.g. PE, US, DO)
 	AllowedBots     []string       `json:"allowed_bots"`       // IDs de bots permitidos para este cliente
 	Enabled         bool           `json:"enabled"`
 	LastInteraction *time.Time     `json:"last_interaction,omitempty"`

@@ -16,6 +16,8 @@ type CreateClientRequest struct {
 	Metadata     map[string]any `json:"metadata"`
 	Notes        string         `json:"notes"`
 	Language     string         `json:"language"`
+	Timezone     string         `json:"timezone"`
+	Country      string         `json:"country"`
 	AllowedBots  []string       `json:"allowed_bots"`
 }
 
@@ -30,6 +32,8 @@ type UpdateClientRequest struct {
 	Metadata    map[string]any `json:"metadata"`
 	Notes       *string        `json:"notes"`
 	Language    *string        `json:"language"`
+	Timezone    *string        `json:"timezone"`
+	Country     *string        `json:"country"`
 	AllowedBots []string       `json:"allowed_bots"`
 }
 

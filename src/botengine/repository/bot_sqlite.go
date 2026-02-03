@@ -52,7 +52,7 @@ func (r *BotSQLiteRepository) Init(ctx context.Context) error {
 			model TEXT,
 			system_prompt TEXT,
 			knowledge_base TEXT,
-			timezone TEXT,
+
 			audio_enabled INTEGER NOT NULL DEFAULT 0,
 			image_enabled INTEGER NOT NULL DEFAULT 0,
 			video_enabled INTEGER NOT NULL DEFAULT 0,
@@ -121,6 +121,15 @@ func (r *BotSQLiteRepository) runMigrations(ctx context.Context) error {
 		}
 	}
 
+	// Drop timezone column if it exists (Cleanup)
+	if columns["timezone"] {
+		if _, err := r.db.ExecContext(ctx, "ALTER TABLE bots DROP COLUMN timezone"); err != nil {
+			logrus.WithError(err).Warn("[BotRepo] Failed to drop column timezone")
+		} else {
+			logrus.Info("[BotRepo] Dropped column timezone")
+		}
+	}
+
 	return nil
 }
 
@@ -129,18 +138,18 @@ func (r *BotSQLiteRepository) Create(ctx context.Context, bot domainBot.Bot) err
 	query := `
 		INSERT INTO bots (
 			id, name, description, provider, enabled,
-			api_key, model, system_prompt, knowledge_base, timezone,
+			api_key, model, system_prompt, knowledge_base,
 			audio_enabled, image_enabled, video_enabled, document_enabled, memory_enabled,
 			mindset_model, multimodal_model, credential_id, chatwoot_credential_id, chatwoot_bot_token,
 			whitelist
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 
 	whitelistStr := strings.Join(bot.Whitelist, ",")
 
 	_, err := r.db.ExecContext(ctx, query,
 		bot.ID, bot.Name, bot.Description, bot.Provider, boolToInt(bot.Enabled),
-		bot.APIKey, bot.Model, bot.SystemPrompt, bot.KnowledgeBase, bot.Timezone,
+		bot.APIKey, bot.Model, bot.SystemPrompt, bot.KnowledgeBase,
 		boolToInt(bot.AudioEnabled), boolToInt(bot.ImageEnabled), boolToInt(bot.VideoEnabled),
 		boolToInt(bot.DocumentEnabled), boolToInt(bot.MemoryEnabled),
 		bot.MindsetModel, bot.MultimodalModel, bot.CredentialID, bot.ChatwootCredentialID, bot.ChatwootBotToken,
@@ -169,7 +178,7 @@ func (r *BotSQLiteRepository) GetByID(ctx context.Context, id string) (domainBot
 
 	query := `
 		SELECT id, name, description, provider, enabled,
-			api_key, model, system_prompt, knowledge_base, timezone,
+			api_key, model, system_prompt, knowledge_base,
 			audio_enabled, image_enabled, video_enabled, document_enabled, memory_enabled,
 			mindset_model, multimodal_model, credential_id, chatwoot_credential_id, chatwoot_bot_token,
 			whitelist
@@ -179,7 +188,7 @@ func (r *BotSQLiteRepository) GetByID(ctx context.Context, id string) (domainBot
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&b.ID, &b.Name, &b.Description, &b.Provider, &enabledVal,
-		&b.APIKey, &b.Model, &b.SystemPrompt, &b.KnowledgeBase, &b.Timezone,
+		&b.APIKey, &b.Model, &b.SystemPrompt, &b.KnowledgeBase,
 		&audioEnabledVal, &imageEnabledVal, &videoEnabledVal, &documentEnabledVal, &memoryEnabledVal,
 		&mindsetModel, &multimodalModel, &credID, &chatwootCredID, &botTkn,
 		&whitelistStr,
@@ -230,7 +239,7 @@ func (r *BotSQLiteRepository) GetByID(ctx context.Context, id string) (domainBot
 func (r *BotSQLiteRepository) List(ctx context.Context) ([]domainBot.Bot, error) {
 	query := `
 		SELECT id, name, description, provider, enabled,
-			api_key, model, system_prompt, knowledge_base, timezone,
+			api_key, model, system_prompt, knowledge_base,
 			audio_enabled, image_enabled, video_enabled, document_enabled, memory_enabled,
 			mindset_model, multimodal_model, credential_id, chatwoot_credential_id, chatwoot_bot_token,
 			whitelist
@@ -262,7 +271,7 @@ func (r *BotSQLiteRepository) List(ctx context.Context) ([]domainBot.Bot, error)
 		)
 		if err := rows.Scan(
 			&b.ID, &b.Name, &b.Description, &b.Provider, &enabledVal,
-			&b.APIKey, &b.Model, &b.SystemPrompt, &b.KnowledgeBase, &b.Timezone,
+			&b.APIKey, &b.Model, &b.SystemPrompt, &b.KnowledgeBase,
 			&audioEnabledVal, &imageEnabledVal, &videoEnabledVal, &documentEnabledVal, &memoryEnabledVal,
 			&mindsetModel, &multimodalModel, &credID, &chatwootCredID, &botTkn,
 			&whitelistStr,
@@ -313,7 +322,7 @@ func (r *BotSQLiteRepository) Update(ctx context.Context, bot domainBot.Bot) err
 	query := `
 		UPDATE bots
 		SET name = ?, description = ?, provider = ?,
-			api_key = ?, model = ?, system_prompt = ?, knowledge_base = ?, timezone = ?,
+			api_key = ?, model = ?, system_prompt = ?, knowledge_base = ?,
 			audio_enabled = ?, image_enabled = ?, video_enabled = ?, document_enabled = ?, memory_enabled = ?,
 			mindset_model = ?, multimodal_model = ?, credential_id = ?, chatwoot_credential_id = ?, chatwoot_bot_token = ?,
 			whitelist = ?,
@@ -323,7 +332,7 @@ func (r *BotSQLiteRepository) Update(ctx context.Context, bot domainBot.Bot) err
 
 	_, err := r.db.ExecContext(ctx, query,
 		bot.Name, bot.Description, bot.Provider,
-		bot.APIKey, bot.Model, bot.SystemPrompt, bot.KnowledgeBase, bot.Timezone,
+		bot.APIKey, bot.Model, bot.SystemPrompt, bot.KnowledgeBase,
 		boolToInt(bot.AudioEnabled), boolToInt(bot.ImageEnabled), boolToInt(bot.VideoEnabled),
 		boolToInt(bot.DocumentEnabled), boolToInt(bot.MemoryEnabled),
 		bot.MindsetModel, bot.MultimodalModel, bot.CredentialID, bot.ChatwootCredentialID, bot.ChatwootBotToken,

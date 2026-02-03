@@ -13,12 +13,15 @@ type ClientContext struct {
 	Tier        string         `json:"tier,omitempty"`
 	Tags        []string       `json:"tags,omitempty"`
 	Language    string         `json:"language,omitempty"`
+	Timezone    string         `json:"timezone,omitempty"`
+	Country     string         `json:"country,omitempty"`
 	AllowedBots []string       `json:"allowed_bots,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 
 	// SocialName es el nombre que el usuario ha compartido voluntariamente con la IA
 	// y se almacena en metadata["name"]. Distinto del DisplayName del sistema.
 	SocialName string `json:"social_name,omitempty"`
+	PushName   string `json:"push_name,omitempty"`
 
 	// Flags de conveniencia
 	IsRegistered    bool `json:"is_registered"`

@@ -56,6 +56,8 @@ func (r *SQLiteClientRepository) InitSchema(ctx context.Context) error {
 	// Manual migration: Add language column if it doesn't exist (ignores error if already exists)
 	_, _ = r.db.ExecContext(ctx, "ALTER TABLE clients ADD COLUMN language TEXT DEFAULT 'en'")
 	_, _ = r.db.ExecContext(ctx, "ALTER TABLE clients ADD COLUMN allowed_bots TEXT DEFAULT '[]'")
+	_, _ = r.db.ExecContext(ctx, "ALTER TABLE clients ADD COLUMN timezone TEXT")
+	_, _ = r.db.ExecContext(ctx, "ALTER TABLE clients ADD COLUMN country TEXT")
 
 	return nil
 }
@@ -85,8 +87,8 @@ func (r *SQLiteClientRepository) Create(ctx context.Context, client *domain.Clie
 	}
 
 	query := `
-	INSERT INTO clients (id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO clients (id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -101,6 +103,8 @@ func (r *SQLiteClientRepository) Create(ctx context.Context, client *domain.Clie
 		string(metadataJSON),
 		client.Notes,
 		client.Language,
+		client.Timezone,
+		client.Country,
 		string(botsJSON),
 		client.Enabled,
 		client.LastInteraction,
@@ -117,7 +121,7 @@ func (r *SQLiteClientRepository) Create(ctx context.Context, client *domain.Clie
 
 // GetByID obtiene un cliente por su ID
 func (r *SQLiteClientRepository) GetByID(ctx context.Context, id string) (*domain.Client, error) {
-	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE id = ?`
+	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE id = ?`
 
 	row := r.db.QueryRowContext(ctx, query, id)
 	return r.scanClient(row)
@@ -125,7 +129,7 @@ func (r *SQLiteClientRepository) GetByID(ctx context.Context, id string) (*domai
 
 // GetByPlatform obtiene un cliente por su platform_id y platform_type
 func (r *SQLiteClientRepository) GetByPlatform(ctx context.Context, platformID string, platformType domain.PlatformType) (*domain.Client, error) {
-	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE platform_id = ? AND platform_type = ?`
+	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE platform_id = ? AND platform_type = ?`
 
 	row := r.db.QueryRowContext(ctx, query, platformID, string(platformType))
 	return r.scanClient(row)
@@ -141,7 +145,7 @@ func (r *SQLiteClientRepository) GetByPhone(ctx context.Context, phone string) (
 		return -1
 	}, phone)
 
-	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE phone LIKE ? OR phone = ?`
+	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE phone LIKE ? OR phone = ?`
 
 	// Intentar con LIKE para manejar prefijos (ej: +51...)
 	row := r.db.QueryRowContext(ctx, query, "%"+cleanPhone+"%", phone)
@@ -179,6 +183,8 @@ func (r *SQLiteClientRepository) Update(ctx context.Context, client *domain.Clie
 		metadata = ?,
 		notes = ?,
 		language = ?,
+		timezone = ?,
+		country = ?,
 		allowed_bots = ?,
 		enabled = ?,
 		last_interaction = ?,
@@ -197,6 +203,8 @@ func (r *SQLiteClientRepository) Update(ctx context.Context, client *domain.Clie
 		string(metadataJSON),
 		client.Notes,
 		client.Language,
+		client.Timezone,
+		client.Country,
 		string(botsJSON),
 		client.Enabled,
 		client.LastInteraction,
@@ -236,7 +244,7 @@ func (r *SQLiteClientRepository) Delete(ctx context.Context, id string) error {
 
 // List obtiene una lista de clientes con filtros
 func (r *SQLiteClientRepository) List(ctx context.Context, filter domain.ClientFilter) ([]*domain.Client, error) {
-	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE 1=1`
+	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE 1=1`
 	args := []any{}
 
 	if filter.Tier != nil {
@@ -301,7 +309,7 @@ func (r *SQLiteClientRepository) ListByTier(ctx context.Context, tier domain.Cli
 
 // ListByTag obtiene clientes que tengan un tag específico
 func (r *SQLiteClientRepository) ListByTag(ctx context.Context, tag string) ([]*domain.Client, error) {
-	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE tags LIKE ?`
+	query := `SELECT id, platform_id, platform_type, display_name, email, phone, tier, tags, metadata, notes, language, timezone, country, allowed_bots, enabled, last_interaction, created_at, updated_at FROM clients WHERE tags LIKE ?`
 
 	rows, err := r.db.QueryContext(ctx, query, "%\""+tag+"\"%")
 	if err != nil {
@@ -397,6 +405,7 @@ func (r *SQLiteClientRepository) scanClient(row *sql.Row) (*domain.Client, error
 	var tagsJSON, metadataJSON, botsJSON string
 	var platformType, tier string
 	var lastInteraction sql.NullTime
+	var timezone, country sql.NullString
 
 	err := row.Scan(
 		&client.ID,
@@ -410,6 +419,8 @@ func (r *SQLiteClientRepository) scanClient(row *sql.Row) (*domain.Client, error
 		&metadataJSON,
 		&client.Notes,
 		&client.Language,
+		&timezone,
+		&country,
 		&botsJSON,
 		&client.Enabled,
 		&lastInteraction,
@@ -426,6 +437,8 @@ func (r *SQLiteClientRepository) scanClient(row *sql.Row) (*domain.Client, error
 
 	client.PlatformType = domain.PlatformType(platformType)
 	client.Tier = domain.ClientTier(tier)
+	client.Timezone = timezone.String
+	client.Country = country.String
 
 	if lastInteraction.Valid {
 		client.LastInteraction = &lastInteraction.Time
@@ -452,6 +465,7 @@ func (r *SQLiteClientRepository) scanClientFromRows(rows *sql.Rows) (*domain.Cli
 	var tagsJSON, metadataJSON, botsJSON string
 	var platformType, tier string
 	var lastInteraction sql.NullTime
+	var timezone, country sql.NullString
 
 	err := rows.Scan(
 		&client.ID,
@@ -465,6 +479,8 @@ func (r *SQLiteClientRepository) scanClientFromRows(rows *sql.Rows) (*domain.Cli
 		&metadataJSON,
 		&client.Notes,
 		&client.Language,
+		&timezone,
+		&country,
 		&botsJSON,
 		&client.Enabled,
 		&lastInteraction,
@@ -478,6 +494,8 @@ func (r *SQLiteClientRepository) scanClientFromRows(rows *sql.Rows) (*domain.Cli
 
 	client.PlatformType = domain.PlatformType(platformType)
 	client.Tier = domain.ClientTier(tier)
+	client.Timezone = timezone.String
+	client.Country = country.String
 
 	if lastInteraction.Valid {
 		client.LastInteraction = &lastInteraction.Time

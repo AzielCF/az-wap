@@ -98,6 +98,8 @@ func (h *ClientHandler) CreateClient(c *fiber.Ctx) error {
 		Metadata:     req.Metadata,
 		Notes:        req.Notes,
 		Language:     req.Language,
+		Timezone:     req.Timezone,
+		Country:      req.Country,
 		AllowedBots:  req.AllowedBots,
 	}
 
@@ -170,6 +172,12 @@ func (h *ClientHandler) UpdateClient(c *fiber.Ctx) error {
 	}
 	if req.Language != nil {
 		client.Language = *req.Language
+	}
+	if req.Timezone != nil {
+		client.Timezone = *req.Timezone
+	}
+	if req.Country != nil {
+		client.Country = *req.Country
 	}
 	if req.AllowedBots != nil {
 		client.AllowedBots = req.AllowedBots

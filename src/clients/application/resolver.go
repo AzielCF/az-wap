@@ -157,6 +157,8 @@ func ToBotEngineContext(ctx *domain.ClientContext) *botengineDomain.ClientContex
 		result.Tier = string(ctx.Client.Tier)
 		result.Tags = ctx.Client.Tags
 		result.Language = ctx.Client.Language
+		result.Timezone = ctx.Client.Timezone
+		result.Country = ctx.Client.Country
 		result.AllowedBots = ctx.Client.AllowedBots
 		result.Metadata = ctx.Client.Metadata
 
