@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -585,13 +586,18 @@ func (m *Manager) sendSessionClosedMessage(entry *application.SessionEntry, ch c
 	}
 
 	if adapter, ok := m.channels.GetAdapter(ch.ID); ok {
-		logrus.Infof("[WS_MANAGER] Sending session closed message to %s", entry.Msg.ChatID)
+		logrus.Infof("[WS_MANAGER] Sending session closed message to %s (Channel: %s)", entry.Msg.ChatID, ch.ID)
 
 		// Use existing Humanizer
 		wrapper := &infrastructure.BotTransportAdapter{Adapter: adapter}
 		m.botEngine.Humanizer().SimulateTyping(context.Background(), wrapper, entry.Msg.ChatID, text)
 
-		_, _ = adapter.SendMessage(context.Background(), entry.Msg.ChatID, text, "")
+		_, err := adapter.SendMessage(context.Background(), entry.Msg.ChatID, text, "")
+		if err != nil {
+			logrus.Errorf("[WS_MANAGER] Failed to send session closed message to %s: %v", entry.Msg.ChatID, err)
+		}
+	} else {
+		logrus.Warnf("[WS_MANAGER] Cannot send session closed message: adapter not found for channel %s", ch.ID)
 	}
 }
 
@@ -606,12 +612,34 @@ func (m *Manager) cleanupSessionFiles(e *application.SessionEntry) {
 }
 
 func (m *Manager) CloseSession(ctx context.Context, channelID, chatID string) error {
+	// Normalize chatID (ensure it's unescaped)
+	if decoded, err := url.QueryUnescape(chatID); err == nil {
+		chatID = decoded
+	}
+
+	// 1. Clear typing and Notify adapter
+	_ = m.UpdateTyping(ctx, channelID, chatID, false, "")
 	if adapter, ok := m.channels.GetAdapter(channelID); ok {
 		_ = adapter.CloseSession(ctx, chatID)
 	}
 
-	for _, s := range m.sessions.GetActiveSessions() {
-		if s.ChannelID == channelID && s.ChatID == chatID {
+	// 2. Find and kill session
+	sessions := m.sessions.GetActiveSessions()
+	for _, s := range sessions {
+		// Also normalize session ChatID for comparison
+		sChatID := s.ChatID
+		if dec, err := url.QueryUnescape(sChatID); err == nil {
+			sChatID = dec
+		}
+
+		if s.ChannelID == channelID && sChatID == chatID {
+			// Trigger closure message if possible before deleting
+			if entry, ok := m.sessions.GetEntry(s.Key); ok {
+				ch, err := m.repo.GetChannel(ctx, channelID)
+				if err == nil {
+					m.sendSessionClosedMessage(entry, ch)
+				}
+			}
 			m.sessions.CloseSession(s.Key)
 		}
 	}

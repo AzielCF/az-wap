@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"net/url"
+
 	botdomain "github.com/AzielCF/az-wap/botengine/domain"
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
 	"github.com/AzielCF/az-wap/workspace"
@@ -31,6 +33,9 @@ func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *
 
 	// AI Cache Inspector
 	g.Get("/ai-caches", h.GetAICaches)
+
+	// Admin Controls
+	g.Delete("/sessions/:channelID/:chatID", h.KillSession)
 }
 
 func (h *MonitoringHandler) GetServers(c *fiber.Ctx) error {
@@ -83,4 +88,20 @@ func (h *MonitoringHandler) GetAICaches(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(caches)
+}
+
+func (h *MonitoringHandler) KillSession(c *fiber.Ctx) error {
+	channelID := c.Params("channelID")
+	chatID, _ := url.QueryUnescape(c.Params("chatID"))
+
+	if channelID == "" || chatID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "channelID and chatID are required"})
+	}
+
+	err := h.wm.CloseSession(c.UserContext(), channelID, chatID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok", "message": "Activity killed successfully"})
 }
