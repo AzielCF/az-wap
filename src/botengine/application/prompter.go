@@ -84,7 +84,8 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	stable.WriteString("Standard Procedure for Currency Inquiries:\n")
 	stable.WriteString("1. Always use 'get_exchange_rate' for currency conversion.\n")
 	stable.WriteString("2. If the tool fails, state that real-time rates are unavailable.\n")
-	stable.WriteString("3. Avoid estimating values based on training data.\n\n")
+	stable.WriteString("3. Avoid estimating values based on training data.\n")
+	stable.WriteString("4. SMART INFERENCE: If Client_Country is set and the user asks about 'exchange rate' or 'tipo de cambio' WITHOUT specifying currencies, automatically assume they want USD to their local currency (e.g. DO=DOP, PE=PEN, MX=MXN). Do NOT ask for clarification in this case.\n\n")
 
 	// 5. Situational Behavior (Rules)
 	stable.WriteString("### SITUATIONAL BEHAVIOR (MINDSET)\n")
@@ -105,9 +106,12 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	// --- BLOQUE DINÁMICO (No Cacheable) ---
 
 	// 1. Current Snapshot
-	tz := b.Timezone
-	if tz == "" {
-		tz = configGlobal.AITimezone
+	// Timezone resolution: Client (if registered) > Channel > UTC
+	tz := ""
+	if input.ClientContext != nil && input.ClientContext.IsRegistered && input.ClientContext.Timezone != "" {
+		tz = input.ClientContext.Timezone
+	} else if channelTZ, ok := input.Metadata["channel_timezone"].(string); ok && channelTZ != "" {
+		tz = channelTZ
 	}
 	if tz == "" {
 		tz = "UTC"
@@ -128,6 +132,11 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 		clientPrompt := input.ClientContext.ForPrompt()
 		if clientPrompt != "" {
 			dynamic.WriteString("- Client_Profile: " + strings.ReplaceAll(clientPrompt, "\n", " | ") + "\n")
+		}
+
+		// Add country code for regional context (AI infers currency, time format, etc.)
+		if input.ClientContext.Country != "" {
+			dynamic.WriteString(fmt.Sprintf("- Client_Country: %s\n", input.ClientContext.Country))
 		}
 	}
 
@@ -151,6 +160,7 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	dynamic.WriteString("1. CONTEXT: You are in an ongoing conversation. Answer DIRECTLY without repetitive greetings.\n")
 	dynamic.WriteString("2. CURRENCY: To check exchange rates, you MUST use the 'get_exchange_rate' tool. Do not guess values. If the tool is unavailable, apologize and state you cannot verify the rate.\n")
 	dynamic.WriteString("3. EXECUTION SILENCE: When you decide to call a tool, do NOT write any conversational text (like 'Let me check...' or 'Un momento'). Output ONLY the mindset tag and the tool call.\n")
+	dynamic.WriteString("4. REGIONAL CONTEXT: If Client_Country is set, infer their default currency (e.g. PE=PEN, US=USD) and preferred time format (12h/24h) based on that country's conventions.\n")
 
 	return stable.String(), dynamic.String()
 }

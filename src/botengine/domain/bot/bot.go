@@ -22,11 +22,11 @@ type Bot struct {
 	Provider    Provider `json:"provider"`
 	Enabled     bool     `json:"enabled"`
 
-	APIKey          string `json:"api_key,omitempty"`
-	Model           string `json:"model,omitempty"`
-	SystemPrompt    string `json:"system_prompt,omitempty"`
-	KnowledgeBase   string `json:"knowledge_base,omitempty"`
-	Timezone        string `json:"timezone,omitempty"`
+	APIKey        string `json:"api_key,omitempty"`
+	Model         string `json:"model,omitempty"`
+	SystemPrompt  string `json:"system_prompt,omitempty"`
+	KnowledgeBase string `json:"knowledge_base,omitempty"`
+
 	AudioEnabled    bool   `json:"audio_enabled,omitempty"`
 	ImageEnabled    bool   `json:"image_enabled,omitempty"`
 	VideoEnabled    bool   `json:"video_enabled,omitempty"`
@@ -53,11 +53,11 @@ type CreateBotRequest struct {
 	Description string   `json:"description"`
 	Provider    Provider `json:"provider"`
 
-	APIKey          string `json:"api_key"`
-	Model           string `json:"model"`
-	SystemPrompt    string `json:"system_prompt"`
-	KnowledgeBase   string `json:"knowledge_base"`
-	Timezone        string `json:"timezone"`
+	APIKey        string `json:"api_key"`
+	Model         string `json:"model"`
+	SystemPrompt  string `json:"system_prompt"`
+	KnowledgeBase string `json:"knowledge_base"`
+
 	AudioEnabled    bool   `json:"audio_enabled"`
 	ImageEnabled    bool   `json:"image_enabled"`
 	VideoEnabled    bool   `json:"video_enabled"`
@@ -77,11 +77,11 @@ type UpdateBotRequest struct {
 	Description string   `json:"description"`
 	Provider    Provider `json:"provider"`
 
-	APIKey          string `json:"api_key"`
-	Model           string `json:"model"`
-	SystemPrompt    string `json:"system_prompt"`
-	KnowledgeBase   string `json:"knowledge_base"`
-	Timezone        string `json:"timezone"`
+	APIKey        string `json:"api_key"`
+	Model         string `json:"model"`
+	SystemPrompt  string `json:"system_prompt"`
+	KnowledgeBase string `json:"knowledge_base"`
+
 	AudioEnabled    bool   `json:"audio_enabled"`
 	ImageEnabled    bool   `json:"image_enabled"`
 	VideoEnabled    bool   `json:"video_enabled"`

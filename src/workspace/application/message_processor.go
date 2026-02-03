@@ -96,6 +96,11 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		Language:    ch.Config.DefaultLanguage, // Default from channel
 	}
 
+	// Inject channel timezone into metadata for tool resolution chain
+	if ch.Config.Timezone != "" {
+		input.Metadata["channel_timezone"] = ch.Config.Timezone
+	}
+
 	// Attach ClientContext if present in metadata
 	if cc, ok := safeMetadata["client_context"].(*botengineDomain.ClientContext); ok {
 		input.ClientContext = cc

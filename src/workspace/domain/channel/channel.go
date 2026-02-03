@@ -50,6 +50,7 @@ type ChannelConfig struct {
 	WebhookSecret       string                   `json:"webhook_secret,omitempty"`
 	BotID               string                   `json:"bot_id,omitempty"`
 	DefaultLanguage     string                   `json:"default_language,omitempty"`
+	Timezone            string                   `json:"timezone,omitempty"`
 	SkipTLSVerification bool                     `json:"skip_tls_verification"`
 	AutoReconnect       bool                     `json:"auto_reconnect"`
 	Chatwoot            *ChatwootConfig          `json:"chatwoot,omitempty"`
@@ -64,6 +65,13 @@ type ChannelConfig struct {
 	AllowedExtensions   []string                 `json:"allowed_extensions"`
 	MaxDownloadSize     int64                    `json:"max_download_size"` // in bytes
 	InactivityWarning   *InactivityWarningConfig `json:"inactivity_warning,omitempty"`
+	SessionClosing      *SessionClosingConfig    `json:"session_closing,omitempty"`
+}
+
+type SessionClosingConfig struct {
+	Enabled     bool              `json:"enabled"`
+	Templates   map[string]string `json:"templates"`    // "en", "es", "fr", "ru"
+	DefaultLang string            `json:"default_lang"` // Default "en"
 }
 
 type InactivityWarningConfig struct {
