@@ -194,7 +194,24 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 				for k, v := range toolInput.Metadata {
 					toolMetadata[k] = v
 				}
-				toolMetadata["bot_timezone"] = b.Timezone
+
+				// Timezone resolution: Client (if registered) > Channel > UTC
+				tz := ""
+				if input.ClientContext != nil && input.ClientContext.IsRegistered && input.ClientContext.Timezone != "" {
+					tz = input.ClientContext.Timezone
+				} else if channelTZ, ok := toolMetadata["channel_timezone"].(string); ok && channelTZ != "" {
+					tz = channelTZ
+				}
+				if tz == "" {
+					tz = "UTC"
+				}
+				toolMetadata["bot_timezone"] = tz
+
+				// Inject client country for regional context (currency, time format, etc.)
+				if input.ClientContext != nil && input.ClientContext.Country != "" {
+					toolMetadata["client_country"] = input.ClientContext.Country
+				}
+
 				toolInput.Metadata = toolMetadata
 
 				startCall := time.Now()

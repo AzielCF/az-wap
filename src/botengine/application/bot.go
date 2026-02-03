@@ -74,16 +74,16 @@ func (s *botService) Create(ctx context.Context, req domainBot.CreateBotRequest)
 
 	// Mapeo a entidad
 	bot := domainBot.Bot{
-		ID:                   id,
-		Name:                 name,
-		Description:          strings.TrimSpace(req.Description),
-		Provider:             domainBot.Provider(provider),
-		Enabled:              true,
-		APIKey:               strings.TrimSpace(req.APIKey),
-		Model:                strings.TrimSpace(req.Model),
-		SystemPrompt:         strings.TrimSpace(req.SystemPrompt),
-		KnowledgeBase:        strings.TrimSpace(req.KnowledgeBase),
-		Timezone:             strings.TrimSpace(req.Timezone),
+		ID:            id,
+		Name:          name,
+		Description:   strings.TrimSpace(req.Description),
+		Provider:      domainBot.Provider(provider),
+		Enabled:       true,
+		APIKey:        strings.TrimSpace(req.APIKey),
+		Model:         strings.TrimSpace(req.Model),
+		SystemPrompt:  strings.TrimSpace(req.SystemPrompt),
+		KnowledgeBase: strings.TrimSpace(req.KnowledgeBase),
+
 		AudioEnabled:         req.AudioEnabled,
 		ImageEnabled:         req.ImageEnabled,
 		VideoEnabled:         req.VideoEnabled,
@@ -180,7 +180,7 @@ func (s *botService) Update(ctx context.Context, id string, req domainBot.Update
 	updated.Model = strings.TrimSpace(req.Model)
 	updated.SystemPrompt = strings.TrimSpace(req.SystemPrompt)
 	updated.KnowledgeBase = strings.TrimSpace(req.KnowledgeBase)
-	updated.Timezone = strings.TrimSpace(req.Timezone)
+
 	updated.AudioEnabled = req.AudioEnabled
 	updated.ImageEnabled = req.ImageEnabled
 	updated.VideoEnabled = req.VideoEnabled
