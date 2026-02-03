@@ -30,6 +30,13 @@ type GlobalStats struct {
 	TotalErrors    int64 `json:"total_errors"`
 	TotalDropped   int64 `json:"total_dropped"`
 	TotalPending   int64 `json:"total_pending"`
+
+	// Tareas distribuidas
+	PendingTasksMemory int64 `json:"pending_tasks_memory"` // Tareas cargadas en memoria (para hoy)
+	PendingTasksDB     int64 `json:"pending_tasks_db"`     // Tareas en base de datos (largo plazo)
+
+	// Estado de infraestructura
+	ValkeyEnabled bool `json:"valkey_enabled"`
 }
 
 // MonitoringStore defines the contract for system heartbeat and metrics

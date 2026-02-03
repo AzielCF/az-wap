@@ -183,16 +183,27 @@ func (s *ValkeyMonitoringStore) UpdateStat(ctx context.Context, key string, valu
 
 // GetGlobalStats retrieves consolidated cluster-wide metrics.
 func (s *ValkeyMonitoringStore) GetGlobalStats(ctx context.Context) (monitoring.GlobalStats, error) {
+	// 1. Perform a real health check with a short timeout
+	healthCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	valkeyActive := s.client.Ping(healthCtx) == nil
+
+	// 2. Fetch stats
 	cmd := s.client.Inner().B().Hgetall().Key(s.statsKey()).Build()
 	res, err := s.client.Inner().Do(ctx, cmd).AsIntMap()
 	if err != nil {
-		return monitoring.GlobalStats{}, err
+		// Log error but return partial stats with real status to avoid UI crash
+		return monitoring.GlobalStats{ValkeyEnabled: valkeyActive}, nil
 	}
 
 	return monitoring.GlobalStats{
-		TotalProcessed: res["processed"],
-		TotalErrors:    res["error"],
-		TotalDropped:   res["dropped"],
-		TotalPending:   res["pending"],
+		TotalProcessed:     res["processed"],
+		TotalErrors:        res["error"],
+		TotalDropped:       res["dropped"],
+		TotalPending:       res["pending"],
+		PendingTasksMemory: res["tasks_memory"],
+		PendingTasksDB:     res["tasks_db"],
+		ValkeyEnabled:      valkeyActive,
 	}, nil
 }

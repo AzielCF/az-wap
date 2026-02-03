@@ -117,6 +117,10 @@ func (s *MemoryMonitoringStore) UpdateStat(ctx context.Context, key string, valu
 	switch key {
 	case "pending":
 		s.stats.TotalPending = value
+	case "tasks_memory":
+		s.stats.PendingTasksMemory = value
+	case "tasks_db":
+		s.stats.PendingTasksDB = value
 	}
 	return nil
 }
@@ -124,5 +128,7 @@ func (s *MemoryMonitoringStore) UpdateStat(ctx context.Context, key string, valu
 func (s *MemoryMonitoringStore) GetGlobalStats(ctx context.Context) (monitoring.GlobalStats, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.stats, nil
+	stats := s.stats
+	stats.ValkeyEnabled = false
+	return stats, nil
 }
