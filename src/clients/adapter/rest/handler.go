@@ -339,13 +339,16 @@ func (h *ClientHandler) CreateSubscription(c *fiber.Ctx) error {
 	}
 
 	sub := &domain.ClientSubscription{
-		ClientID:           clientID,
-		ChannelID:          req.ChannelID,
-		CustomBotID:        req.CustomBotID,
-		CustomSystemPrompt: req.CustomSystemPrompt,
-		CustomConfig:       req.CustomConfig,
-		Priority:           req.Priority,
-		ExpiresAt:          req.ExpiresAt,
+		ClientID:              clientID,
+		ChannelID:             req.ChannelID,
+		CustomBotID:           req.CustomBotID,
+		CustomSystemPrompt:    req.CustomSystemPrompt,
+		CustomConfig:          req.CustomConfig,
+		Priority:              req.Priority,
+		ExpiresAt:             req.ExpiresAt,
+		SessionTimeout:        req.SessionTimeout,
+		InactivityWarningTime: req.InactivityWarningTime,
+		MaxHistoryLimit:       req.MaxHistoryLimit,
 	}
 
 	if err := h.subService.Create(c.Context(), sub); err != nil {
@@ -450,6 +453,24 @@ func (h *ClientHandler) UpdateSubscription(c *fiber.Ctx) error {
 		sub.ExpiresAt = nil
 	} else if req.ExpiresAt != nil {
 		sub.ExpiresAt = req.ExpiresAt
+	}
+
+	if req.ClearSessionTimeout {
+		sub.SessionTimeout = 0
+	} else if req.SessionTimeout != nil {
+		sub.SessionTimeout = *req.SessionTimeout
+	}
+
+	if req.ClearInactivityWarning {
+		sub.InactivityWarningTime = 0
+	} else if req.InactivityWarningTime != nil {
+		sub.InactivityWarningTime = *req.InactivityWarningTime
+	}
+
+	if req.ClearMaxHistoryLimit {
+		sub.MaxHistoryLimit = nil
+	} else if req.MaxHistoryLimit != nil {
+		sub.MaxHistoryLimit = req.MaxHistoryLimit
 	}
 
 	if err := h.subService.Update(c.Context(), sub); err != nil {
