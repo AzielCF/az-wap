@@ -59,11 +59,14 @@ type SessionEntry struct {
 	LastMindset  *botengineDomain.Mindset `json:"last_mindset,omitempty"`
 	PendingTasks []string                 `json:"pending_tasks,omitempty"`
 
+	// Configuración de la sesión (capturada al inicio/renovación)
+	InactivityWarningEnabled bool `json:"inactivity_warning_enabled"`
+	SessionClosingEnabled    bool `json:"session_closing_enabled"`
+
 	// Idioma detectado/configurado
 	Language string `json:"language,omitempty"`
 }
 
-// Clone crea una copia profunda del SessionEntry (útil para evitar race conditions)
 func (e *SessionEntry) Clone() *SessionEntry {
 	if e == nil {
 		return nil
@@ -87,9 +90,6 @@ func (e *SessionEntry) Clone() *SessionEntry {
 		clone.PendingTasks = make([]string, len(e.PendingTasks))
 		copy(clone.PendingTasks, e.PendingTasks)
 	}
-
-	// Note: Media is a slice of pointers, only shallow copy for now
-	// Deep copy would require cloning each IncomingMedia
 
 	return &clone
 }

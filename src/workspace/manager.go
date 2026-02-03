@@ -33,20 +33,21 @@ type ClientResolver interface {
 }
 
 type Manager struct {
-	repo           workspaceDomain.IWorkspaceRepository
-	botEngine      *botengine.Engine
-	channels       *application.ChannelService
-	sessions       *application.SessionOrchestrator
-	processor      *application.MessageProcessor
-	presence       *application.PresenceManager
-	typingStore    channelDomain.TypingStore
-	clientResolver ClientResolver
-	monitor        monitoring.MonitoringStore
-	serverID       string
-	startTime      time.Time
-	valkeyClient   *valkey.Client // Holds Valkey client for cleanup on shutdown
-	messageDedup   sync.Map       // Local deduplication for non-Valkey environments
-	scheduler      *application.TaskScheduler
+	repo            workspaceDomain.IWorkspaceRepository
+	botEngine       *botengine.Engine
+	channels        *application.ChannelService
+	sessions        *application.SessionOrchestrator
+	processor       *application.MessageProcessor
+	presence        *application.PresenceManager
+	typingStore     channelDomain.TypingStore
+	clientResolver  ClientResolver
+	monitor         monitoring.MonitoringStore
+	serverID        string
+	startTime       time.Time
+	valkeyClient    *valkey.Client // Holds Valkey client for cleanup on shutdown
+	messageDedup    sync.Map       // Local deduplication for non-Valkey environments
+	scheduler       *application.TaskScheduler
+	lastDBCountTime time.Time
 }
 
 func NewManager(
@@ -90,6 +91,7 @@ func NewManager(
 	m.sessions.OnProcessFinal = m.processFinalBridge
 	m.sessions.OnInactivityWarn = m.sendInactivityWarning
 	m.sessions.OnCleanupFiles = m.cleanupSessionFiles
+	m.sessions.OnSessionClosed = m.sendSessionClosedMessage
 	m.sessions.OnChannelIdle = func(channelID string) {
 		m.presence.CheckChannelPresence(channelID)
 		m.presence.EnsureChannelConnectivity(channelID)
@@ -156,10 +158,31 @@ func (m *Manager) startHeartbeat() {
 	defer ticker.Stop()
 
 	// Initial report
-	_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
+	m.reportStatus()
 
 	for range ticker.C {
-		_ = m.monitor.ReportHeartbeat(context.Background(), m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
+		m.reportStatus()
+	}
+}
+
+func (m *Manager) reportStatus() {
+	ctx := context.Background()
+	_ = m.monitor.ReportHeartbeat(ctx, m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
+
+	// Update Task Counts (Memory vs DB)
+	if m.scheduler != nil {
+		// Memory count is O(1) on Valkey, fast to call
+		memoryCount := m.scheduler.CountActiveTasks(ctx)
+		_ = m.monitor.UpdateStat(ctx, "tasks_memory", memoryCount)
+
+		// Throttled DB Sync (every 10 minutes or first run)
+		if time.Since(m.lastDBCountTime) > 10*time.Minute {
+			dbCount, err := m.repo.CountPendingScheduledPosts(ctx)
+			if err == nil {
+				_ = m.monitor.UpdateStat(ctx, "tasks_db", dbCount)
+				m.lastDBCountTime = time.Now()
+			}
+		}
 	}
 }
 
@@ -467,14 +490,14 @@ func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
 		"en": "Are you still there? I'll be finishing the session in one minute if you don't need anything else.",
 		"es": "¿Sigues ahí? Cerraré la sesión en un minuto si no necesitas nada más.",
 		"fr": "Êtes-vous toujours là? Je fermerai la session dans une minute si vous n'avez besoin de rien d'autre.",
+		"ru": "Вы все еще здесь? Я закончу сеанс через минуту, если вам больше ничего не нужно.",
 	}
 
 	cfg := ch.Config.InactivityWarning
 	lang := "en"
-	enabled := true
+	enabled := entry.InactivityWarningEnabled
 
 	if cfg != nil {
-		enabled = cfg.Enabled
 		if entry.Language != "" {
 			lang = entry.Language
 		} else if cfg.DefaultLang != "" {
@@ -497,12 +520,7 @@ func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
 	}
 
 	// Try Personalization
-	clientName := ""
-	if ctxRaw, ok := entry.Msg.Metadata["client_context"]; ok {
-		if clientCtx, ok := ctxRaw.(*botengineDomain.ClientContext); ok && clientCtx.SocialName != "" {
-			clientName = clientCtx.SocialName
-		}
-	}
+	clientName := m.extractClientName(entry.Msg.Metadata["client_context"])
 
 	if clientName != "" {
 		switch lang {
@@ -512,11 +530,67 @@ func (m *Manager) sendInactivityWarning(key string, ch channelDomain.Channel) {
 			text = strings.Replace(text, "Are you still there?", "Are you still there, "+clientName+"?", 1)
 		case "fr":
 			text = strings.Replace(text, "Êtes-vous toujours là?", "Êtes-vous toujours là, "+clientName+"?", 1)
+		case "ru":
+			text = strings.Replace(text, "Вы все еще здесь?", "Вы все еще здесь, "+clientName+"?", 1)
 		}
 	}
 
 	if adapter, ok := m.channels.GetAdapter(ch.ID); ok {
 		logrus.Infof("[WS_MANAGER] Sending inactivity warning to %s", entry.Msg.ChatID)
+
+		// Use existing Humanizer
+		wrapper := &infrastructure.BotTransportAdapter{Adapter: adapter}
+		m.botEngine.Humanizer().SimulateTyping(context.Background(), wrapper, entry.Msg.ChatID, text)
+
+		_, _ = adapter.SendMessage(context.Background(), entry.Msg.ChatID, text, "")
+	}
+}
+
+func (m *Manager) sendSessionClosedMessage(entry *application.SessionEntry, ch channelDomain.Channel) {
+	if entry == nil {
+		return
+	}
+
+	templates := map[string]string{
+		"en": "Session closed due to inactivity. See you soon!",
+		"es": "La sesión ha sido cerrada por inactividad. ¡Hasta pronto!",
+		"fr": "Session fermée pour cause d'inactivité. À bientôt!",
+		"ru": "Сеанс закрыт из-за неактивности. До скорой встречи!",
+	}
+
+	cfg := ch.Config.SessionClosing
+	enabled := entry.SessionClosingEnabled
+
+	if cfg != nil {
+		for k, v := range cfg.Templates {
+			if v != "" {
+				templates[k] = v
+			}
+		}
+	}
+
+	if !enabled {
+		return
+	}
+
+	var text string
+	if entry.Language != "" {
+		text = templates[entry.Language]
+	}
+	if text == "" && cfg != nil && cfg.DefaultLang != "" {
+		text = templates[cfg.DefaultLang]
+	}
+	if text == "" {
+		text = templates["en"]
+	}
+
+	if adapter, ok := m.channels.GetAdapter(ch.ID); ok {
+		logrus.Infof("[WS_MANAGER] Sending session closed message to %s", entry.Msg.ChatID)
+
+		// Use existing Humanizer
+		wrapper := &infrastructure.BotTransportAdapter{Adapter: adapter}
+		m.botEngine.Humanizer().SimulateTyping(context.Background(), wrapper, entry.Msg.ChatID, text)
+
 		_, _ = adapter.SendMessage(context.Background(), entry.Msg.ChatID, text, "")
 	}
 }
@@ -654,32 +728,51 @@ func (m *Manager) tryLockMessage(channelID, messageID, senderID, text string) bo
 
 // acquireLock optimized for Valkey memory
 func (m *Manager) acquireLock(key string, expiration time.Duration) bool {
-	if m.valkeyClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+	if m.valkeyClient == nil {
+		// Use local map with manual Cleanup for non-Valkey environments (basic fallback)
+		_, loaded := m.messageDedup.LoadOrStore(key, time.Now())
+		if loaded {
+			return false
+		}
+		// Cleanup goroutine for this key (simple, not efficient for high load but functional)
+		go func() {
+			time.Sleep(expiration)
+			m.messageDedup.Delete(key)
+		}()
+		return true
+	}
 
-		valkeyKey := m.valkeyClient.Key(key)
-		// Use empty value "" to save memory. NX + EX handles the logic.
-		res := m.valkeyClient.Inner().Do(ctx, m.valkeyClient.Inner().B().Set().Key(valkeyKey).Value("").Nx().Ex(expiration).Build())
+	// Use Valkey SET NX EX
+	res := m.valkeyClient.Inner().Do(context.Background(), m.valkeyClient.Inner().B().Set().Key(key).Value("1").Nx().Ex(expiration).Build())
+	return res.Error() == nil
+}
 
-		if err := res.Error(); err != nil {
-			if valkey.IsNil(err) {
-				return false
-			}
-			logrus.WithError(err).Warnf("[WS] Valkey lock fail: %s", key)
-		} else {
-			return !valkey.IsNil(res.Error())
+// Helper to extract client name cleanly without deep nesting
+func (m *Manager) extractClientName(rawContext interface{}) string {
+	if rawContext == nil {
+		return ""
+	}
+
+	// Case 1: Struct pointer (in-memory)
+	if clientCtx, ok := rawContext.(*botengineDomain.ClientContext); ok {
+		if clientCtx.SocialName != "" {
+			return clientCtx.SocialName
+		}
+		if clientCtx.PushName != "" {
+			return clientCtx.PushName
+		}
+		return ""
+	}
+
+	// Case 2: Map (deserialized from JSON)
+	if clientMap, ok := rawContext.(map[string]interface{}); ok {
+		if name, ok := clientMap["social_name"].(string); ok && name != "" {
+			return name
+		}
+		if name, ok := clientMap["push_name"].(string); ok && name != "" {
+			return name
 		}
 	}
 
-	if _, loaded := m.messageDedup.LoadOrStore(key, time.Now()); loaded {
-		return false
-	}
-
-	go func() {
-		time.Sleep(expiration + 30*time.Second)
-		m.messageDedup.Delete(key)
-	}()
-
-	return true
+	return ""
 }

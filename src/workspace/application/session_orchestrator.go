@@ -63,6 +63,7 @@ type SessionOrchestrator struct {
 	OnCleanupFiles   func(e *SessionEntry)
 	OnChannelIdle    func(channelID string)
 	OnWaitIdle       func(ctx context.Context, channelID, chatID string)
+	OnSessionClosed  func(e *SessionEntry, ch channel.Channel)
 }
 
 // NewSessionOrchestrator creates a new orchestrator with the default in-memory store
@@ -238,6 +239,16 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 		}
 	}
 
+	// Capture latest config flags
+	e.InactivityWarningEnabled = true // Default
+	if ch.Config.InactivityWarning != nil {
+		e.InactivityWarningEnabled = ch.Config.InactivityWarning.Enabled
+	}
+	e.SessionClosingEnabled = true // Default
+	if ch.Config.SessionClosing != nil {
+		e.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
+	}
+
 	if id, ok := msg.Metadata["message_id"].(string); ok && id != "" {
 		e.MessageIDs = append(e.MessageIDs, id)
 	}
@@ -269,6 +280,17 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 		// Update state after processing
 		e.State = StateWaiting
 		e.ExpireAt = time.Now().Add(4 * time.Minute)
+
+		// Capture latest config flags
+		e.InactivityWarningEnabled = true // Default
+		if ch.Config.InactivityWarning != nil {
+			e.InactivityWarningEnabled = ch.Config.InactivityWarning.Enabled
+		}
+		e.SessionClosingEnabled = true // Default
+		if ch.Config.SessionClosing != nil {
+			e.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
+		}
+
 		_ = s.store.Save(storeCtx, key, e, 4*time.Minute)
 
 		tb := &timerBundle{}
@@ -298,6 +320,9 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 				}
 				if s.OnChannelIdle != nil {
 					go s.OnChannelIdle(curr.Msg.ChannelID)
+				}
+				if s.OnSessionClosed != nil {
+					s.OnSessionClosed(curr, ch)
 				}
 			}
 		})
@@ -479,6 +504,17 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						curr.State = StateWaiting
 						curr.ExpireAt = time.Now().Add(4 * time.Minute)
 						curr.ChatOpen = false
+
+						// Capture latest config flags
+						curr.InactivityWarningEnabled = true // Default
+						if ch.Config.InactivityWarning != nil {
+							curr.InactivityWarningEnabled = ch.Config.InactivityWarning.Enabled
+						}
+						curr.SessionClosingEnabled = true // Default
+						if ch.Config.SessionClosing != nil {
+							curr.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
+						}
+
 						_ = s.store.Save(storeCtx, key, curr, 4*time.Minute)
 
 						tb := &timerBundle{}
@@ -501,7 +537,9 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						}
 						tb.debounce = time.AfterFunc(4*time.Minute, func() {
 							if c, _ := s.store.Get(storeCtx, key); c != nil && c.State == StateWaiting {
-								s.stopAndClearTimers(key)
+								if s.OnSessionClosed != nil {
+									go s.OnSessionClosed(c, ch)
+								}
 								_ = s.store.Delete(storeCtx, key)
 								if s.OnCleanupFiles != nil {
 									s.OnCleanupFiles(c)
