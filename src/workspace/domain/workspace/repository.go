@@ -44,4 +44,5 @@ type IWorkspaceRepository interface {
 	ListUpcomingScheduledPosts(ctx context.Context, limitTime time.Time) ([]common.ScheduledPost, error)
 	UpdateScheduledPost(ctx context.Context, post common.ScheduledPost) error
 	DeleteScheduledPost(ctx context.Context, id string) error
+	CountPendingScheduledPosts(ctx context.Context) (int64, error)
 }

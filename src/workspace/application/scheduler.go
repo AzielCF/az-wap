@@ -125,6 +125,10 @@ func (s *TaskScheduler) PromoteTasks(ctx context.Context) error {
 			if err := s.repo.UpdateScheduledPost(ctx, post); err != nil {
 				continue
 			}
+
+			// Atomic Adjustment: One less in DB, one more in Memory
+			statsKey := s.valkeyClient.Key("monitoring") + ":stats"
+			_ = s.valkeyClient.Inner().Do(ctx, s.valkeyClient.Inner().B().Hincrby().Key(statsKey).Field("tasks_db").Increment(-1).Build())
 		}
 
 		if post.Status == wsCommonDomain.ScheduledPostStatusEnqueued {
@@ -191,4 +195,17 @@ func (s *TaskScheduler) ExecTasks(ctx context.Context) time.Time {
 	}
 
 	return time.Time{}
+}
+
+// CountActiveTasks returns the number of tasks currently in the memory queue (Valkey).
+func (s *TaskScheduler) CountActiveTasks(ctx context.Context) int64 {
+	if s.valkeyClient == nil {
+		return 0
+	}
+	key := s.valkeyClient.Key("scheduler:tasks")
+	res, err := s.valkeyClient.Inner().Do(ctx, s.valkeyClient.Inner().B().Zcard().Key(key).Build()).AsInt64()
+	if err != nil {
+		return 0
+	}
+	return res
 }
