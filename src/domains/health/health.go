@@ -25,6 +25,7 @@ const (
 
 type HealthRecord struct {
 	ID          string     `json:"id"`
+	Name        string     `json:"name"`
 	EntityType  EntityType `json:"entity_type"`
 	EntityID    string     `json:"entity_id"`
 	Status      Status     `json:"status"`

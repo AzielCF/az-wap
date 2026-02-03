@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
@@ -12,6 +14,7 @@ import (
 	globalConfig "github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/domains/health"
+	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
@@ -20,7 +23,10 @@ import (
 )
 
 type healthService struct {
-	db                *sql.DB
+	mu            sync.RWMutex
+	memoryRecords map[string]health.HealthRecord
+	vkClient      *valkey.Client
+
 	mcpUsecase        domainMCP.IMCPUsecase
 	credentialUsecase domainCredential.ICredentialUsecase
 	botUsecase        domainBot.IBotUsecase
@@ -33,30 +39,13 @@ type healthService struct {
 	}
 }
 
-func initHealthStorageDB() (*sql.DB, error) {
+func cleanupLegacyStorage() {
 	db, err := globalConfig.GetAppDB()
 	if err != nil {
-		return nil, err
+		return
 	}
-
-	createHealthTable := `
-		CREATE TABLE IF NOT EXISTS health_checks (
-			id TEXT PRIMARY KEY,
-			entity_type TEXT NOT NULL,
-			entity_id TEXT NOT NULL,
-			status TEXT NOT NULL,
-			last_message TEXT,
-			last_checked TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_success TIMESTAMP,
-			UNIQUE(entity_type, entity_id)
-		);
-	`
-
-	if _, err := db.Exec(createHealthTable); err != nil {
-		return nil, err
-	}
-
-	return db, nil
+	// Drop the legacy table if it exists as we moved to memory/Valkey
+	_, _ = db.Exec("DROP TABLE IF EXISTS health_checks")
 }
 
 func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredentialUsecase, bot domainBot.IBotUsecase, wm *workspace.Manager, wu interface {
@@ -64,14 +53,11 @@ func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredenti
 	GetWorkspace(ctx context.Context, id string) (wsDomain.Workspace, error)
 	ListChannels(ctx context.Context, workspaceID string) ([]wsChannelDomain.Channel, error)
 	GetChannel(ctx context.Context, id string) (wsChannelDomain.Channel, error)
-}) health.IHealthUsecase {
-	db, err := initHealthStorageDB()
-	if err != nil {
-		logrus.WithError(err).Error("[Health] failed to initialize storage")
-	}
-
+}, vk *valkey.Client) health.IHealthUsecase {
+	cleanupLegacyStorage()
 	return &healthService{
-		db:                db,
+		memoryRecords:     make(map[string]health.HealthRecord),
+		vkClient:          vk,
 		mcpUsecase:        mcp,
 		credentialUsecase: cred,
 		botUsecase:        bot,
@@ -80,93 +66,121 @@ func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredenti
 	}
 }
 
-func (s *healthService) ensureDB() error {
-	if s.db == nil {
-		return fmt.Errorf("health storage not initialized")
-	}
-	return nil
+func (s *healthService) healthKey() string {
+	return "monitoring:health"
+}
+
+func (s *healthService) entityKey(t health.EntityType, id string) string {
+	return fmt.Sprintf("%s:%s", t, id)
 }
 
 func (s *healthService) GetStatus(ctx context.Context) ([]health.HealthRecord, error) {
-	if err := s.ensureDB(); err != nil {
-		return nil, err
+	var results []health.HealthRecord
+
+	if s.vkClient != nil {
+		cmd := s.vkClient.Inner().B().Hgetall().Key(s.vkClient.Key(s.healthKey())).Build()
+		res, err := s.vkClient.Inner().Do(ctx, cmd).AsMap()
+		if err == nil {
+			for _, val := range res {
+				var r health.HealthRecord
+				sData, _ := val.ToString()
+				if err := json.Unmarshal([]byte(sData), &r); err == nil {
+					results = append(results, r)
+				}
+			}
+		}
 	}
 
-	query := `SELECT id, entity_type, entity_id, status, last_message, last_checked, last_success FROM health_checks`
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
+	// Always merge with local memory or use it as fallback
+	s.mu.RLock()
+	if len(results) == 0 {
+		for _, r := range s.memoryRecords {
+			results = append(results, r)
+		}
 	}
-	defer rows.Close()
+	s.mu.RUnlock()
 
-	var records []health.HealthRecord
-	for rows.Next() {
-		var r health.HealthRecord
-		var lastSuccess sql.NullTime
-		if err := rows.Scan(&r.ID, &r.EntityType, &r.EntityID, &r.Status, &r.LastMessage, &r.LastChecked, &lastSuccess); err != nil {
-			return nil, err
+	// Sort by EntityType and then Name for consistency
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].EntityType != results[j].EntityType {
+			return results[i].EntityType < results[j].EntityType
 		}
-		if lastSuccess.Valid {
-			r.LastSuccess = &lastSuccess.Time
-		}
-		records = append(records, r)
-	}
-	return records, nil
+		return results[i].Name < results[j].Name
+	})
+
+	return results, nil
 }
 
 func (s *healthService) GetEntityStatus(ctx context.Context, entityType health.EntityType, entityID string) (health.HealthRecord, error) {
-	if err := s.ensureDB(); err != nil {
-		return health.HealthRecord{}, err
+	key := s.entityKey(entityType, entityID)
+
+	if s.vkClient != nil {
+		cmd := s.vkClient.Inner().B().Hget().Key(s.vkClient.Key(s.healthKey())).Field(key).Build()
+		res, err := s.vkClient.Inner().Do(ctx, cmd).ToString()
+		if err == nil {
+			var r health.HealthRecord
+			if err := json.Unmarshal([]byte(res), &r); err == nil {
+				return r, nil
+			}
+		}
+		// If Valkey is active but result not found, return Unknown
+		return health.HealthRecord{
+			EntityType: entityType,
+			EntityID:   entityID,
+			Status:     health.StatusUnknown,
+		}, nil
 	}
 
-	var r health.HealthRecord
-	var lastSuccess sql.NullTime
-	query := `SELECT id, entity_type, entity_id, status, last_message, last_checked, last_success FROM health_checks WHERE entity_type = ? AND entity_id = ?`
-	err := s.db.QueryRowContext(ctx, query, string(entityType), entityID).Scan(&r.ID, &r.EntityType, &r.EntityID, &r.Status, &r.LastMessage, &r.LastChecked, &lastSuccess)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return health.HealthRecord{
-				EntityType: entityType,
-				EntityID:   entityID,
-				Status:     health.StatusUnknown,
-			}, nil
-		}
-		return r, err
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if r, ok := s.memoryRecords[key]; ok {
+		return r, nil
 	}
-	if lastSuccess.Valid {
-		r.LastSuccess = &lastSuccess.Time
-	}
-	return r, nil
+
+	return health.HealthRecord{
+		EntityType: entityType,
+		EntityID:   entityID,
+		Status:     health.StatusUnknown,
+	}, nil
 }
 
 func (s *healthService) upsertStatus(ctx context.Context, r health.HealthRecord) error {
-	if err := s.ensureDB(); err != nil {
-		return err
-	}
+	key := s.entityKey(r.EntityType, r.EntityID)
 
 	if r.ID == "" {
-		// Try to find existing ID
 		existing, _ := s.GetEntityStatus(ctx, r.EntityType, r.EntityID)
 		if existing.ID != "" {
 			r.ID = existing.ID
+			if r.Name == "" {
+				r.Name = existing.Name
+			}
+			if r.LastSuccess == nil {
+				r.LastSuccess = existing.LastSuccess
+			}
 		} else {
 			r.ID = uuid.NewString()
 		}
 	}
 
-	query := `
-		INSERT INTO health_checks (id, entity_type, entity_id, status, last_message, last_checked, last_success)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(entity_type, entity_id) DO UPDATE SET
-			status = excluded.status,
-			last_message = excluded.last_message,
-			last_checked = excluded.last_checked,
-			last_success = CASE WHEN excluded.status = 'OK' THEN excluded.last_checked ELSE last_success END
-	`
-
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, query, r.ID, string(r.EntityType), r.EntityID, string(r.Status), r.LastMessage, now, now)
-	return err
+	r.LastChecked = now
+	if r.Status == health.StatusOk {
+		r.LastSuccess = &now
+	}
+
+	// Store in distributed Valkey OR local memory
+	if s.vkClient != nil {
+		data, _ := json.Marshal(r)
+		cmd := s.vkClient.Inner().B().Hset().Key(s.vkClient.Key(s.healthKey())).FieldValue().FieldValue(key, string(data)).Build()
+		_ = s.vkClient.Inner().Do(ctx, cmd).Error()
+	} else {
+		// Only use Go RAM if Valkey is NOT active
+		s.mu.Lock()
+		s.memoryRecords[key] = r
+		s.mu.Unlock()
+	}
+
+	return nil
 }
 
 func (s *healthService) ReportFailure(ctx context.Context, entityType health.EntityType, entityID string, message string) {
@@ -224,6 +238,11 @@ func (s *healthService) CheckMCP(ctx context.Context, id string) (health.HealthR
 		Status:     health.StatusOk,
 	}
 
+	// Fetch name if possible
+	if srv, err := s.mcpUsecase.GetServer(ctx, id); err == nil {
+		record.Name = srv.Name
+	}
+
 	err := s.mcpUsecase.Validate(ctx, id)
 	if err != nil {
 		record.Status = health.StatusError
@@ -243,6 +262,11 @@ func (s *healthService) CheckCredential(ctx context.Context, id string) (health.
 		Status:     health.StatusOk,
 	}
 
+	// Fetch name if possible
+	if cred, err := s.credentialUsecase.GetByID(ctx, id); err == nil {
+		record.Name = cred.Name
+	}
+
 	err := s.credentialUsecase.Validate(ctx, id)
 	if err != nil {
 		record.Status = health.StatusError
@@ -260,6 +284,11 @@ func (s *healthService) CheckBot(ctx context.Context, id string) (health.HealthR
 		EntityType: health.EntityBot,
 		EntityID:   id,
 		Status:     health.StatusOk,
+	}
+
+	// Fetch name if possible
+	if b, err := s.botUsecase.GetByID(ctx, id); err == nil {
+		record.Name = b.Name
 	}
 
 	// Check status of MCP servers for this bot
@@ -302,30 +331,33 @@ func (s *healthService) CheckWorkspace(ctx context.Context, id string) (health.H
 	if err != nil {
 		record.Status = health.StatusError
 		record.LastMessage = fmt.Sprintf("failed to get workspace: %v", err)
-	} else if !ws.Enabled {
-		record.Status = health.StatusError
-		record.LastMessage = "Workspace is disabled"
 	} else {
-		// Check channels
-		channels, err := s.workspaceUsecase.ListChannels(ctx, id)
-		if err != nil {
+		record.Name = ws.Name
+		if !ws.Enabled {
 			record.Status = health.StatusError
-			record.LastMessage = fmt.Sprintf("failed to list channels: %v", err)
+			record.LastMessage = "Workspace is disabled"
 		} else {
-			failing := 0
-			for _, ch := range channels {
-				if ch.Enabled {
-					cStatus, _ := s.CheckChannel(ctx, ch.ID)
-					if cStatus.Status == health.StatusError {
-						failing++
+			// Check channels
+			channels, err := s.workspaceUsecase.ListChannels(ctx, id)
+			if err != nil {
+				record.Status = health.StatusError
+				record.LastMessage = fmt.Sprintf("failed to list channels: %v", err)
+			} else {
+				failing := 0
+				for _, ch := range channels {
+					if ch.Enabled {
+						cStatus, _ := s.CheckChannel(ctx, ch.ID)
+						if cStatus.Status == health.StatusError {
+							failing++
+						}
 					}
 				}
-			}
-			if failing > 0 {
-				record.Status = health.StatusError
-				record.LastMessage = fmt.Sprintf("%d channels failing", failing)
-			} else {
-				record.LastMessage = "All channels healthy"
+				if failing > 0 {
+					record.Status = health.StatusError
+					record.LastMessage = fmt.Sprintf("%d channels failing", failing)
+				} else {
+					record.LastMessage = "All channels healthy"
+				}
 			}
 		}
 	}
@@ -345,22 +377,25 @@ func (s *healthService) CheckChannel(ctx context.Context, id string) (health.Hea
 	if err != nil {
 		record.Status = health.StatusError
 		record.LastMessage = fmt.Sprintf("failed to get channel: %v", err)
-	} else if !ch.Enabled {
-		record.Status = health.StatusError
-		record.LastMessage = "Channel is disabled"
 	} else {
-		// Check active adapter
-		if adapter, ok := s.workspaceManager.GetAdapter(id); ok {
-			status := adapter.Status()
-			if status != wsChannelDomain.ChannelStatusConnected {
-				record.Status = health.StatusError
-				record.LastMessage = fmt.Sprintf("Adapter status: %s", status)
-			} else {
-				record.LastMessage = "Connected"
-			}
-		} else {
+		record.Name = ch.Name
+		if !ch.Enabled {
 			record.Status = health.StatusError
-			record.LastMessage = "Adapter not found (not running)"
+			record.LastMessage = "Channel is disabled"
+		} else {
+			// Check active adapter
+			if adapter, ok := s.workspaceManager.GetAdapter(id); ok {
+				status := adapter.Status()
+				if status != wsChannelDomain.ChannelStatusConnected {
+					record.Status = health.StatusError
+					record.LastMessage = fmt.Sprintf("Adapter status: %s", status)
+				} else {
+					record.LastMessage = "Connected"
+				}
+			} else {
+				record.Status = health.StatusError
+				record.LastMessage = "Adapter not found (not running)"
+			}
 		}
 	}
 

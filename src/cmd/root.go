@@ -523,7 +523,7 @@ func initApp() {
 	})
 
 	// 6. Post-initialization
-	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase, workspaceManager, wkUsecase)
+	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase, workspaceManager, wkUsecase, vkClient)
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
 	uiRest.SetBotEngine(botEngine, workspaceManager)
