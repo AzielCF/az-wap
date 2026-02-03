@@ -15,8 +15,10 @@ type Workspace struct {
 }
 
 type WorkspaceConfig struct {
-	Timezone string            `json:"timezone"`
-	Metadata map[string]string `json:"metadata"`
+	Timezone              string            `json:"timezone"`
+	Metadata              map[string]string `json:"metadata"`
+	SessionTimeout        int               `json:"session_timeout,omitempty"`         // Minutes
+	InactivityWarningTime int               `json:"inactivity_warning_time,omitempty"` // Minutes
 }
 
 type WorkspaceLimits struct {

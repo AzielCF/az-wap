@@ -28,10 +28,13 @@ func (sm *SessionMemory) AddFullTurn(turn botengineDomain.ChatTurn, limit int) {
 	sm.History = append(sm.History, turn)
 
 	// Keep context window limit (default 10)
-	if limit <= 0 {
+	// If limit is -1, we allow unlimited history (useful for valid sessions)
+	// If limit is 0, we fallback to default 10 for safety
+	if limit == 0 {
 		limit = 10
 	}
-	if len(sm.History) > limit {
+
+	if limit > 0 && len(sm.History) > limit {
 		sm.History = sm.History[len(sm.History)-limit:]
 	}
 }

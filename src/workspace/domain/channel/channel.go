@@ -45,27 +45,30 @@ const (
 )
 
 type ChannelConfig struct {
-	Settings            map[string]interface{}   `json:"settings"`
-	WebhookURL          string                   `json:"webhook_url,omitempty"`
-	WebhookSecret       string                   `json:"webhook_secret,omitempty"`
-	BotID               string                   `json:"bot_id,omitempty"`
-	DefaultLanguage     string                   `json:"default_language,omitempty"`
-	Timezone            string                   `json:"timezone,omitempty"`
-	SkipTLSVerification bool                     `json:"skip_tls_verification"`
-	AutoReconnect       bool                     `json:"auto_reconnect"`
-	Chatwoot            *ChatwootConfig          `json:"chatwoot,omitempty"`
-	Credentials         map[string]string        `json:"credentials,omitempty"`
-	AccessMode          AccessMode               `json:"access_mode,omitempty"`
-	AllowImages         bool                     `json:"allow_images"`
-	AllowAudio          bool                     `json:"allow_audio"`
-	AllowVideo          bool                     `json:"allow_video"`
-	AllowDocuments      bool                     `json:"allow_documents"`
-	AllowStickers       bool                     `json:"allow_stickers"`
-	VoiceNotesOnly      bool                     `json:"voice_notes_only"`
-	AllowedExtensions   []string                 `json:"allowed_extensions"`
-	MaxDownloadSize     int64                    `json:"max_download_size"` // in bytes
-	InactivityWarning   *InactivityWarningConfig `json:"inactivity_warning,omitempty"`
-	SessionClosing      *SessionClosingConfig    `json:"session_closing,omitempty"`
+	Settings              map[string]interface{}   `json:"settings"`
+	WebhookURL            string                   `json:"webhook_url,omitempty"`
+	WebhookSecret         string                   `json:"webhook_secret,omitempty"`
+	BotID                 string                   `json:"bot_id,omitempty"`
+	DefaultLanguage       string                   `json:"default_language,omitempty"`
+	Timezone              string                   `json:"timezone,omitempty"`
+	SkipTLSVerification   bool                     `json:"skip_tls_verification"`
+	AutoReconnect         bool                     `json:"auto_reconnect"`
+	Chatwoot              *ChatwootConfig          `json:"chatwoot,omitempty"`
+	Credentials           map[string]string        `json:"credentials,omitempty"`
+	AccessMode            AccessMode               `json:"access_mode,omitempty"`
+	AllowImages           bool                     `json:"allow_images"`
+	AllowAudio            bool                     `json:"allow_audio"`
+	AllowVideo            bool                     `json:"allow_video"`
+	AllowDocuments        bool                     `json:"allow_documents"`
+	AllowStickers         bool                     `json:"allow_stickers"`
+	VoiceNotesOnly        bool                     `json:"voice_notes_only"`
+	AllowedExtensions     []string                 `json:"allowed_extensions"`
+	MaxDownloadSize       int64                    `json:"max_download_size"` // in bytes
+	InactivityWarning     *InactivityWarningConfig `json:"inactivity_warning,omitempty"`
+	SessionClosing        *SessionClosingConfig    `json:"session_closing,omitempty"`
+	SessionTimeout        int                      `json:"session_timeout,omitempty"`         // Minutes. Default: 4
+	InactivityWarningTime int                      `json:"inactivity_warning_time,omitempty"` // Minutes. When to alert. Must be >= 80% of total
+	MaxHistoryLimit       int                      `json:"max_history_limit,omitempty"`       // Max messages in context. 0 = 10, -1 = Unlimited
 }
 
 type SessionClosingConfig struct {

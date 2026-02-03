@@ -62,6 +62,7 @@ type SessionEntry struct {
 	// Configuración de la sesión (capturada al inicio/renovación)
 	InactivityWarningEnabled bool `json:"inactivity_warning_enabled"`
 	SessionClosingEnabled    bool `json:"session_closing_enabled"`
+	MaxHistoryLimit          int  `json:"max_history_limit"` // 0=Default(10), -1=Unlimited
 
 	// Idioma detectado/configurado
 	Language string `json:"language,omitempty"`

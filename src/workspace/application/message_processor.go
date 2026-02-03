@@ -225,13 +225,15 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		}
 
 		if userTextToStore != "" {
-			entry.Memory.AddTurn("user", userTextToStore, 10)
+			// Use configured limit (0=Default 10, -1=Unlimited, >0=Limit)
+			entry.Memory.AddTurn("user", userTextToStore, entry.MaxHistoryLimit)
 		}
 
 		// 2. Add Assistant Turn (Bot Response)
 		// We use assistant text if available
 		if output.Text != "" {
-			entry.Memory.AddTurn("assistant", output.Text, 10)
+			// Use configured limit
+			entry.Memory.AddTurn("assistant", output.Text, entry.MaxHistoryLimit)
 		}
 
 		// Update focus and tasks based on Mindset
