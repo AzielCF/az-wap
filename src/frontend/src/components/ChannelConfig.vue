@@ -5,6 +5,8 @@ import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import AppTabModal from '@/components/AppTabModal.vue'
 import { Search, UserCheck, ShieldAlert, CheckCircle2, Loader2, Image, Mic, Film, FileText, HardDrive, Sticker, Plus, X, ShieldCheck, Brain, Zap, BarChart3, TrendingUp, DollarSign, Settings, Bot, Users, Activity, Calendar, Terminal, Edit3, Trash2 } from 'lucide-vue-next'
 import ResourceSelector from '@/components/ResourceSelector.vue'
+import SessionTimers from '@/components/SessionTimers.vue'
+import HistoryLimitConfig from '@/components/HistoryLimitConfig.vue'
 
 const WhatsAppIcon = (props: any) => h('svg', { 
   viewBox: "0 0 24 24", 
@@ -63,6 +65,8 @@ const config = ref<any>({
           ru: ''
       }
   },
+  session_timeout: 4,
+  inactivity_warning_time: 0,
   session_closing: {
       enabled: true,
       default_lang: 'es',
@@ -148,6 +152,9 @@ function loadInitialConfig() {
                 templates: { en: '', es: '', fr: '' }
             }
         }
+        if (config.value.session_timeout === undefined) config.value.session_timeout = 4
+        if (config.value.inactivity_warning_time === undefined || config.value.inactivity_warning_time === 0) config.value.inactivity_warning_time = 3
+        if (config.value.max_history_limit === undefined) config.value.max_history_limit = 10
     }
   }
   
@@ -343,15 +350,22 @@ const editingSub = ref<any>(null)
 const editForm = ref({
     custom_bot_id: '',
     custom_system_prompt: '',
-    expires_at: ''
+    expires_at: '',
+    session_timeout: null as number | null,
+    inactivity_warning_time: null as number | null,
+    max_history_limit: null as number | null
 })
 
 function startEditSubscription(item: any) {
     editingSub.value = item
+    const sub = item.subscription
     editForm.value = {
-        custom_bot_id: item.subscription.custom_bot_id || '',
-        custom_system_prompt: item.subscription.custom_system_prompt || '',
-        expires_at: item.subscription.expires_at ? item.subscription.expires_at.split('T')[0] : ''
+        custom_bot_id: sub.custom_bot_id || '',
+        custom_system_prompt: sub.custom_system_prompt || '',
+        expires_at: sub.expires_at ? sub.expires_at.split('T')[0] : '',
+        session_timeout: sub.session_timeout || null,
+        inactivity_warning_time: sub.inactivity_warning_time || null,
+        max_history_limit: sub.max_history_limit !== undefined ? sub.max_history_limit : null
     }
 }
 
@@ -362,7 +376,13 @@ async function saveSubscription() {
             custom_bot_id: editForm.value.custom_bot_id || null, 
             custom_system_prompt: editForm.value.custom_system_prompt || null,
             expires_at: editForm.value.expires_at ? new Date(editForm.value.expires_at).toISOString() : null,
-            clear_expires_at: !editForm.value.expires_at
+            clear_expires_at: !editForm.value.expires_at,
+            session_timeout: editForm.value.session_timeout && editForm.value.session_timeout > 0 ? editForm.value.session_timeout : null,
+            inactivity_warning_time: editForm.value.inactivity_warning_time && editForm.value.inactivity_warning_time > 0 ? editForm.value.inactivity_warning_time : null,
+            max_history_limit: editForm.value.max_history_limit,
+            clear_session_timeout: !editForm.value.session_timeout,
+            clear_inactivity_warning: !editForm.value.inactivity_warning_time,
+            clear_max_history_limit: editForm.value.max_history_limit === null || editForm.value.max_history_limit === undefined
         }
         await api.put(`/clients/${editingSub.value.client.id}/subscriptions/${editingSub.value.subscription.id}`, payload)
         editingSub.value = null
@@ -438,10 +458,10 @@ onMounted(loadInitialConfig)
       <template #sidebar-bottom>
           <div class="storage-box-premium">
               <div class="flex flex-col gap-1">
-                  <span class="text-[10px] font-black uppercase text-primary/60 tracking-widest">Global Investment</span>
+                  <span class="text-xs font-black uppercase text-primary/60 tracking-widest">Global Investment</span>
                   <div class="flex items-baseline gap-2">
                       <span class="text-2xl font-black text-white tracking-tighter">${{ (localChannel.accumulated_cost || 0).toFixed(4) }}</span>
-                      <span class="text-[10px] font-bold text-slate-500 uppercase">USD</span>
+                      <span class="text-xs font-bold text-slate-500 uppercase">USD</span>
                   </div>
               </div>
           </div>
@@ -450,7 +470,7 @@ onMounted(loadInitialConfig)
       <template #footer-start>
           <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--p),0.5)]"></div>
-              <span class="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Active Telemetry Session</span>
+              <span class="text-xs font-black text-primary uppercase tracking-[0.2em]">Active Telemetry Session</span>
           </div>
       </template>
       
@@ -490,7 +510,7 @@ onMounted(loadInitialConfig)
                     <option value="de">Deutsch</option>
                     <option value="ru">Русский</option>
                 </select>
-                <p class="text-[10px] text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Fallback language for non-registered clients or general channel vibe.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Fallback language for non-registered clients or general channel vibe.</p>
             </div>
 
             <div class="form-control w-full">
@@ -516,17 +536,37 @@ onMounted(loadInitialConfig)
                     <option value="Asia/Dubai">🇦🇪 (GMT+04:00) Asia/Dubai</option>
                     <option value="Australia/Sydney">🇦🇺 (GMT+10:00) Australia/Sydney</option>
                 </select>
-                <p class="text-[10px] text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Timezone for AI tools and time-sensitive operations. Clients can override this individually.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Timezone for AI tools and time-sensitive operations. Clients can override this individually.</p>
             </div>
 
             <!-- Inactivity Warning Section -->
             <div class="divider opacity-5"></div>
+
+            <section class="space-y-6">
+                <div>
+                    <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Session Lifecycle Timers</h4>
+                    <p class="text-xs text-slate-500 font-medium uppercase mt-1">Control session duration and warning alerts</p>
+                </div>
+
+                <SessionTimers 
+                    v-model:timeout="config.session_timeout"
+                    v-model:warning="config.inactivity_warning_time"
+                />
+            </section>
             
+            <section class="space-y-6">
+                <div>
+                     <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Memory & Context</h4>
+                     <p class="text-xs text-slate-500 font-medium uppercase mt-1">Configure conversation depth</p>
+                </div>
+                <HistoryLimitConfig v-model="config.max_history_limit" />
+            </section>
+
             <section class="space-y-6">
                 <div class="flex items-center justify-between">
                     <div>
                         <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Session Lifecycle Warning</h4>
-                        <p class="text-[10px] text-slate-500 font-medium uppercase mt-1">Notify users before their session expires due to inactivity</p>
+                        <p class="text-xs text-slate-500 font-medium uppercase mt-1">Notify users before their session expires due to inactivity</p>
                     </div>
                     <input type="checkbox" v-model="config.inactivity_warning.enabled" class="toggle toggle-primary toggle-sm" />
                 </div>
@@ -551,7 +591,7 @@ onMounted(loadInitialConfig)
                                 :placeholder="config.inactivity_warning.default_lang === 'es' ? '¿Sigues ahí? Cerraré la sesión pronto...' : 'Are you still there? Session closing soon...'"
                                 class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-24 w-full resize-none transition-all"
                             ></textarea>
-                            <p class="text-[10px] text-slate-500 font-medium uppercase px-1">Use this to personalize the warning for the primary audience.</p>
+                            <p class="text-xs text-slate-500 font-medium uppercase px-1">Use this to personalize the warning for the primary audience.</p>
                         </div>
                     </div>
                 </div>
@@ -562,7 +602,7 @@ onMounted(loadInitialConfig)
                 <div class="flex items-center justify-between">
                     <div>
                         <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Session Closing Message</h4>
-                        <p class="text-[10px] text-slate-500 font-medium uppercase mt-1">Final message sent when session is terminated due to inactivity</p>
+                        <p class="text-xs text-slate-500 font-medium uppercase mt-1">Final message sent when session is terminated due to inactivity</p>
                     </div>
                     <input type="checkbox" v-model="config.session_closing.enabled" class="toggle toggle-primary toggle-sm" />
                 </div>
@@ -596,7 +636,7 @@ onMounted(loadInitialConfig)
             <div class="p-6 bg-white/[0.02] rounded-2xl border border-white/5 flex items-center justify-between">
                 <div>
                   <h4 class="text-xs font-black text-white uppercase tracking-widest leading-none mb-1">Instance Memory</h4>
-                  <p class="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Flush short-term context for this specific channel</p>
+                  <p class="text-xs text-slate-500 uppercase font-bold tracking-tight">Flush short-term context for this specific channel</p>
                 </div>
                 <button @click="clearChannelMemory" class="btn-premium btn-premium-ghost text-red-400 hover:bg-red-500/10 border border-red-500/10 btn-premium-sm px-6">
                     Clear Context
@@ -605,7 +645,7 @@ onMounted(loadInitialConfig)
         </section>
       </div>
 
-      <!-- Outros tabs logic remains valid but I'll skip deep refactor of every tab to avoid huge token usage if not strictly necessary, enfocándome en lo que el usuario pidió: consistencia visual -->
+
 
 
       <div v-if="activeTab === 'investments'" class="space-y-10">
@@ -653,11 +693,11 @@ onMounted(loadInitialConfig)
             <div class="flex items-center justify-between border-l-2 border-primary pl-4">
                 <div>
                    <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em]">Detailed Expenditure Log</h4>
-                   <p class="text-[10px] text-slate-500 font-medium uppercase mt-1">Real-time breakdown of AI model usage and costs</p>
+                   <p class="text-xs text-slate-500 font-medium uppercase mt-1">Real-time breakdown of AI model usage and costs</p>
                 </div>
                 <div class="px-3 py-1 bg-white/5 rounded-lg border border-white/10 flex items-center gap-2">
                     <div class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></div>
-                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Update Frequency: Live</span>
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Update Frequency: Live</span>
                 </div>
             </div>
 
@@ -678,10 +718,10 @@ onMounted(loadInitialConfig)
                                 <span class="text-xs text-slate-600 font-medium uppercase">$</span>
                                 <span class="text-lg font-mono text-white font-medium">{{ val.toFixed(6) }}</span>
                             </div>
-                            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Accumulated</span>
+                            <span class="text-xs text-slate-500 font-bold uppercase tracking-widest">Accumulated</span>
                         </div>
                         <div class="flex flex-col gap-1.5 min-w-[120px]">
-                            <div class="flex justify-between items-center text-[10px] font-bold uppercase text-slate-600 tracking-tighter">
+                            <div class="flex justify-between items-center text-xs font-bold uppercase text-slate-600 tracking-tighter">
                                 <span>Core Weight</span>
                                 <span>{{ Math.round((val / (localChannel.accumulated_cost || 0.000001)) * 100) }}%</span>
                             </div>
@@ -841,7 +881,7 @@ onMounted(loadInitialConfig)
                 <div class="flex items-center justify-between px-4">
                     <div class="flex items-center gap-3">
                          <h5 class="text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">Guard Manifest</h5>
-                         <span class="px-2 py-0.5 bg-white/5 rounded-md text-[10px] font-bold text-slate-400 border border-white/5">{{ accessRules.length }} Active</span>
+                         <span class="px-2 py-0.5 bg-white/5 rounded-md text-xs font-bold text-slate-400 border border-white/5">{{ accessRules.length }} Active</span>
                     </div>
                     <div class="flex items-center gap-4">
                         <button v-if="accessRules.length > 0" @click="deleteAllRules" class="text-xs font-bold text-error/60 hover:text-error uppercase tracking-widest transition-all cursor-pointer mr-2">Purge All</button>
@@ -934,7 +974,7 @@ onMounted(loadInitialConfig)
                 <div v-if="filteredRules.length > 0" class="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar p-1">
                     <div v-for="rule in filteredRules" :key="rule.id" class="flex items-center justify-between p-5 bg-black/40 hover:bg-white/[0.04] border border-white/5 rounded-[1.5rem] group transition-all">
                         <div class="flex items-center gap-5">
-                            <div class="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-inner ring-1" :class="rule.action === 'ALLOW' ? 'bg-success/10 text-success ring-success/20' : 'bg-error/10 text-error ring-error/20'">
+                            <div class="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest shadow-inner ring-1" :class="rule.action === 'ALLOW' ? 'bg-success/10 text-success ring-success/20' : 'bg-error/10 text-error ring-error/20'">
                                 {{ rule.action === 'ALLOW' ? 'TRUSTED' : 'BANNED' }}
                             </div>
                             <div>
@@ -951,7 +991,7 @@ onMounted(loadInitialConfig)
                     <div class="mb-4 inline-flex p-4 bg-white/[0.02] rounded-full">
                         <ShieldAlert class="w-8 h-8 text-slate-800" />
                     </div>
-                    <p class="text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Automatic Intelligence is monitoring signals...</p>
+                    <p class="text-xs font-bold text-slate-600 uppercase tracking-[0.2em]">Automatic Intelligence is monitoring signals...</p>
                 </div>
             </div>
         </section>
@@ -976,7 +1016,7 @@ onMounted(loadInitialConfig)
 
           <div v-else-if="subscribers.length === 0" class="py-24 text-center bg-black/10 rounded-[2rem] border border-dashed border-white/5">
               <Users class="w-10 h-10 text-slate-700 mx-auto mb-4 opacity-20" />
-              <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest leading-loose">No Exclusive Subscriptions<br/>found for this channel manifest.</p>
+              <p class="text-xs font-bold text-slate-600 uppercase tracking-widest leading-loose">No Exclusive Subscriptions<br/>found for this channel manifest.</p>
           </div>
 
           <div v-else class="grid grid-cols-1 gap-4">
@@ -1017,6 +1057,24 @@ onMounted(loadInitialConfig)
                             </div>
                       </div>
 
+                      <div class="py-4">
+                        <SessionTimers 
+                            v-model:timeout="editForm.session_timeout"
+                            v-model:warning="editForm.inactivity_warning_time"
+                            :isOverride="true"
+                            :inheritedTimeout="config.session_timeout || 4"
+                            :inheritedWarning="config.inactivity_warning_time || 3"
+                        />
+                      </div>
+
+                      <div class="py-2">
+                        <HistoryLimitConfig 
+                            v-model="editForm.max_history_limit" 
+                            :isOverride="true"
+                        />
+                      </div>
+
+
                       <div class="form-control w-full">
                             <label class="label-premium">System Prompt Override</label>
                             <textarea v-model="editForm.custom_system_prompt" class="textarea textarea-bordered bg-black/40 border-white/5 focus:border-primary/40 text-sm h-32 w-full resize-none transition-all p-4" placeholder="Enter custom behavioral instructions just for this client..."></textarea>
@@ -1047,7 +1105,7 @@ onMounted(loadInitialConfig)
                                   </span>
                               </div>
                               <div class="flex items-center gap-3">
-                                  <span class="text-[10px] font-mono text-slate-500 tracking-tighter">{{ item.client.platform_id }}</span>
+                                  <span class="text-xs font-mono text-slate-500 tracking-tighter">{{ item.client.platform_id }}</span>
                                   <div v-if="item.client.enabled" class="flex items-center gap-1.5">
                                       <div class="w-1 h-1 rounded-full bg-success"></div>
                                       <span class="text-[9px] font-black text-success uppercase tracking-widest">Active</span>
@@ -1092,7 +1150,7 @@ onMounted(loadInitialConfig)
                       <Calendar class="w-3.5 h-3.5 text-slate-600" />
                       <div class="flex flex-col">
                           <span class="text-[8px] font-black text-slate-600 uppercase tracking-tighter leading-none mb-1">Expiry Date</span>
-                          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">
                               {{ item.subscription.expires_at ? new Date(item.subscription.expires_at).toLocaleDateString() : 'INFINITE' }}
                           </span>
                       </div>

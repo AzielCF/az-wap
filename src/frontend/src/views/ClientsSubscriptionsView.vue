@@ -24,6 +24,8 @@ import {
   Layout,
 } from 'lucide-vue-next'
 import ResourceSelector from '@/components/ResourceSelector.vue'
+import SessionTimers from '@/components/SessionTimers.vue'
+import HistoryLimitConfig from '@/components/HistoryLimitConfig.vue'
 
 const WhatsAppIcon = (props: any) => h('svg', { 
   viewBox: "0 0 24 24", 
@@ -134,7 +136,10 @@ const newSub = ref({
   channel_id: '',
   custom_bot_id: '',
   custom_system_prompt: '',
-  expires_at: ''
+  expires_at: '',
+  session_timeout: 10, // User requested defaults for subscription
+  inactivity_warning_time: 3,
+  max_history_limit: null as number | null
 })
 
 watch(() => newSub.value.workspace_id, async (newID, oldID) => {
@@ -212,7 +217,13 @@ async function createSubscription() {
     const payload = {
         ...newSub.value,
         expires_at: newSub.value.expires_at ? new Date(newSub.value.expires_at).toISOString() : null,
-        clear_expires_at: !newSub.value.expires_at
+        clear_expires_at: !newSub.value.expires_at,
+        session_timeout: newSub.value.session_timeout && newSub.value.session_timeout > 0 ? newSub.value.session_timeout : null,
+        inactivity_warning_time: newSub.value.inactivity_warning_time && newSub.value.inactivity_warning_time > 0 ? newSub.value.inactivity_warning_time : null,
+        clear_session_timeout: !newSub.value.session_timeout,
+        clear_inactivity_warning: !newSub.value.inactivity_warning_time,
+        max_history_limit: newSub.value.max_history_limit,
+        clear_max_history_limit: newSub.value.max_history_limit === undefined || newSub.value.max_history_limit === null
     }
 
     if (editingSub.value) {
@@ -266,7 +277,10 @@ async function openEditSub(sub: any) {
         channel_id: sub.channel_id,
         custom_bot_id: sub.custom_bot_id || '',
         custom_system_prompt: sub.custom_system_prompt || '',
-        expires_at: sub.expires_at ? sub.expires_at.split('T')[0] : ''
+        expires_at: sub.expires_at ? sub.expires_at.split('T')[0] : '',
+        session_timeout: sub.session_timeout || null,
+        inactivity_warning_time: sub.inactivity_warning_time || null,
+        max_history_limit: sub.max_history_limit !== undefined ? sub.max_history_limit : null
     }
 
     workspaceSearch.value = ''
@@ -300,7 +314,10 @@ function resetForm() {
         channel_id: '',
         custom_bot_id: '',
         custom_system_prompt: '',
-        expires_at: ''
+        expires_at: '',
+        session_timeout: 10,
+        inactivity_warning_time: 3,
+        max_history_limit: null
     }
     availableChannels.value = []
 }
@@ -385,11 +402,11 @@ onMounted(loadData)
 
                 <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="storage-box-premium m-0 py-3">
-                         <span class="text-[9px] font-black text-slate-600 uppercase block mb-1">Override Bot</span>
+                         <span class="text-xs font-black text-slate-600 uppercase block mb-1">Override Bot</span>
                          <span class="text-xs font-mono text-indigo-400">{{ getBotName(sub.custom_bot_id) }}</span>
                     </div>
                     <div v-if="sub.custom_system_prompt" class="storage-box-premium m-0 py-3">
-                         <span class="text-[9px] font-black text-slate-600 uppercase block mb-1">Custom Prompt</span>
+                         <span class="text-xs font-black text-slate-600 uppercase block mb-1">Custom Prompt</span>
                          <span class="text-xs text-slate-400 italic line-clamp-1">Customized</span>
                     </div>
                 </div>
@@ -471,7 +488,7 @@ onMounted(loadData)
                     <Calendar class="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600 group-focus-within:text-primary transition-colors" />
                     <input v-model="newSub.expires_at" type="date" class="input-premium h-16 pl-14 w-full text-sm font-bold" />
                 </div>
-                <p class="text-[9px] text-slate-600 font-bold uppercase mt-2 tracking-widest">Automatic termination date for this protocol routing.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest">Automatic termination date for this protocol routing.</p>
             </div>
         </div>
 
@@ -494,8 +511,30 @@ onMounted(loadData)
                     :nullable="true"
                     color="indigo"
                 />
-                <p class="text-[9px] text-slate-600 font-bold uppercase mt-2 tracking-[0.2em]">Defaults to channel configuration if signal is null.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-[0.2em]">Defaults to channel configuration if signal is null.</p>
             </div>
+
+             <!-- Session Override Section -->
+             <div class="py-2">
+                <div class="flex justify-between items-end mb-2 px-1">
+                    <span class="text-xs text-slate-500 font-bold uppercase tracking-widest">Session Configuration</span>
+                    <span class="text-xs text-primary/60 font-mono font-bold uppercase tracking-tight">Standard: 10m Duration / 3m Warning</span>
+                </div>
+                <SessionTimers 
+                    v-model:timeout="newSub.session_timeout"
+                    v-model:warning="newSub.inactivity_warning_time"
+                    :isOverride="true"
+                    :inheritedTimeout="getChannel(newSub.channel_id)?.config?.session_timeout || 4"
+                    :inheritedWarning="getChannel(newSub.channel_id)?.config?.inactivity_warning_time || 3"
+                />
+             </div>
+
+             <div class="py-2">
+                <HistoryLimitConfig 
+                    v-model="newSub.max_history_limit" 
+                    :isOverride="true"
+                />
+             </div>
 
             <div class="form-control">
                 <label class="label-premium text-slate-400">Context Augmentation (System Prompt)</label>
