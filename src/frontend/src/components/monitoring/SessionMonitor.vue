@@ -4,11 +4,11 @@
       <div class="flex items-center justify-between p-4 border-b border-base-300 bg-base-200/50">
         <h2 class="card-title text-sm font-bold flex items-center gap-2 uppercase tracking-widest text-primary">
           <Activity class="w-4 h-4" />
-          Sesiones Activas y Escritura
+          Active Sessions & Typing
         </h2>
         <div class="flex items-center gap-3">
-          <span class="badge badge-primary badge-sm font-mono">{{ activeCount }} Activas</span>
-          <span class="badge badge-outline badge-sm">{{ typingCount }} Escribiendo</span>
+          <span class="badge badge-primary badge-sm font-mono">{{ activeCount }} Active</span>
+          <span class="badge badge-outline badge-sm">{{ typingCount }} Typing</span>
         </div>
       </div>
 
@@ -16,17 +16,18 @@
         <table class="table table-compact w-full">
           <thead class="bg-base-200/30">
             <tr>
-              <th class="text-[10px] uppercase opacity-50">Canal / Instancia</th>
-              <th class="text-[10px] uppercase opacity-50">Contacto (Chat JID)</th>
-              <th class="text-[10px] uppercase opacity-50">Estado Bot</th>
-              <th class="text-[10px] uppercase opacity-50">Actividad Humana</th>
-              <th class="text-[10px] uppercase opacity-50 text-right">Actualizado</th>
+              <th class="text-[10px] uppercase opacity-50">Channel / Instance</th>
+              <th class="text-[10px] uppercase opacity-50">Contact (Chat JID)</th>
+              <th class="text-[10px] uppercase opacity-50">Bot State</th>
+              <th class="text-[10px] uppercase opacity-50">Human Activity</th>
+              <th class="text-[10px] uppercase opacity-50 text-right">Updated</th>
+              <th class="text-[10px] uppercase opacity-50 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="mergedSessions.length === 0">
-              <td colspan="5" class="text-center py-10 text-base-content/40 italic">
-                No hay sesiones activas en este momento...
+              <td colspan="6" class="text-center py-10 text-base-content/40 italic">
+                No active sessions at this time...
               </td>
             </tr>
             <tr v-for="session in mergedSessions" :key="session.key" 
@@ -53,36 +54,65 @@
                     <span class="w-2 h-2 rounded-full bg-primary animate-bounce delay-200" style="animation-delay: 0.2s"></span>
                   </div>
                   <span class="text-[10px] font-black text-primary uppercase tracking-tighter">
-                    {{ session.typing.media === 'audio' ? 'Grabando Audio' : 'Escribiendo...' }}
+                    {{ session.typing.media === 'audio' ? 'Recording Audio' : 'Typing...' }}
                   </span>
                 </div>
-                <span v-else class="text-[10px] opacity-20 italic px-2">Sin actividad</span>
+                <span v-else class="text-[10px] opacity-20 italic px-2">No activity</span>
               </td>
               <td class="text-right">
                 <div class="flex flex-col items-end">
                   <span class="text-[10px] font-mono font-bold text-success" v-if="session.expires_in > 0">
-                    Cierra en: {{ formatTimeLeft(session.expires_in) }}
+                    Closes in: {{ formatTimeLeft(session.expires_in) }}
                   </span>
                   <span class="text-[10px] font-mono opacity-30">{{ session.time }}</span>
                 </div>
+              </td>
+              <td class="text-center">
+                <button @click="handleAction(session)" 
+                        class="btn btn-ghost btn-xs border-transparent transition-all duration-300"
+                        :class="session.is_pending_kill ? 'text-amber-500 animate-pulse bg-amber-500/10' : 'text-error/40 hover:text-error hover:bg-error/10'"
+                        :title="session.is_pending_kill ? 'Cancel pending termination' : (session.state === 'processing' ? 'Queue termination after processing' : 'Terminate session manually')">
+                  <component :is="session.is_pending_kill ? Ban : Skull" class="w-3.5 h-3.5" />
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- Termination Dialog -->
+    <ConfirmationDialog 
+      v-model="confirmModal.show"
+      :title="confirmModal.title"
+      :message="confirmModal.message"
+      :type="confirmModal.type"
+      :confirmText="confirmModal.confirmText"
+      @confirm="confirmModal.onConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi } from '@/composables/useApi'
-import { Activity } from 'lucide-vue-next'
+import { Activity, Skull, Ban } from 'lucide-vue-next'
+import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 
 const api = useApi()
 const botSessions = ref<any[]>([])
 const typingStatus = ref<any[]>([])
+const pendingKills = ref<Set<string>>(new Set())
 let timer: any = null
+
+const confirmModal = ref({
+    show: false,
+    title: '',
+    message: '',
+    type: 'danger' as 'danger' | 'warning' | 'info',
+    confirmText: 'Terminate',
+    onConfirm: () => {}
+})
 
 const activeCount = computed(() => botSessions.value.length)
 const typingCount = computed(() => typingStatus.value.length)
@@ -100,6 +130,7 @@ const mergedSessions = computed(() => {
       chat_id: chatID,
       is_bot_active: s.state === 'debouncing' || s.state === 'processing',
       state: s.state,
+      is_pending_kill: pendingKills.value.has(chatID),
       expires_in: s.expires_in,
       typing: null,
       time: new Date().toLocaleTimeString()
@@ -117,6 +148,7 @@ const mergedSessions = computed(() => {
         channel_id: t.channel_id,
         chat_id: chatID,
         is_bot_active: false,
+        is_pending_kill: pendingKills.value.has(chatID),
         state: 'idle',
         expires_in: 0,
         typing: t,
@@ -130,9 +162,9 @@ const mergedSessions = computed(() => {
 
 const getStatusLabel = (state: string) => {
   switch(state) {
-    case 'debouncing': return 'Agrupando mensajes'
-    case 'processing': return 'Bot Pensando...'
-    case 'waiting': return 'En espera (Viva)'
+    case 'debouncing': return 'Grouping messages'
+    case 'processing': return 'Bot Thinking...'
+    case 'waiting': return 'Waiting (Alive)'
     default: return 'Idle'
   }
 }
@@ -161,9 +193,57 @@ const fetchData = async () => {
     ])
     botSessions.value = sessions || []
     typingStatus.value = typing || []
+
+    // Process pending kills: if session is no longer processing, kill it
+    botSessions.value.forEach(s => {
+      if (pendingKills.value.has(s.chat_id) && s.state !== 'processing') {
+        pendingKills.value.delete(s.chat_id)
+        killSession(s)
+      }
+    })
   } catch (err) {
     console.error('Error fetching dynamic status:', err)
   }
+}
+
+const killSession = async (session: any) => {
+  try {
+    await api.delete(`/api/monitoring/sessions/${session.channel_id}/${encodeURIComponent(session.chat_id)}`)
+    await fetchData()
+  } catch (err) {
+    console.error('Error killing session:', err)
+  }
+}
+
+const confirmKill = (session: any) => {
+    confirmModal.value = {
+        show: true,
+        title: 'Terminate Active Session?',
+        message: `DANGER: You are about to forcibly kill the active worker and session state for ${session.chat_id}. This will halt current processing and trigger an automated shutdown message. Do you want to proceed?`,
+        type: 'danger',
+        confirmText: 'Terminate Session',
+        onConfirm: () => killSession(session)
+    }
+}
+
+const handleAction = (session: any) => {
+    if (pendingKills.value.has(session.chat_id)) {
+        pendingKills.value.delete(session.chat_id)
+        return
+    }
+
+    if (session.state === 'processing') {
+        confirmModal.value = {
+            show: true,
+            title: 'Queue Termination?',
+            message: `The bot is currently processing a response for ${session.chat_id}. Would you like to queue this session for termination immediately after it finishes?`,
+            type: 'warning',
+            confirmText: 'Queue Termination',
+            onConfirm: () => pendingKills.value.add(session.chat_id)
+        }
+    } else {
+        confirmKill(session)
+    }
 }
 
 onMounted(() => {
