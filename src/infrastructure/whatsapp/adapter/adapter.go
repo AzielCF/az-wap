@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
-	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
@@ -24,7 +22,6 @@ type WhatsAppAdapter struct {
 	sessionID    string // Optional: for legacy migration persistence
 	client       *whatsmeow.Client
 	dbContainer  interface{ Close() error } // sqlstore.Container for cleanup
-	chatStorage  domainChatStorage.IChatStorageRepository
 	repoMu       sync.Mutex
 	eventHandler func(message.IncomingMessage)
 	handlerID    uint32
@@ -74,25 +71,6 @@ func (wa *WhatsAppAdapter) ID() string {
 // Type returns the channel ID
 func (wa *WhatsAppAdapter) Type() channel.ChannelType {
 	return channel.ChannelTypeWhatsApp
-}
-
-// getChatStorage returns the chat storage repository, initializing it if necessary
-func (wa *WhatsAppAdapter) getChatStorage() domainChatStorage.IChatStorageRepository {
-	wa.repoMu.Lock()
-	defer wa.repoMu.Unlock()
-
-	if wa.chatStorage != nil {
-		return wa.chatStorage
-	}
-
-	repo, err := infraChatStorage.GetOrInitInstanceRepository(wa.channelID)
-	if err != nil {
-		logrus.Errorf("[WHATSAPP] Failed to initialize chat storage for %s: %v", wa.channelID, err)
-		return nil
-	}
-
-	wa.chatStorage = repo
-	return repo
 }
 
 func (wa *WhatsAppAdapter) UpdateConfig(config channel.ChannelConfig) {

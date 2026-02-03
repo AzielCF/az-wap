@@ -14,9 +14,7 @@ import (
 
 	globalConfig "github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/domains/app"
-	domainChatStorage "github.com/AzielCF/az-wap/domains/chatstorage"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
-	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/rest/helpers"
@@ -48,20 +46,6 @@ func (service serviceSend) ensureClientForToken(ctx context.Context, token strin
 	}
 	_, err := service.appService.FirstDevice(ctx, token)
 	return err
-}
-
-func (service serviceSend) getChatStorageForToken(ctx context.Context, token string) (domainChatStorage.IChatStorageRepository, error) {
-	adapter, ok := service.workspaceManager.GetAdapter(token)
-	if !ok {
-		return nil, fmt.Errorf("channel adapter not found for token: %s", token)
-	}
-
-	instanceRepo, err := infraChatStorage.GetOrInitInstanceRepository(adapter.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get channel chatstorage repo: %w", err)
-	}
-
-	return instanceRepo, nil
 }
 
 // getAdapterForToken returns the ChannelAdapter for the given channelID (token)
@@ -96,29 +80,6 @@ func (service serviceSend) wrapSendMessage(ctx context.Context, recipient, text,
 		"message_id": resp.MessageID,
 		"recipient":  recipient,
 	}).Info("[SEND] Message sent successfully")
-
-	// Store the sent message using chatstorage
-	repo, err := service.getChatStorageForToken(ctx, token)
-	if err != nil {
-		logrus.WithError(err).Warn("[SEND] skipping message storage as no repo found")
-		return resp, nil
-	}
-
-	// Store message asynchronously
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logrus.Errorf("[SEND] Recovered from panic in asynchronous message storage: %v", r)
-			}
-		}()
-		storeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		senderJID := adapter.ID() // Best effort as agnostic ID
-		if err := repo.StoreSentMessageWithContext(storeCtx, resp.MessageID, senderJID, recipient, text, resp.Timestamp); err != nil {
-			logrus.Warnf("Failed to store sent message: %v", err)
-		}
-	}()
 
 	// Mark Read logic (Agnostic version)
 	go func() {
@@ -297,14 +258,6 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 		return response, err
 	}
 
-	// Store sent message (thumbnail/metadata not stored for now in this version, simplified)
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, "🖼️ Image: "+dataWaCaption, resp.Timestamp)
-		}()
-	}
-
 	response.MessageID = resp.MessageID
 	response.Status = fmt.Sprintf("Message sent to %s", request.BaseRequest.Phone)
 	return response, nil
@@ -342,14 +295,6 @@ func (service serviceSend) SendFile(ctx context.Context, request domainSend.File
 	resp, err := adapter.SendMedia(ctx, recipient, mediaReq, quoteID)
 	if err != nil {
 		return response, err
-	}
-
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, "📄 Document: "+request.File.Filename, resp.Timestamp)
-		}()
 	}
 
 	response.MessageID = resp.MessageID
@@ -515,14 +460,6 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 		return response, err
 	}
 
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, "🎥 Video: "+request.Caption, resp.Timestamp)
-		}()
-	}
-
 	response.MessageID = resp.MessageID
 	response.Status = fmt.Sprintf("Video sent to %s", request.BaseRequest.Phone)
 	return response, nil
@@ -547,14 +484,6 @@ func (service serviceSend) SendContact(ctx context.Context, request domainSend.C
 	resp, err := adapter.SendContact(ctx, recipient, request.ContactName, request.ContactPhone, "")
 	if err != nil {
 		return response, err
-	}
-
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, "👤 "+request.ContactName, resp.Timestamp)
-		}()
 	}
 
 	response.MessageID = resp.MessageID
@@ -590,18 +519,6 @@ func (service serviceSend) SendLink(ctx context.Context, request domainSend.Link
 		return response, err
 	}
 
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			content := "🔗 " + request.Link
-			if request.Caption != "" {
-				content = "🔗 " + request.Caption
-			}
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, content, resp.Timestamp)
-		}()
-	}
-
 	response.MessageID = resp.MessageID
 	response.Status = fmt.Sprintf("Link sent to %s", request.BaseRequest.Phone)
 	return response, nil
@@ -629,15 +546,6 @@ func (service serviceSend) SendLocation(ctx context.Context, request domainSend.
 	resp, err := adapter.SendLocation(ctx, recipient, lat, long, request.Address, "")
 	if err != nil {
 		return response, err
-	}
-
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			content := "📍 " + request.Latitude + ", " + request.Longitude
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, content, resp.Timestamp)
-		}()
 	}
 
 	response.MessageID = resp.MessageID
@@ -715,16 +623,6 @@ func (service serviceSend) SendAudio(ctx context.Context, request domainSend.Aud
 		return response, err
 	}
 
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			// Save media file for history if needed, or just content marker
-			content := "🎤 Audio Message"
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, content, resp.Timestamp)
-		}()
-	}
-
 	response.MessageID = resp.MessageID
 	response.Status = fmt.Sprintf("Audio sent to %s", request.BaseRequest.Phone)
 	return response, nil
@@ -749,15 +647,6 @@ func (service serviceSend) SendPoll(ctx context.Context, request domainSend.Poll
 	resp, err := adapter.SendPoll(ctx, recipient, request.Question, request.Options, request.MaxAnswer, "")
 	if err != nil {
 		return response, err
-	}
-
-	// Store sent message (simplified content for poll)
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			content := "📊 " + request.Question
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, content, resp.Timestamp)
-		}()
 	}
 
 	response.MessageID = resp.MessageID
@@ -999,15 +888,6 @@ func (service serviceSend) SendSticker(ctx context.Context, request domainSend.S
 	resp, err := adapter.SendMedia(ctx, recipient, mediaUpload, "")
 	if err != nil {
 		return response, pkgError.InternalServerError(fmt.Sprintf("failed to send sticker: %v", err))
-	}
-
-	// Store sent message
-	repo, err := service.getChatStorageForToken(ctx, request.BaseRequest.Token)
-	if err == nil {
-		go func() {
-			content := "💟 Sticker"
-			_ = repo.StoreSentMessageWithContext(context.Background(), resp.MessageID, adapter.ID(), recipient, content, resp.Timestamp)
-		}()
 	}
 
 	response.MessageID = resp.MessageID

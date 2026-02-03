@@ -138,7 +138,7 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Register Workspace Handlers
 	rest.InitRestApp(apiGroup, appUsecase)
-	rest.InitRestChat(apiGroup, chatUsecase)
+	// rest.InitRestChat(apiGroup, chatUsecase) // Discontinued
 	rest.InitRestSend(apiGroup, sendUsecase)
 	rest.InitRestUser(apiGroup, userUsecase)
 	rest.InitRestMessage(apiGroup, messageUsecase)

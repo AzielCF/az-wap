@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
@@ -615,8 +614,8 @@ func (h *WorkspaceHandler) WhatsAppLogout(c *fiber.Ctx) error {
 				}
 			}
 
-			// Cleanup ChatStorage files
-			_ = chatstorage.CleanupInstanceRepository(cid)
+			// Cleanup ChatStorage files discontinued
+			// _ = chatstorage.CleanupInstanceRepository(cid)
 		}
 	}
 

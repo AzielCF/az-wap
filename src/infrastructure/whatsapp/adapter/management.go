@@ -3,12 +3,9 @@ package adapter
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
@@ -241,82 +238,7 @@ func (wa *WhatsAppAdapter) StarMessage(ctx context.Context, chatID, messageID st
 }
 
 func (wa *WhatsAppAdapter) DownloadMedia(ctx context.Context, messageID, chatID string) (string, error) {
-	if err := wa.ensureConnected(ctx); err != nil {
-		return "", err
-	}
-	cli := wa.client
-	storage := wa.getChatStorage()
-	if storage == nil {
-		return "", fmt.Errorf("chat storage not initialized for this adapter")
-	}
-
-	msg, err := storage.GetMessageByID(messageID)
-	if err != nil {
-		return "", fmt.Errorf("message not found in db: %w", err)
-	}
-
-	if msg.URL == "" {
-		return "", fmt.Errorf("message has no media URL")
-	}
-
-	// Create directory structure
-	storagePath := pkgUtils.GetChannelStoragePath(wa.workspaceID, wa.channelID, "downloads")
-	dateDir := filepath.Join(storagePath, msg.Timestamp.Format("2006-01-02"))
-	_ = os.MkdirAll(dateDir, 0755)
-
-	var downloadableMsg interface{}
-	switch msg.MediaType {
-	case "image":
-		downloadableMsg = &waE2E.ImageMessage{
-			URL:           proto.String(msg.URL),
-			MediaKey:      msg.MediaKey,
-			FileSHA256:    msg.FileSHA256,
-			FileEncSHA256: msg.FileEncSHA256,
-			FileLength:    proto.Uint64(msg.FileLength),
-		}
-	case "video":
-		downloadableMsg = &waE2E.VideoMessage{
-			URL:           proto.String(msg.URL),
-			MediaKey:      msg.MediaKey,
-			FileSHA256:    msg.FileSHA256,
-			FileEncSHA256: msg.FileEncSHA256,
-			FileLength:    proto.Uint64(msg.FileLength),
-		}
-	case "audio":
-		downloadableMsg = &waE2E.AudioMessage{
-			URL:           proto.String(msg.URL),
-			MediaKey:      msg.MediaKey,
-			FileSHA256:    msg.FileSHA256,
-			FileEncSHA256: msg.FileEncSHA256,
-			FileLength:    proto.Uint64(msg.FileLength),
-		}
-	case "document":
-		downloadableMsg = &waE2E.DocumentMessage{
-			URL:           proto.String(msg.URL),
-			MediaKey:      msg.MediaKey,
-			FileSHA256:    msg.FileSHA256,
-			FileEncSHA256: msg.FileEncSHA256,
-			FileLength:    proto.Uint64(msg.FileLength),
-			FileName:      proto.String(msg.Filename),
-		}
-	case "sticker":
-		downloadableMsg = &waE2E.StickerMessage{
-			URL:           proto.String(msg.URL),
-			MediaKey:      msg.MediaKey,
-			FileSHA256:    msg.FileSHA256,
-			FileEncSHA256: msg.FileEncSHA256,
-			FileLength:    proto.Uint64(msg.FileLength),
-		}
-	default:
-		return "", fmt.Errorf("unsupported media type: %s", msg.MediaType)
-	}
-
-	res, err := pkgUtils.ExtractMedia(ctx, cli, dateDir, downloadableMsg.(whatsmeow.DownloadableMessage), wa.config.MaxDownloadSize)
-	if err != nil {
-		return "", err
-	}
-
-	return res.MediaPath, nil
+	return "", fmt.Errorf("DownloadMedia is not supported as persistent chat storage is disabled")
 }
 
 func (wa *WhatsAppAdapter) PinChat(ctx context.Context, chatID string, pinned bool) error {

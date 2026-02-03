@@ -51,10 +51,6 @@ var (
 	WhatsappTypeGroup                       = "@g.us"
 	WhatsappAccountValidation               = true
 
-	ChatStorageURI               = "file:storages/chatstorage.db"
-	ChatStorageEnableForeignKeys = true
-	ChatStorageEnableWAL         = true
-
 	AIGlobalSystemPrompt string
 	AITimezone           string
 	AIDebounceMs         int   = 3500

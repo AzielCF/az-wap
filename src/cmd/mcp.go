@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-
 	"os"
 	"os/signal"
 	"syscall"
@@ -49,7 +48,7 @@ func mcpServer(_ *cobra.Command, _ []string) {
 	sendHandler := mcp.InitMcpSend(sendUsecase)
 	sendHandler.AddSendTools(mcpServer)
 
-	queryHandler := mcp.InitMcpQuery(chatUsecase, userUsecase, messageUsecase)
+	queryHandler := mcp.InitMcpQuery(userUsecase, messageUsecase)
 	queryHandler.AddQueryTools(mcpServer)
 
 	appHandler := mcp.InitMcpApp(appUsecase)
@@ -77,8 +76,6 @@ func mcpServer(_ *cobra.Command, _ []string) {
 	go func() {
 		<-sigChan
 		logrus.Info("[MCP] Reception of termination signal, shutting down gracefully...")
-		// Note: SSEServer might not have a Shutdown method in this version of the library,
-		// but we still want to close our app resources cleanly.
 		StopApp()
 		os.Exit(0)
 	}()

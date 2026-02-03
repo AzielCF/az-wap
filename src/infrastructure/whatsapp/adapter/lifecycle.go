@@ -7,7 +7,6 @@ import (
 	"time"
 
 	globalConfig "github.com/AzielCF/az-wap/config"
-	infraChatStorage "github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/sirupsen/logrus"
@@ -226,8 +225,8 @@ func (wa *WhatsAppAdapter) Cleanup(ctx context.Context) error {
 		}
 	}
 
-	// 5. Delete ChatStorage database using the instance manager
-	infraChatStorage.CleanupInstanceRepository(wa.channelID)
+	// 5. ChatStorage cleanup discontinued
+	// infraChatStorage.CleanupInstanceRepository(wa.channelID)
 
 	logrus.Infof("[WHATSAPP] Cleanup completed for channel %s", wa.channelID)
 	return nil

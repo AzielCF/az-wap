@@ -40,7 +40,6 @@ import (
 	globalConfig "github.com/AzielCF/az-wap/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
-	domainChat "github.com/AzielCF/az-wap/domains/chat"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
@@ -48,7 +47,6 @@ import (
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
-	"github.com/AzielCF/az-wap/infrastructure/chatstorage"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botDomain "github.com/AzielCF/az-wap/botengine/domain"
@@ -85,7 +83,6 @@ var (
 
 	// Usecase
 	appUsecase        domainApp.IAppUsecase
-	chatUsecase       domainChat.IChatUsecase
 	sendUsecase       domainSend.ISendUsecase
 	userUsecase       domainUser.IUserUsecase
 	messageUsecase    domainMessage.IMessageUsecase
@@ -503,7 +500,6 @@ func initApp() {
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED
 	appUsecase = usecase.NewAppService(workspaceManager)
-	chatUsecase = usecase.NewChatService(workspaceManager)
 	userUsecase = usecase.NewUserService(workspaceManager)
 	groupUsecase = usecase.NewGroupService(workspaceManager)
 	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, monitorStore, vkClient)
@@ -666,7 +662,7 @@ func StopApp() {
 	}
 
 	// 2. Clear in-memory chat storage caches or close connections
-	chatstorage.CloseInstanceRepositories()
+	// Discontinued: chatstorage.CloseInstanceRepositories()
 
 	// 3. Shutdown MCP Usecase (closes persistent SSE connections)
 	if mcpUsecase != nil {

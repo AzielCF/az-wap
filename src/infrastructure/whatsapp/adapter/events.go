@@ -113,14 +113,6 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 		conf := wa.config
 		wa.configMu.RUnlock()
 
-		// Save message to chat storage (lazy-loaded repo)
-		go func() {
-			storage := wa.getChatStorage()
-			if storage != nil {
-				_ = storage.CreateMessage(context.Background(), v)
-			}
-		}()
-
 		// Send presence (typing)
 		_ = wa.client.SubscribePresence(context.Background(), v.Info.Chat)
 
