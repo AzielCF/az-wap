@@ -83,15 +83,17 @@ function formatChatKey(key: string) {
 
         <!-- Global Metrics -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
+            <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]" :class="globalStats.valkey_enabled ? 'border-primary/20' : 'border-warning/30'">
                 <div class="flex justify-between items-start mb-4">
-                    <div class="bg-primary/10 p-2 rounded-xl">
-                        <Server class="w-5 h-5 text-primary" />
+                    <div class="p-2 rounded-xl" :class="globalStats.valkey_enabled ? 'bg-primary/10' : 'bg-warning/10'">
+                        <Database class="w-5 h-5" :class="globalStats.valkey_enabled ? 'text-primary' : 'text-warning'" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Swarm</span>
+                    <span class="text-[10px] font-black uppercase" :class="globalStats.valkey_enabled ? 'text-primary' : 'text-warning'">Infrastructure</span>
                 </div>
-                <h3 class="text-3xl font-bold text-white mb-1">{{ activeServers.length }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Active Instances</p>
+                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.valkey_enabled ? 'Valkey' : 'Hybrid' }}</h3>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    {{ globalStats.valkey_enabled ? 'Distributed Mode: ON' : 'Fallback Mode: RAM' }}
+                </p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
@@ -99,21 +101,32 @@ function formatChatKey(key: string) {
                     <div class="bg-success/10 p-2 rounded-xl">
                         <CheckCircle class="w-5 h-5 text-success" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Globally</span>
+                    <span class="text-[10px] font-black text-slate-700 uppercase">Handled</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.total_processed || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Messages Handled</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Global Messages</p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
                 <div class="flex justify-between items-start mb-4">
                     <div class="bg-warning/10 p-2 rounded-xl">
-                        <Clock class="w-5 h-5 text-warning" />
+                        <Hourglass class="w-5 h-5 text-warning" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Queued</span>
+                    <span class="text-[10px] font-black text-slate-700 uppercase">Today's Pool</span>
                 </div>
-                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.total_pending || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Pending Tasks</p>
+                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.pending_tasks_memory || 0 }}</h3>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">In-Memory Tasks</p>
+            </div>
+
+            <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="bg-slate-500/10 p-2 rounded-xl">
+                        <RotateCw class="w-5 h-5 text-slate-500" />
+                    </div>
+                    <span class="text-[10px] font-black text-slate-700 uppercase">Scheduled</span>
+                </div>
+                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.pending_tasks_db || 0 }}</h3>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Long-term (SQLite)</p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
@@ -121,21 +134,10 @@ function formatChatKey(key: string) {
                     <div class="bg-purple-500/10 p-2 rounded-xl">
                         <Cpu class="w-5 h-5 text-purple-500" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Realtime</span>
+                    <span class="text-[10px] font-black text-slate-700 uppercase">Cluster Load</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ activeWorkersCount }} / {{ totalWorkersCount }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Nodes Processing</p>
-            </div>
-
-            <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
-                <div class="flex justify-between items-start mb-4">
-                    <div class="bg-error/10 p-2 rounded-xl">
-                        <AlertCircle class="w-5 h-5 text-error" />
-                    </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Cluster</span>
-                </div>
-                <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.total_errors || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Stability Alerts</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Processing Threads</p>
             </div>
         </div>
     </div>
