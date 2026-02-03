@@ -10,11 +10,13 @@ import (
 
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
+	clientDomain "github.com/AzielCF/az-wap/clients/domain"
 	globalConfig "github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/AzielCF/az-wap/workspace/domain/session"
+	"github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/sirupsen/logrus"
 )
@@ -58,12 +60,15 @@ type SessionOrchestrator struct {
 	timers  map[string]*timerBundle
 
 	// Callbacks
-	OnProcessFinal   func(ctx context.Context, ch channel.Channel, msg message.IncomingMessage, botID string) (botengineDomain.BotOutput, error)
-	OnInactivityWarn func(key string, ch channel.Channel)
-	OnCleanupFiles   func(e *SessionEntry)
-	OnChannelIdle    func(channelID string)
-	OnWaitIdle       func(ctx context.Context, channelID, chatID string)
-	OnSessionClosed  func(e *SessionEntry, ch channel.Channel)
+	// Callbacks
+	OnProcessFinal        func(ctx context.Context, ch channel.Channel, msg message.IncomingMessage, botID string) (botengineDomain.BotOutput, error)
+	OnInactivityWarn      func(key string, ch channel.Channel)
+	OnCleanupFiles        func(e *SessionEntry)
+	OnChannelIdle         func(channelID string)
+	OnWaitIdle            func(ctx context.Context, channelID, chatID string)
+	OnSessionClosed       func(e *SessionEntry, ch channel.Channel)
+	GetWorkspaceConfig    func(workspaceID string) *workspace.WorkspaceConfig
+	GetSubscriptionConfig func(clientID, channelID string) *clientDomain.ClientSubscription
 }
 
 // NewSessionOrchestrator creates a new orchestrator with the default in-memory store
@@ -144,8 +149,84 @@ func (s *SessionOrchestrator) GetOrCreateEntry(key string, msg message.IncomingM
 		State:      StateDebouncing,
 		FocusScore: 0,
 	}
+
+	// Initial short TTL, will be extended properly in EnqueueDebounced
 	_ = s.store.Save(ctx, key, e, 5*time.Minute)
 	return e, false
+}
+
+// calculateSessionParams determines the session duration, warning time, and storage TTL
+// Priority: Client Config > Workspace Config > Channel Config > Default (4m)
+// calculateSessionParams determines the session duration, warning time, storage TTL, and history limit
+// Priority: Client Config > Workspace Config > Channel Config > Default (4m, 10 msgs)
+func (s *SessionOrchestrator) calculateSessionParams(ch channel.Channel, msg message.IncomingMessage) (sessionDuration time.Duration, warningDelay time.Duration, valkeyTTL time.Duration, maxHistoryLimit int) {
+	// Defaults
+	totalMinutes := 4
+	warningMinutes := 3  // Default warning at 3rd minute (4th minute = expiry)
+	maxHistoryLimit = 10 // Default limit for standard users
+
+	// 1. Check Channel Config
+	if ch.Config.SessionTimeout > 0 {
+		totalMinutes = ch.Config.SessionTimeout
+	}
+	if ch.Config.InactivityWarningTime > 0 {
+		warningMinutes = ch.Config.InactivityWarningTime
+	}
+	if ch.Config.MaxHistoryLimit != 0 {
+		maxHistoryLimit = ch.Config.MaxHistoryLimit
+	}
+
+	// 2. Check Workspace Config (Override)
+	if s.GetWorkspaceConfig != nil && msg.WorkspaceID != "" {
+		if wsConfig := s.GetWorkspaceConfig(msg.WorkspaceID); wsConfig != nil {
+			if wsConfig.SessionTimeout > 0 {
+				totalMinutes = wsConfig.SessionTimeout
+			}
+			if wsConfig.InactivityWarningTime > 0 {
+				warningMinutes = wsConfig.InactivityWarningTime
+			}
+			// NOTE: WorkspaceConfig doesn't have MaxHistoryLimit yet, skipping override here for now or assume inherit
+		}
+	}
+
+	// 3. Check Subscription Config (Highest Priority)
+	// We use SenderID (PlatformID) and ChannelID to find the specific subscription
+	if s.GetSubscriptionConfig != nil && msg.SenderID != "" {
+		if sub := s.GetSubscriptionConfig(msg.SenderID, ch.ID); sub != nil {
+			if sub.SessionTimeout > 0 {
+				totalMinutes = sub.SessionTimeout
+			}
+			if sub.InactivityWarningTime > 0 {
+				warningMinutes = sub.InactivityWarningTime
+			}
+
+			// Subscription History Logic:
+			// If MaxHistoryLimit is explicitly set (non-nil), use it.
+			// If nil (default for sub), use -1 (Unlimited).
+			if sub.MaxHistoryLimit != nil {
+				maxHistoryLimit = *sub.MaxHistoryLimit
+			} else {
+				maxHistoryLimit = -1
+			}
+		}
+	}
+
+	// Enforce Minimum Session Duration
+	if totalMinutes < 4 {
+		totalMinutes = 4
+	}
+
+	// Validation Rule: Warning cannot be earlier than 75% of total session time
+	minWarningTime := int(float64(totalMinutes) * 0.75)
+	if warningMinutes < minWarningTime {
+		warningMinutes = minWarningTime
+	}
+
+	sessionDuration = time.Duration(totalMinutes) * time.Minute
+	warningDelay = time.Duration(warningMinutes) * time.Minute
+	valkeyTTL = sessionDuration + 30*time.Second
+
+	return
 }
 
 func (s *SessionOrchestrator) CloseSession(key string) {
@@ -262,8 +343,11 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 		go markRead(msg.ChatID, idsToMark)
 	}
 
+	sessionDuration, warningDelay, valkeyTTL, maxHistoryLimit := s.calculateSessionParams(ch, msg)
+
 	e.LastSeen = time.Now()
-	e.ExpireAt = e.LastSeen.Add(4 * time.Minute)
+	e.ExpireAt = e.LastSeen.Add(sessionDuration)
+	e.MaxHistoryLimit = maxHistoryLimit
 
 	// Stop existing timers
 	s.stopAndClearTimers(key)
@@ -271,7 +355,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	debounceBase := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
 	if debounceBase <= 0 {
 		// Save state before processing
-		_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
+		_ = s.store.Save(storeCtx, key, e, valkeyTTL)
 
 		if s.OnProcessFinal != nil {
 			_, _ = s.OnProcessFinal(ctx, ch, msg, botID)
@@ -279,7 +363,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 
 		// Update state after processing
 		e.State = StateWaiting
-		e.ExpireAt = time.Now().Add(4 * time.Minute)
+		e.ExpireAt = time.Now().Add(sessionDuration)
 
 		// Capture latest config flags
 		e.InactivityWarningEnabled = true // Default
@@ -291,11 +375,11 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 			e.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
 		}
 
-		_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
+		_ = s.store.Save(storeCtx, key, e, valkeyTTL)
 
 		tb := &timerBundle{}
 		if s.OnInactivityWarn != nil {
-			tb.warning = time.AfterFunc(3*time.Minute, func() {
+			tb.warning = time.AfterFunc(warningDelay, func() {
 				parts := strings.Split(key, "|")
 				chatID := ""
 				if len(parts) >= 2 {
@@ -311,7 +395,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 				})
 			})
 		}
-		tb.debounce = time.AfterFunc(4*time.Minute, func() {
+		tb.debounce = time.AfterFunc(sessionDuration, func() {
 			if curr, _ := s.store.Get(storeCtx, key); curr != nil && curr.State == StateWaiting {
 				s.stopAndClearTimers(key)
 				_ = s.store.Delete(storeCtx, key)
@@ -388,7 +472,8 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	}
 
 	// Save updated entry
-	_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
+	// (Re-calculate if needed, but we already have valid params from start)
+	_ = s.store.Save(storeCtx, key, e, valkeyTTL)
 
 	if e.State == StateProcessing {
 		logrus.Infof("[SessionOrchestrator] Message enqueued during processing for %s (Session extended, Focus: %d)", key, e.FocusScore)
@@ -412,6 +497,10 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 	if err != nil || e == nil || e.State != StateDebouncing {
 		return
 	}
+
+	// Calculate session params immediately for use throughout the function scope
+	sessionDuration, warningDelay, valkeyTTL, maxHistoryLimit := s.calculateSessionParams(ch, e.Msg)
+	e.MaxHistoryLimit = maxHistoryLimit
 
 	typingState, _ := s.typing.Get(storeCtx, ch.ID, e.Msg.ChatID)
 	isComposing := typingState != nil
@@ -460,7 +549,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 	}
 
 	// Save updated state
-	_ = s.store.Save(storeCtx, key, e, 5*time.Minute)
+	_ = s.store.Save(storeCtx, key, e, valkeyTTL)
 
 	msgworker.GetGlobalPool().Dispatch(msgworker.MessageJob{
 		InstanceID: ch.ID,
@@ -491,7 +580,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						}
 						curr.State = StateDebouncing
 						debounce := (time.Duration(globalConfig.AIDebounceMs) * time.Millisecond) + readingPause
-						_ = s.store.Save(storeCtx, key, curr, 5*time.Minute)
+						_ = s.store.Save(storeCtx, key, curr, valkeyTTL)
 
 						tb := &timerBundle{
 							debounce: time.AfterFunc(debounce, func() {
@@ -502,7 +591,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 						logrus.Debugf("[SessionOrchestrator] Re-queuing %s with reading pause of %s", key, readingPause)
 					} else {
 						curr.State = StateWaiting
-						curr.ExpireAt = time.Now().Add(4 * time.Minute)
+						curr.ExpireAt = time.Now().Add(sessionDuration)
 						curr.ChatOpen = false
 
 						// Capture latest config flags
@@ -515,11 +604,11 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 							curr.SessionClosingEnabled = ch.Config.SessionClosing.Enabled
 						}
 
-						_ = s.store.Save(storeCtx, key, curr, 5*time.Minute)
+						_ = s.store.Save(storeCtx, key, curr, valkeyTTL)
 
 						tb := &timerBundle{}
 						if s.OnInactivityWarn != nil {
-							tb.warning = time.AfterFunc(3*time.Minute, func() {
+							tb.warning = time.AfterFunc(warningDelay, func() {
 								parts := strings.Split(key, "|")
 								chatID := ""
 								if len(parts) >= 2 {
@@ -535,7 +624,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 								})
 							})
 						}
-						tb.debounce = time.AfterFunc(4*time.Minute, func() {
+						tb.debounce = time.AfterFunc(sessionDuration, func() {
 							if c, _ := s.store.Get(storeCtx, key); c != nil && c.State == StateWaiting {
 								if s.OnSessionClosed != nil {
 									go s.OnSessionClosed(c, ch)

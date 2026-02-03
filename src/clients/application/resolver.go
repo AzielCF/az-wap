@@ -131,6 +131,25 @@ func (r *ClientResolver) Resolve(ctx context.Context, platformID, secondaryID, p
 	return botCtx, resolvedBotID, nil
 }
 
+// GetSubscription busca una suscripción activa usando el PlatformID (teléfono o ID de plataforma)
+// Esto es utilizado por el SessionOrchestrator para aplicar configuraciones específicas de suscripción.
+func (r *ClientResolver) GetSubscription(ctx context.Context, platformID string, channelID string) (*domain.ClientSubscription, error) {
+	// 1. Intentar encontrar al cliente por su Platform ID (asumiendo WhatsApp por defecto para este contexto)
+	client, err := r.clientRepo.GetByPlatform(ctx, platformID, domain.PlatformWhatsApp)
+
+	// 2. Si no se encuentra, intentar buscar por número de teléfono directo
+	if err != nil || client == nil {
+		client, err = r.clientRepo.GetByPhone(ctx, platformID)
+	}
+
+	if err != nil || client == nil {
+		return nil, err
+	}
+
+	// 3. Buscar suscripción activa
+	return r.subRepo.GetActiveSubscription(ctx, client.ID, channelID)
+}
+
 // ResolveQuick hace una resolución rápida sin buscar suscripción (para verificaciones básicas)
 func (r *ClientResolver) ResolveQuick(ctx context.Context, platformID string, platformType domain.PlatformType) (*domain.Client, error) {
 	return r.clientRepo.GetByPlatform(ctx, platformID, platformType)

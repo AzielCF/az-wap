@@ -12,6 +12,7 @@ import (
 
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
+	clientDomain "github.com/AzielCF/az-wap/clients/domain"
 	globalConfig "github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
@@ -19,7 +20,7 @@ import (
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
-	sessionDomain "github.com/AzielCF/az-wap/workspace/domain/session" // Added this import to resolve sessionDomain.SessionStore
+	sessionDomain "github.com/AzielCF/az-wap/workspace/domain/session"
 	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/AzielCF/az-wap/workspace/infrastructure"
 	"github.com/AzielCF/az-wap/workspace/repository"
@@ -31,6 +32,7 @@ type AdapterFactory = application.AdapterFactory
 // ClientResolver is an interface to resolve the client context
 type ClientResolver interface {
 	Resolve(ctx context.Context, platformID, secondaryID string, platformType string, channelID string) (*botengineDomain.ClientContext, string, error)
+	GetSubscription(ctx context.Context, platformID string, channelID string) (*clientDomain.ClientSubscription, error)
 }
 
 type Manager struct {
@@ -96,6 +98,15 @@ func NewManager(
 	m.sessions.OnChannelIdle = func(channelID string) {
 		m.presence.CheckChannelPresence(channelID)
 		m.presence.EnsureChannelConnectivity(channelID)
+	}
+
+	m.sessions.GetSubscriptionConfig = func(clientID, channelID string) *clientDomain.ClientSubscription {
+		// clientID coming from orchestrator is platformID/phone
+		sub, err := m.clientResolver.GetSubscription(context.Background(), clientID, channelID)
+		if err != nil {
+			return nil
+		}
+		return sub
 	}
 
 	m.presence.IsChannelActive = func(channelID string) bool {
