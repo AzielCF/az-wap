@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 
@@ -22,19 +23,19 @@ type botModel struct {
 	Model                string
 	SystemPrompt         string
 	KnowledgeBase        string
-	AudioEnabled         bool      `gorm:"column:audio_enabled;not null;default:false"`
-	ImageEnabled         bool      `gorm:"column:image_enabled;not null;default:false"`
-	VideoEnabled         bool      `gorm:"column:video_enabled;not null;default:false"`
-	DocumentEnabled      bool      `gorm:"column:document_enabled;not null;default:false"`
-	MemoryEnabled        bool      `gorm:"column:memory_enabled;not null;default:false"`
-	MindsetModel         string    `gorm:"column:mindset_model"`
-	MultimodalModel      string    `gorm:"column:multimodal_model"`
-	CredentialID         string    `gorm:"column:credential_id"`
-	ChatwootCredentialID string    `gorm:"column:chatwoot_credential_id"`
-	ChatwootBotToken     string    `gorm:"column:chatwoot_bot_token"`
-	Whitelist            string    `gorm:"column:whitelist"` // CSV string
-	CreatedAt            time.Time `gorm:"autoCreateTime"`
-	UpdatedAt            time.Time `gorm:"autoUpdateTime"`
+	AudioEnabled         bool           `gorm:"column:audio_enabled;not null;default:false"`
+	ImageEnabled         bool           `gorm:"column:image_enabled;not null;default:false"`
+	VideoEnabled         bool           `gorm:"column:video_enabled;not null;default:false"`
+	DocumentEnabled      bool           `gorm:"column:document_enabled;not null;default:false"`
+	MemoryEnabled        bool           `gorm:"column:memory_enabled;not null;default:false"`
+	MindsetModel         sql.NullString `gorm:"column:mindset_model"`
+	MultimodalModel      sql.NullString `gorm:"column:multimodal_model"`
+	CredentialID         sql.NullString `gorm:"column:credential_id"`
+	ChatwootCredentialID sql.NullString `gorm:"column:chatwoot_credential_id"`
+	ChatwootBotToken     sql.NullString `gorm:"column:chatwoot_bot_token"`
+	Whitelist            sql.NullString `gorm:"column:whitelist"` // CSV string
+	CreatedAt            time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt            time.Time      `gorm:"autoUpdateTime"`
 }
 
 // TableName especifica el nombre de la tabla para GORM.
@@ -119,18 +120,18 @@ func toBotModel(b domainBot.Bot) botModel {
 		VideoEnabled:         b.VideoEnabled,
 		DocumentEnabled:      b.DocumentEnabled,
 		MemoryEnabled:        b.MemoryEnabled,
-		MindsetModel:         b.MindsetModel,
-		MultimodalModel:      b.MultimodalModel,
-		CredentialID:         b.CredentialID,
-		ChatwootCredentialID: b.ChatwootCredentialID,
-		ChatwootBotToken:     b.ChatwootBotToken,
-		Whitelist:            strings.Join(b.Whitelist, ","),
+		MindsetModel:         sql.NullString{String: b.MindsetModel, Valid: b.MindsetModel != ""},
+		MultimodalModel:      sql.NullString{String: b.MultimodalModel, Valid: b.MultimodalModel != ""},
+		CredentialID:         sql.NullString{String: b.CredentialID, Valid: b.CredentialID != ""},
+		ChatwootCredentialID: sql.NullString{String: b.ChatwootCredentialID, Valid: b.ChatwootCredentialID != ""},
+		ChatwootBotToken:     sql.NullString{String: b.ChatwootBotToken, Valid: b.ChatwootBotToken != ""},
+		Whitelist:            sql.NullString{String: strings.Join(b.Whitelist, ","), Valid: len(b.Whitelist) > 0},
 	}
 }
 
 func fromBotModel(m botModel) domainBot.Bot {
 	var whitelist []string
-	trimmed := strings.TrimSpace(m.Whitelist)
+	trimmed := nullStringValue(m.Whitelist)
 	if trimmed != "" {
 		whitelist = strings.Split(trimmed, ",")
 	}
@@ -150,11 +151,19 @@ func fromBotModel(m botModel) domainBot.Bot {
 		VideoEnabled:         m.VideoEnabled,
 		DocumentEnabled:      m.DocumentEnabled,
 		MemoryEnabled:        m.MemoryEnabled,
-		MindsetModel:         m.MindsetModel,
-		MultimodalModel:      m.MultimodalModel,
-		CredentialID:         strings.TrimSpace(m.CredentialID),
-		ChatwootCredentialID: strings.TrimSpace(m.ChatwootCredentialID),
-		ChatwootBotToken:     strings.TrimSpace(m.ChatwootBotToken),
+		MindsetModel:         nullStringValue(m.MindsetModel),
+		MultimodalModel:      nullStringValue(m.MultimodalModel),
+		CredentialID:         nullStringValue(m.CredentialID),
+		ChatwootCredentialID: nullStringValue(m.ChatwootCredentialID),
+		ChatwootBotToken:     nullStringValue(m.ChatwootBotToken),
 		Whitelist:            whitelist,
 	}
+}
+
+// nullStringValue returns a trimmed string or empty if null to prevent nil map panics and LID issues.
+func nullStringValue(ns sql.NullString) string {
+	if !ns.Valid {
+		return ""
+	}
+	return strings.TrimSpace(ns.String)
 }

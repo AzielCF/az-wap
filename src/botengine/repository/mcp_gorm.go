@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -18,18 +19,18 @@ import (
 type mcpServerModel struct {
 	ID             string `gorm:"primaryKey"`
 	Name           string `gorm:"not null"`
-	Description    string
+	Description    sql.NullString
 	Type           string `gorm:"not null"`
-	URL            string
-	Command        string
-	Args           string `gorm:"type:text"` // JSON
-	Env            string `gorm:"type:text"` // JSON
-	Headers        string `gorm:"type:text"` // Encrypted JSON
-	Tools          string `gorm:"type:text"` // JSON
-	Enabled        bool   `gorm:"default:true"`
-	IsTemplate     bool   `gorm:"default:false"`
-	TemplateConfig string `gorm:"type:text"` // JSON
-	Instructions   string
+	URL            sql.NullString
+	Command        sql.NullString
+	Args           sql.NullString `gorm:"type:text"` // JSON
+	Env            sql.NullString `gorm:"type:text"` // JSON
+	Headers        sql.NullString `gorm:"type:text"` // Encrypted JSON
+	Tools          sql.NullString `gorm:"type:text"` // JSON
+	Enabled        bool           `gorm:"default:true"`
+	IsTemplate     bool           `gorm:"default:false"`
+	TemplateConfig sql.NullString `gorm:"type:text"` // JSON
+	Instructions   sql.NullString
 	CreatedAt      time.Time `gorm:"autoCreateTime"`
 }
 
@@ -38,10 +39,10 @@ func (mcpServerModel) TableName() string {
 }
 
 type botMCPConfigModel struct {
-	BotID      string `gorm:"primaryKey;column:bot_id"`
-	ServerID   string `gorm:"primaryKey;column:server_id"`
-	ConfigJSON string `gorm:"column:config_json;type:text"`
-	Enabled    bool   `gorm:"default:true"`
+	BotID      string         `gorm:"primaryKey;column:bot_id"`
+	ServerID   string         `gorm:"primaryKey;column:server_id"`
+	ConfigJSON sql.NullString `gorm:"column:config_json;type:text"`
+	Enabled    bool           `gorm:"default:true"`
 }
 
 func (botMCPConfigModel) TableName() string {
@@ -126,7 +127,7 @@ func (r *MCPGormRepository) UpdateServerTools(ctx context.Context, serverID stri
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Model(&mcpServerModel{}).Where("id = ?", serverID).Update("tools", string(toolsJSON)).Error
+	return r.db.WithContext(ctx).Model(&mcpServerModel{}).Where("id = ?", serverID).Update("tools", sql.NullString{String: string(toolsJSON), Valid: true}).Error
 }
 
 // === Bot MCP Configs ===
@@ -152,7 +153,7 @@ func (r *MCPGormRepository) GetBotMCPConfig(ctx context.Context, botID, serverID
 
 	return domainMCP.BotMCPConfigDB{
 		Enabled:    m.Enabled,
-		ConfigJSON: m.ConfigJSON,
+		ConfigJSON: nullStringValue(m.ConfigJSON),
 	}, nil
 }
 
@@ -188,7 +189,7 @@ func (r *MCPGormRepository) SaveBotMCPConfig(ctx context.Context, botID, serverI
 		BotID:      botID,
 		ServerID:   serverID,
 		Enabled:    enabled,
-		ConfigJSON: configJSON,
+		ConfigJSON: sql.NullString{String: configJSON, Valid: configJSON != ""},
 	}).Error
 }
 
@@ -238,18 +239,18 @@ func toMCPServerModel(s domainMCP.MCPServer) (mcpServerModel, error) {
 	return mcpServerModel{
 		ID:             s.ID,
 		Name:           s.Name,
-		Description:    s.Description,
+		Description:    sql.NullString{String: s.Description, Valid: s.Description != ""},
 		Type:           string(s.Type),
-		URL:            s.URL,
-		Command:        s.Command,
-		Args:           string(argsJSON),
-		Env:            string(envJSON),
-		Headers:        string(headersJSON),
-		Tools:          toolsJSON,
+		URL:            sql.NullString{String: s.URL, Valid: s.URL != ""},
+		Command:        sql.NullString{String: s.Command, Valid: s.Command != ""},
+		Args:           sql.NullString{String: string(argsJSON), Valid: true},
+		Env:            sql.NullString{String: string(envJSON), Valid: true},
+		Headers:        sql.NullString{String: string(headersJSON), Valid: true},
+		Tools:          sql.NullString{String: toolsJSON, Valid: true},
 		Enabled:        s.Enabled,
 		IsTemplate:     s.IsTemplate,
-		TemplateConfig: templateConfigJSON,
-		Instructions:   s.Instructions,
+		TemplateConfig: sql.NullString{String: templateConfigJSON, Valid: true},
+		Instructions:   sql.NullString{String: s.Instructions, Valid: s.Instructions != ""},
 	}, nil
 }
 
@@ -257,45 +258,41 @@ func fromMCPServerModel(m mcpServerModel) (domainMCP.MCPServer, error) {
 	s := domainMCP.MCPServer{
 		ID:           m.ID,
 		Name:         m.Name,
-		Description:  m.Description,
+		Description:  nullStringValue(m.Description),
 		Type:         domainMCP.ConnectionType(m.Type),
-		URL:          m.URL,
-		Command:      m.Command,
+		URL:          nullStringValue(m.URL),
+		Command:      nullStringValue(m.Command),
 		Enabled:      m.Enabled,
 		IsTemplate:   m.IsTemplate,
-		Instructions: m.Instructions,
+		Instructions: nullStringValue(m.Instructions),
 	}
 
-	// JSON unmarshals ignoran errores en el original si el string está vacío o malformado (via json.Unmarshal directo)
-	// Aquí intentaremos ser robustos.
-
-	if m.Args != "" {
-		_ = json.Unmarshal([]byte(m.Args), &s.Args)
+	// JSON unmarshals
+	argsJSON := nullStringValue(m.Args)
+	if argsJSON != "" {
+		_ = json.Unmarshal([]byte(argsJSON), &s.Args)
 	}
-	if m.Env != "" {
-		_ = json.Unmarshal([]byte(m.Env), &s.Env)
+	envJSON := nullStringValue(m.Env)
+	if envJSON != "" {
+		_ = json.Unmarshal([]byte(envJSON), &s.Env)
 	}
 
 	// Decrypt Headers
-	if m.Headers != "" && m.Headers != "{}" {
-		decrypted, err := crypto.Decrypt(m.Headers)
+	headersJSON := nullStringValue(m.Headers)
+	if headersJSON != "" && headersJSON != "{}" {
+		decrypted, err := crypto.Decrypt(headersJSON)
 		if err == nil {
 			_ = json.Unmarshal([]byte(decrypted), &s.Headers)
-		} else {
-			// Si falla desencriptar (ej: no estaba encriptado o clave incorrecta), intentamos unmarshal directo por si acaso o dejamos nil.
-			// En original: `json.Unmarshal([]byte(decrypted), &srv.Headers)`
-			// Si Decrypt falla, devuelve error. Original hace `_ = crypto.Decrypt`. Ops, original ignora error de decrypt?
-			// Original code: `decrypted, _ := crypto.Decrypt(headersJSON)` -> Ignora error.
-			// Si error es != nil, decrypted es string vacío. json.Unmarshal de string vacío falla.
-			// Así que headers queda nil.
 		}
 	}
 
-	if m.Tools != "" {
-		_ = json.Unmarshal([]byte(m.Tools), &s.Tools)
+	toolsJSON := nullStringValue(m.Tools)
+	if toolsJSON != "" {
+		_ = json.Unmarshal([]byte(toolsJSON), &s.Tools)
 	}
-	if m.TemplateConfig != "" {
-		_ = json.Unmarshal([]byte(m.TemplateConfig), &s.TemplateConfig)
+	templateConfigJSON := nullStringValue(m.TemplateConfig)
+	if templateConfigJSON != "" {
+		_ = json.Unmarshal([]byte(templateConfigJSON), &s.TemplateConfig)
 	}
 
 	return s, nil
