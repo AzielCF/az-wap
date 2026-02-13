@@ -314,7 +314,7 @@ function parseMetadata(val: any) {
                     <template v-for="g in pagedGroups" :key="g.trace_id">
                         <!-- Trace Row (Header for the Group) -->
                         <tr @click="toggleTrace(g.trace_id)" class="hover:bg-white/[0.03] transition-colors border-b border-white/[0.05] cursor-pointer group bg-[#1a1e29]">
-                            <td colspan="6" class="py-3 px-4">
+                            <td colspan="8" class="py-3 px-4">
                                 <div class="flex items-center gap-4 text-xs font-mono text-slate-400">
                                     <ChevronRight class="w-4 h-4 text-slate-500 transition-transform" :class="expandedTraces[g.trace_id] ? 'rotate-90' : ''" />
                                     <span class="font-bold text-slate-300">Trace: {{ g.trace_id.substring(0, 15) }}...</span>
@@ -481,7 +481,7 @@ function parseMetadata(val: any) {
                                 
                                 <!-- Metadata Row -->
                                 <tr v-if="expandedSubEvents[`${g.trace_id}-${idx}`]">
-                                    <td colspan="6" class="p-0 bg-[#0b0e14] border-b border-white/[0.05]">
+                                    <td colspan="8" class="p-0 bg-[#0b0e14] border-b border-white/[0.05]">
                                         <div class="p-6 ml-12 border-l border-white/5 space-y-4">
                                             <div v-if="e.kind === 'mcp_call'" class="mb-2 p-3 bg-teal-950/20 border border-teal-500/10 rounded-lg">
                                                 <div class="flex items-center gap-2 mb-1">
