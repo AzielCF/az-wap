@@ -98,6 +98,8 @@ const botMCPServers = ref<any[]>([])
 const loadingBotMCPs = ref(false)
 const testingConnection = ref<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({})
 const connectionMessages = ref<Record<string, string>>({})
+const botMCPServersSnapshot = ref<Record<string, string>>({})
+const botDataSnapshot = ref<string>('')
 const expandedServers = ref<string[]>([])
 
 // Confirmation State
@@ -178,12 +180,17 @@ async function loadBotMCPs(botId: string) {
         expandedServers.value.push(srv.id)
       }
 
-      return { 
+      const mapped = { 
         ...srv, 
         headersMap,
         botInstructions: srv.bot_instructions || '',
         disabled_tools: srv.disabled_tools || []
       }
+
+      // Store snapshot for change detection
+      botMCPServersSnapshot.value[srv.id] = getMCPCompareState(mapped)
+
+      return mapped
     })
   } catch (err) {
     console.error('Failed to load MCPs', err)
@@ -203,17 +210,41 @@ async function saveMCPPreference(server: any) {
   await api.put(`/bots/${editingBot.value.id}/mcp/${server.id}`, payload)
 }
 
-async function saveAllMCPPreferences(botId: string) {
-  const promises = botMCPServers.value.map(srv => {
-    const payload = {
-      enabled: srv.enabled,
-      disabled_tools: srv.disabled_tools || [],
-      custom_headers: srv.headersMap,
-      instructions: srv.botInstructions || ''
-    }
-    return api.put(`/bots/${botId}/mcp/${srv.id}`, payload)
+function getMCPCompareState(srv: any) {
+  return JSON.stringify({
+    enabled: !!srv.enabled,
+    disabled_tools: [...(srv.disabled_tools || [])].sort(),
+    custom_headers: Object.keys(srv.headersMap || {}).sort().reduce((obj, key) => {
+      obj[key] = srv.headersMap[key]
+      return obj
+    }, {} as any),
+    instructions: srv.botInstructions || ''
   })
-  await Promise.all(promises)
+}
+
+async function saveAllMCPPreferences(botId: string) {
+  const promises = botMCPServers.value
+    .filter(srv => {
+        const currentState = getMCPCompareState(srv)
+        return currentState !== botMCPServersSnapshot.value[srv.id]
+    })
+    .map(srv => {
+      const payload = {
+        enabled: srv.enabled,
+        disabled_tools: srv.disabled_tools || [],
+        custom_headers: srv.headersMap,
+        instructions: srv.botInstructions || ''
+      }
+      return api.put(`/bots/${botId}/mcp/${srv.id}`, payload)
+    })
+  
+  if (promises.length > 0) {
+    await Promise.all(promises)
+    // Update snapshots after successful save to avoid redundant saves if modal stays open
+    botMCPServers.value.forEach(srv => {
+      botMCPServersSnapshot.value[srv.id] = getMCPCompareState(srv)
+    })
+  }
 }
 
 async function testMCPConnection(server: any) {
@@ -288,7 +319,10 @@ async function createBot() {
   try {
     let botId = editingBot.value?.id
     if (editingBot.value) {
-      await api.put(`/bots/${editingBot.value.id}`, newBot.value)
+      if (JSON.stringify(newBot.value) !== botDataSnapshot.value) {
+        await api.put(`/bots/${editingBot.value.id}`, newBot.value)
+        botDataSnapshot.value = JSON.stringify(newBot.value)
+      }
     } else {
       const res = await api.post('/bots', newBot.value)
       botId = res?.results?.id
@@ -366,6 +400,7 @@ function openEdit(bot: any) {
   }
   expandedServers.value = []
   loadBotMCPs(bot.id)
+  botDataSnapshot.value = JSON.stringify(newBot.value)
   showAddBot.value = true
 }
 
@@ -397,6 +432,7 @@ function resetForm() {
     provider: 'gemini'
   }
   botMCPServers.value = []
+  botDataSnapshot.value = ''
 }
 
 onMounted(loadData)
@@ -418,10 +454,6 @@ onMounted(loadData)
       </template>
 
       <template #actions>
-        <div class="relative group">
-            <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-primary transition-colors" />
-            <input v-model="search" type="text" placeholder="Search templates..." class="input-premium h-14 pl-12 w-64 text-sm" />
-        </div>
         <button class="btn-premium btn-premium-ghost px-8" @click="showGlobalSettings = true">
            <Settings class="w-4 h-4" />
            Engine Configuration
@@ -435,7 +467,13 @@ onMounted(loadData)
 
     <!-- Content Area -->
     <div class="px-6 lg:px-0">
-        <div class="section-title-premium text-primary/60">Reusable Bot Templates</div>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+            <div class="section-title-premium text-primary/60 mb-0">Reusable Bot Templates</div>
+            <div class="relative group w-full md:w-80">
+                <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-primary transition-colors" />
+                <input v-model="search" type="text" placeholder="Search templates..." class="input-premium h-12 pl-12 w-full text-sm" />
+            </div>
+        </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-10">
             <!-- Add Card -->
@@ -549,7 +587,7 @@ onMounted(loadData)
     <!-- Bot Identity Modal -->
     <AppTabModal 
         v-model="showAddBot" 
-        :title="editingBot ? 'Edit Identity Template' : 'Compose Bot Identity'" 
+        :title="editingBot ? 'Bot Configuration' : 'Compose Bot Identity'" 
         maxWidth="max-w-[1240px]"
         v-model:activeTab="activeTab"
         :tabs="[
@@ -646,7 +684,7 @@ onMounted(loadData)
                             </div>
                         </div>
 
-                        <div class="section-title-premium text-primary/60 pt-10">Sensory Capabilities</div>
+                        <div class="section-title-premium text-primary/60 mt-10">Capabilities</div>
                         <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-primary transition-all">
                                 <span class="text-xs font-black uppercase text-slate-500">Memory</span>
