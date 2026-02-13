@@ -39,6 +39,7 @@ interface Client {
   timezone: string
   country: string
   allowed_bots: string[]
+  is_tester: boolean
   enabled: boolean
   created_at: string
 }
@@ -76,7 +77,8 @@ const newClient = ref({
   language: 'en',
   timezone: '',
   country: '',
-  allowed_bots: [] as string[]
+  allowed_bots: [] as string[],
+  is_tester: false
 })
 const newTag = ref('')
 const workspaces = ref<any[]>([])
@@ -249,7 +251,8 @@ function resetForm() {
     language: 'en',
     timezone: '',
     country: '',
-    allowed_bots: []
+    allowed_bots: [],
+    is_tester: false
   }
   newTag.value = ''
   lidVerified.value = false
@@ -271,7 +274,8 @@ function openEdit(client: Client) {
     language: client.language || 'en',
     timezone: client.timezone || '',
     country: client.country || '',
-    allowed_bots: client.allowed_bots || []
+    allowed_bots: client.allowed_bots || [],
+    is_tester: client.is_tester || false
   }
   
   // Auto-verify ONLY if the loaded ID is a LID (NEVER JID)
@@ -477,6 +481,10 @@ onMounted(() => {
                         <TierBadge :tier="client.tier" />
                         <div class="w-1 h-1 rounded-full bg-slate-800"></div>
                         <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">{{ client.platform_type }}</span>
+                        <!-- Tester Badge -->
+                        <div v-if="client.is_tester" class="ml-auto px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-black uppercase tracking-widest flex items-center gap-1 shadow-[0_0_10px_rgba(245,158,11,0.1)] animate-pulse scale-90 origin-right">
+                            <ShieldCheck class="w-3 h-3" /> TESTER
+                        </div>
                     </div>
 
                     <div class="space-y-4 mt-auto">
@@ -739,8 +747,31 @@ onMounted(() => {
         <!-- Tab: Operational -->
         <div v-if="activeClientTab === 'operational'" class="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col">
             <header>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight">Authorization Roster</h3>
-                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Strict restriction of available Agent Instances</p>
+                <h3 class="text-xl font-black text-white uppercase tracking-tight">System & Authorization</h3>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Advanced access control and debug modes</p>
+            </header>
+
+            <div class="p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-start gap-4">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+                    <ShieldCheck class="w-5 h-5" />
+                </div>
+                <div class="flex-1">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm font-black text-white uppercase tracking-tight">Tester Mode</label>
+                        <input type="checkbox" v-model="newClient.is_tester" class="toggle toggle-warning toggle-sm" />
+                    </div>
+                    <p class="text-xs text-slate-400 font-medium leading-relaxed">
+                        When enabled, all interactions from this client (messages, tool inputs, files) will be logged 
+                        <span class="text-amber-500 font-bold">UNFILTERED (FULL DATA)</span> for debugging purposes. 
+                        Use with caution and only for development accounts.
+                    </p>
+                </div>
+            </div>
+
+            <div class="divider border-white/5 my-4"></div>
+
+            <header>
+                <h4 class="text-sm font-black text-slate-400 uppercase tracking-widest">Authorized Agents</h4>
             </header>
 
             <div class="form-control">

@@ -21,7 +21,9 @@ import {
   AlertTriangle,
   RotateCw,
   Lightbulb,
-  Sparkles
+  Sparkles,
+  Lock,
+  ShieldCheck,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -176,6 +178,10 @@ const groupedTraces = computed(() => {
                     const val = parseFloat(clean)
                     if (!isNaN(val)) g.total_cost += val
                 }
+                // Check for is_tester
+                if (e.metadata.is_tester === 'true' || e.metadata.is_tester === true) {
+                    g.is_tester = true
+                }
             }
             
             g.events.push(e)
@@ -209,6 +215,12 @@ function parseMetadata(val: any) {
         if (typeof val === 'object') return JSON.stringify(val, null, 2)
         return val
     } catch (e) { return val }
+}
+
+function isRedacted(val: any): boolean {
+    if (typeof val === 'string' && val.includes('[REDACTED]')) return true
+    if (typeof val === 'string' && val.includes('_redacted')) return true
+    return false
 }
 </script>
 
@@ -323,6 +335,10 @@ function parseMetadata(val: any) {
                                     <span class="text-slate-600">|</span>
                                     <span>{{ g.chat_jid }}</span>
                                     <div class="ml-auto flex items-center gap-4">
+                                        <div v-if="g.is_tester" class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                                            <ShieldCheck class="w-3 h-3" />
+                                            <span class="text-[10px] font-black uppercase tracking-widest">TESTER</span>
+                                        </div>
                                         <div v-if="g.total_cost > 0" class="flex items-center gap-1.5 px-2 py-1 bg-primary/10 border border-primary/20 rounded-md">
                                             <Zap class="w-3 h-3 text-primary" />
                                             <span class="text-xs font-black text-primary tracking-widest">${{ g.total_cost.toFixed(6) }}</span>
@@ -493,8 +509,16 @@ function parseMetadata(val: any) {
                                             <div v-for="(val, key) in e.metadata" :key="key" class="space-y-2">
                                                 <!-- Skip the usage keys we'll show in a better way -->
                                                 <template v-if="!['usage_system_tokens', 'usage_user_tokens', 'usage_history_tokens', 'usage_input_tokens', 'usage_output_tokens', 'usage_cached_tokens', 'usage_cost', 'cost', 'input_tokens', 'output_tokens'].includes(key as string)">
-                                                    <div class="text-xs font-bold uppercase tracking-widest text-slate-600">{{ String(key).replace(/_/g, ' ') }}</div>
-                                                    <pre class="bg-black/40 p-3 rounded border border-white/5 text-xs font-mono text-slate-400 overflow-auto max-h-60 select-all custom-scrollbar">{{ parseMetadata(val) }}</pre>
+                                                    <div class="flex items-center justify-between mb-1">
+                                                        <div class="text-xs font-bold uppercase tracking-widest text-slate-600">{{ String(key).replace(/_/g, ' ') }}</div>
+                                                        <div v-if="isRedacted(val)" class="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] font-black text-amber-500 uppercase tracking-widest">
+                                                            <Lock class="w-2.5 h-2.5" /> Data Protected
+                                                        </div>
+                                                    </div>
+                                                    <div class="relative group/redacted">
+                                                        <pre class="bg-black/40 p-3 rounded border border-white/5 text-xs font-mono text-slate-400 overflow-auto max-h-60 select-all custom-scrollbar"
+                                                             :class="{ 'text-amber-500/50 italic': isRedacted(val) }">{{ parseMetadata(val) }}</pre>
+                                                    </div>
                                                 </template>
                                             </div>
 
