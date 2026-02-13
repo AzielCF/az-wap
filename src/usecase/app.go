@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/AzielCF/az-wap/validations"
@@ -17,11 +18,13 @@ import (
 
 type serviceApp struct {
 	workspaceMgr *workspace.Manager
+	settingsSvc  *coreSettings.SettingsService
 }
 
-func NewAppService(workspaceMgr *workspace.Manager) domainApp.IAppUsecase {
+func NewAppService(workspaceMgr *workspace.Manager, settingsSvc *coreSettings.SettingsService) domainApp.IAppUsecase {
 	return &serviceApp{
 		workspaceMgr: workspaceMgr,
+		settingsSvc:  settingsSvc,
 	}
 }
 
@@ -173,53 +176,140 @@ func (service *serviceApp) GetConnectionStatus(ctx context.Context, token string
 }
 
 func (service *serviceApp) GetSettings(ctx context.Context) (map[string]any, error) {
-	return config.GetAllSettings(), nil
+	// 1. Get baseline from memory
+	settings := coreconfig.GetAllSettings()
+
+	// 2. Overlay with dynamic settings from DB
+	dynamic, err := service.settingsSvc.GetDynamicSettings(ctx)
+	if err != nil {
+		// If DB fails, we at least return the defaults from memory
+		return settings, nil
+	}
+
+	// Update the map with latest from DB
+	if dynamic.AIGlobalSystemPrompt != "" {
+		settings["ai_global_system_prompt"] = dynamic.AIGlobalSystemPrompt
+	}
+	if dynamic.AITimezone != "" {
+		settings["ai_timezone"] = dynamic.AITimezone
+	}
+	if dynamic.AIDebounceMs != nil {
+		settings["ai_debounce_ms"] = *dynamic.AIDebounceMs
+	}
+	if dynamic.AIWaitContactIdleMs != nil {
+		settings["ai_wait_contact_idle_ms"] = *dynamic.AIWaitContactIdleMs
+	}
+	if dynamic.AITypingEnabled != nil {
+		settings["ai_typing_enabled"] = *dynamic.AITypingEnabled
+	}
+	if dynamic.WhatsappMaxDownloadSize != nil {
+		settings["whatsapp_setting_max_download_size"] = *dynamic.WhatsappMaxDownloadSize
+	}
+
+	return settings, nil
 }
 
 func (service *serviceApp) UpdateSettings(ctx context.Context, key string, value any) error {
 	switch key {
-	case "whatsapp_max_download_size":
-		var val int64
-		switch v := value.(type) {
-		case float64:
-			val = int64(v)
-		case int64:
-			val = v
-		case int:
-			val = int64(v)
-		case string:
-			parsed, _ := strconv.ParseInt(v, 10, 64)
-			val = parsed
-		}
-		return config.SaveWhatsappMaxDownloadSize(val)
+	case "whatsapp_setting_max_download_size", "whatsapp_max_download_size":
+		val := parseToInt64(value)
+		return service.settingsSvc.SetMaxDownloadSize(ctx, val)
+	case "whatsapp_setting_max_file_size":
+		// TODO: Implement field in service if needed, for now ignore to avoid error
+		return nil
+	case "whatsapp_setting_max_video_size":
+		// TODO: Implement field in service if needed, for now ignore to avoid error
+		return nil
+	case "whatsapp_webhook_secret":
+		// TODO: Implement field in service if needed, for now ignore to avoid error
+		return nil
+	case "whatsapp_webhook_insecure_skip_verify":
+		// TODO: Implement field in service if needed, for now ignore to avoid error
+		return nil
+	case "whatsapp_account_validation":
+		// TODO: Implement field in service if needed, for now ignore to avoid error
+		return nil
 	case "ai_global_system_prompt":
-		return config.SaveAIGlobalSystemPrompt(fmt.Sprintf("%v", value))
+		strVal := fmt.Sprintf("%v", value)
+		if strings.TrimSpace(strVal) == "" {
+			return nil
+		}
+		if err := service.settingsSvc.SetSystemPrompt(ctx, strVal); err != nil {
+			return err
+		}
+		coreconfig.Global.AI.GlobalSystemPrompt = strVal
+		return nil
 	case "ai_timezone":
-		return config.SaveAITimezone(fmt.Sprintf("%v", value))
+		strVal := fmt.Sprintf("%v", value)
+		if strings.TrimSpace(strVal) == "" {
+			return nil
+		}
+		if err := service.settingsSvc.SetTimezone(ctx, strVal); err != nil {
+			return err
+		}
+		coreconfig.Global.AI.Timezone = strVal
+		return nil
 	case "ai_debounce_ms":
-		var val int
-		if f, ok := value.(float64); ok {
-			val = int(f)
-		} else if i, ok := value.(int); ok {
-			val = i
+		val := parseToInt(value)
+		if err := service.settingsSvc.SetDebounce(ctx, val); err != nil {
+			return err
 		}
-		return config.SaveAIDebounceMs(val)
+		coreconfig.Global.AI.DebounceMs = val
+		return nil
 	case "ai_wait_contact_idle_ms":
-		var val int
-		if f, ok := value.(float64); ok {
-			val = int(f)
-		} else if i, ok := value.(int); ok {
-			val = i
+		val := parseToInt(value)
+		if err := service.settingsSvc.SetContactIdle(ctx, val); err != nil {
+			return err
 		}
-		return config.SaveAIWaitContactIdleMs(val)
+		coreconfig.Global.AI.WaitContactIdleMs = val
+		return nil
 	case "ai_typing_enabled":
-		var val bool
-		if b, ok := value.(bool); ok {
-			val = b
-		} else if s, ok := value.(string); ok {
-			val = s == "true" || s == "1"
+		val := parseToBool(value)
+		if err := service.settingsSvc.SetTypingEnabled(ctx, val); err != nil {
+			return err
 		}
-		return config.SaveAITypingEnabled(val)
+		coreconfig.Global.AI.TypingEnabled = val
+		return nil
+	case "app_version", "app_debug":
+		return nil // Read-only, ignore
 	}
 	return fmt.Errorf("setting key %s not supported", key)
+}
+
+func parseToInt(v any) int {
+	switch val := v.(type) {
+	case float64:
+		return int(val)
+	case int:
+		return val
+	case string:
+		n, _ := strconv.Atoi(val)
+		return n
+	}
+	return 0
+}
+
+func parseToInt64(v any) int64 {
+	switch val := v.(type) {
+	case float64:
+		return int64(val)
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case string:
+		n, _ := strconv.ParseInt(val, 10, 64)
+		return n
+	}
+	return 0
+}
+
+func parseToBool(v any) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		return val == "true" || val == "1"
+	}
+	return false
 }

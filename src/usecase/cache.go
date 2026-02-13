@@ -6,32 +6,25 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	"github.com/AzielCF/az-wap/pkg/chatmedia"
 	"github.com/dustin/go-humanize"
 	"github.com/sirupsen/logrus"
 )
 
-type cacheService struct{}
+type cacheService struct {
+	settingsSvc *coreSettings.SettingsService
+}
 
-func NewCacheService() domainCache.ICacheUsecase {
-	return &cacheService{}
+func NewCacheService(settingsSvc *coreSettings.SettingsService) domainCache.ICacheUsecase {
+	return &cacheService{settingsSvc: settingsSvc}
 }
 
 func (s *cacheService) GetSettings(ctx context.Context) (domainCache.CacheSettings, error) {
-	db, err := globalConfig.GetAppDB()
-	if err != nil {
-		return domainCache.CacheSettings{}, err
-	}
-
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS global_settings (key TEXT PRIMARY KEY, value TEXT)`); err != nil {
-		return domainCache.CacheSettings{}, err
-	}
-
 	settings := domainCache.CacheSettings{
 		Enabled:         false,
 		MaxAgeDays:      30,
@@ -39,56 +32,48 @@ func (s *cacheService) GetSettings(ctx context.Context) (domainCache.CacheSettin
 		CleanupInterval: 60,   // 1 hour default
 	}
 
-	rows, err := db.Query(`SELECT key, value FROM global_settings WHERE key LIKE 'cache_%'`)
+	if s.settingsSvc == nil {
+		return settings, nil
+	}
+
+	ds, err := s.settingsSvc.GetDynamicSettings(ctx)
 	if err != nil {
 		return settings, nil
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var key, val string
-		if err := rows.Scan(&key, &val); err == nil {
-			switch key {
-			case "cache_enabled":
-				settings.Enabled = val == "1" || val == "true"
-			case "cache_max_age_days":
-				if n, err := strconv.Atoi(val); err == nil {
-					settings.MaxAgeDays = n
-				}
-			case "cache_max_size_mb":
-				if n, err := strconv.ParseInt(val, 10, 64); err == nil {
-					settings.MaxSizeMB = n
-				}
-			case "cache_cleanup_interval":
-				if n, err := strconv.Atoi(val); err == nil {
-					settings.CleanupInterval = n
-				}
-			}
-		}
+	if ds.CacheEnabled != nil {
+		settings.Enabled = *ds.CacheEnabled
+	}
+	if ds.CacheMaxAgeDays != nil {
+		settings.MaxAgeDays = *ds.CacheMaxAgeDays
+	}
+	if ds.CacheMaxSizeMB != nil {
+		settings.MaxSizeMB = *ds.CacheMaxSizeMB
+	}
+	if ds.CacheCleanupInterval != nil {
+		settings.CleanupInterval = *ds.CacheCleanupInterval
 	}
 
 	return settings, nil
 }
 
 func (s *cacheService) SaveSettings(ctx context.Context, settings domainCache.CacheSettings) error {
-	db, err := globalConfig.GetAppDB()
-	if err != nil {
+	if s.settingsSvc == nil {
+		return fmt.Errorf("settings service not initialized")
+	}
+
+	if err := s.settingsSvc.SetCacheEnabled(ctx, settings.Enabled); err != nil {
 		return err
 	}
-
-	save := func(key, val string) {
-		db.Exec(`INSERT INTO global_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, val)
+	if err := s.settingsSvc.SetCacheMaxAge(ctx, settings.MaxAgeDays); err != nil {
+		return err
 	}
-
-	enabledStr := "0"
-	if settings.Enabled {
-		enabledStr = "1"
+	if err := s.settingsSvc.SetCacheMaxSize(ctx, settings.MaxSizeMB); err != nil {
+		return err
 	}
-
-	save("cache_enabled", enabledStr)
-	save("cache_max_age_days", strconv.Itoa(settings.MaxAgeDays))
-	save("cache_max_size_mb", strconv.FormatInt(settings.MaxSizeMB, 10))
-	save("cache_cleanup_interval", strconv.Itoa(settings.CleanupInterval))
+	if err := s.settingsSvc.SetCacheCleanupInterval(ctx, settings.CleanupInterval); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -129,12 +114,12 @@ func (s *cacheService) runCleanup(settings domainCache.CacheSettings) {
 	maxAge := time.Duration(settings.MaxAgeDays) * 24 * time.Hour
 	cutoff := time.Now().Add(-maxAge)
 
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
+	dirs := []string{filepath.Join(coreconfig.Global.Paths.Statics, "workspaces"), coreconfig.Global.Paths.SendItems}
 	for _, dir := range dirs {
 		s.pruneByAge(dir, cutoff)
 	}
-	s.pruneFilesByPatternAge(globalConfig.PathStorages, "history-*", cutoff)
-	s.pruneFilesByPatternAge(globalConfig.PathStorages, "*.jfif", cutoff)
+	s.pruneFilesByPatternAge(coreconfig.Global.Paths.Storages, "history-*", cutoff)
+	s.pruneFilesByPatternAge(coreconfig.Global.Paths.Storages, "*.jfif", cutoff)
 
 	// 2. Delete files by size limit
 	maxSizeBytes := settings.MaxSizeMB * 1024 * 1024
@@ -184,13 +169,13 @@ func (s *cacheService) pruneBySize(limit int64) {
 		})
 	}
 
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
+	dirs := []string{filepath.Join(coreconfig.Global.Paths.Statics, "workspaces"), coreconfig.Global.Paths.SendItems}
 	for _, dir := range dirs {
 		collect(dir)
 	}
 
 	// Historiales también cuentan
-	matches, _ := filepath.Glob(filepath.Join(globalConfig.PathStorages, "history-*"))
+	matches, _ := filepath.Glob(filepath.Join(coreconfig.Global.Paths.Storages, "history-*"))
 	for _, m := range matches {
 		if info, err := os.Stat(m); err == nil {
 			files = append(files, fileInfo{Path: m, Size: info.Size(), Time: info.ModTime()})
@@ -221,14 +206,14 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 	var totalSize int64
 
 	// Directories to scan
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
+	dirs := []string{filepath.Join(coreconfig.Global.Paths.Statics, "workspaces"), coreconfig.Global.Paths.SendItems}
 	for _, dir := range dirs {
 		size, _ := s.getDirSize(dir)
 		totalSize += size
 	}
 
 	// Scan storages for history files
-	historySize, _ := s.getFilesByPatternSize(globalConfig.PathStorages, "history-*")
+	historySize, _ := s.getFilesByPatternSize(coreconfig.Global.Paths.Storages, "history-*")
 	totalSize += historySize
 
 	return domainCache.CacheStats{
@@ -238,14 +223,14 @@ func (s *cacheService) GetGlobalStats(ctx context.Context) (domainCache.CacheSta
 }
 
 func (s *cacheService) ClearGlobalCache(ctx context.Context) error {
-	dirs := []string{filepath.Join(globalConfig.PathStatics, "workspaces"), globalConfig.PathSendItems}
+	dirs := []string{filepath.Join(coreconfig.Global.Paths.Statics, "workspaces"), coreconfig.Global.Paths.SendItems}
 	for _, dir := range dirs {
 		s.clearDir(dir)
 	}
 
 	// Clear history files and jfif files from storages
-	s.clearFilesByPattern(globalConfig.PathStorages, "history-*")
-	s.clearFilesByPattern(globalConfig.PathStorages, "*.jfif")
+	s.clearFilesByPattern(coreconfig.Global.Paths.Storages, "history-*")
+	s.clearFilesByPattern(coreconfig.Global.Paths.Storages, "*.jfif")
 
 	return nil
 }
@@ -254,7 +239,7 @@ func (s *cacheService) GetInstanceStats(ctx context.Context, instanceID string) 
 	var totalSize int64
 
 	// Media for this instance (look inside workspaces)
-	instanceMediaDir := filepath.Join(globalConfig.PathStatics, "workspaces", "*", instanceID)
+	instanceMediaDir := filepath.Join(coreconfig.Global.Paths.Statics, "workspaces", "*", instanceID)
 	size, _ := s.getDirSize(instanceMediaDir)
 	totalSize += size
 
@@ -264,7 +249,7 @@ func (s *cacheService) GetInstanceStats(ctx context.Context, instanceID string) 
 	// History files for this instance
 	// Pattern: history-*-<instanceID>-*.json
 	pattern := fmt.Sprintf("history-*-%s-*.json", instanceID)
-	histSize, _ := s.getFilesByPatternSize(globalConfig.PathStorages, pattern)
+	histSize, _ := s.getFilesByPatternSize(coreconfig.Global.Paths.Storages, pattern)
 	totalSize += histSize
 
 	return domainCache.CacheStats{
@@ -275,7 +260,7 @@ func (s *cacheService) GetInstanceStats(ctx context.Context, instanceID string) 
 
 func (s *cacheService) ClearInstanceCache(ctx context.Context, instanceID string) error {
 	// Clear media subfolder (look inside workspaces)
-	instanceMediaDir := filepath.Join(globalConfig.PathStatics, "workspaces", "*", instanceID)
+	instanceMediaDir := filepath.Join(coreconfig.Global.Paths.Statics, "workspaces", "*", instanceID)
 	os.RemoveAll(instanceMediaDir)
 
 	// instanceCacheDir is now gone
@@ -283,10 +268,10 @@ func (s *cacheService) ClearInstanceCache(ctx context.Context, instanceID string
 
 	// Clear history files
 	pattern := fmt.Sprintf("history-*-%s-*.json", instanceID)
-	s.clearFilesByPattern(globalConfig.PathStorages, pattern)
+	s.clearFilesByPattern(coreconfig.Global.Paths.Storages, pattern)
 
 	// Clear jfif files from storages
-	s.clearFilesByPattern(globalConfig.PathStorages, "*.jfif")
+	s.clearFilesByPattern(coreconfig.Global.Paths.Storages, "*.jfif")
 
 	return nil
 }
