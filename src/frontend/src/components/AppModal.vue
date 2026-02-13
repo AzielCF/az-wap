@@ -44,7 +44,7 @@ function close() {
         <slot name="actions"></slot>
       </footer>
     </div>
-    <div class="modal-backdrop bg-black/85" @click="close"></div>
+    <div class="modal-backdrop bg-black/85"></div>
   </div>
 </template>
 

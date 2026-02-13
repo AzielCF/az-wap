@@ -83,7 +83,7 @@ function confirm() {
         </div>
       </div>
     </div>
-    <div class="modal-backdrop bg-black/90" @click="close"></div>
+    <div class="modal-backdrop bg-black/90"></div>
   </div>
 </template>
 
