@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -17,15 +18,15 @@ import (
 // --- Persistence Model ---
 
 type credentialModel struct {
-	ID                   string    `gorm:"primaryKey;column:id"`
-	Name                 string    `gorm:"column:name;not null"`
-	Kind                 string    `gorm:"column:kind;not null"`
-	AIAPIKey             string    `gorm:"column:ai_api_key"`
-	ChatwootBaseURL      string    `gorm:"column:chatwoot_base_url"`
-	ChatwootAccountToken string    `gorm:"column:chatwoot_account_token"`
-	ChatwootBotToken     string    `gorm:"column:chatwoot_bot_token"`
-	CreatedAt            time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt            time.Time `gorm:"column:updated_at;autoUpdateTime"`
+	ID                   string         `gorm:"primaryKey;column:id"`
+	Name                 string         `gorm:"column:name;not null"`
+	Kind                 string         `gorm:"column:kind;not null"`
+	AIAPIKey             sql.NullString `gorm:"column:ai_api_key"`
+	ChatwootBaseURL      sql.NullString `gorm:"column:chatwoot_base_url"`
+	ChatwootAccountToken sql.NullString `gorm:"column:chatwoot_account_token"`
+	ChatwootBotToken     sql.NullString `gorm:"column:chatwoot_bot_token"`
+	CreatedAt            time.Time      `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt            time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (credentialModel) TableName() string {
@@ -124,10 +125,10 @@ func (s *credentialService) Create(ctx context.Context, req domainCredential.Cre
 		ID:                   id,
 		Name:                 name,
 		Kind:                 string(kind),
-		AIAPIKey:             strings.TrimSpace(req.AIAPIKey),
-		ChatwootBaseURL:      strings.TrimSpace(req.ChatwootBaseURL),
-		ChatwootAccountToken: strings.TrimSpace(req.ChatwootAccountToken),
-		ChatwootBotToken:     strings.TrimSpace(req.ChatwootBotToken),
+		AIAPIKey:             sql.NullString{String: strings.TrimSpace(req.AIAPIKey), Valid: req.AIAPIKey != ""},
+		ChatwootBaseURL:      sql.NullString{String: strings.TrimSpace(req.ChatwootBaseURL), Valid: req.ChatwootBaseURL != ""},
+		ChatwootAccountToken: sql.NullString{String: strings.TrimSpace(req.ChatwootAccountToken), Valid: req.ChatwootAccountToken != ""},
+		ChatwootBotToken:     sql.NullString{String: strings.TrimSpace(req.ChatwootBotToken), Valid: req.ChatwootBotToken != ""},
 	}
 
 	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
@@ -201,11 +202,10 @@ func (s *credentialService) Update(ctx context.Context, id string, req domainCre
 	if req.Kind != "" {
 		model.Kind = string(req.Kind)
 	}
-
-	model.AIAPIKey = strings.TrimSpace(req.AIAPIKey)
-	model.ChatwootBaseURL = strings.TrimSpace(req.ChatwootBaseURL)
-	model.ChatwootAccountToken = strings.TrimSpace(req.ChatwootAccountToken)
-	model.ChatwootBotToken = strings.TrimSpace(req.ChatwootBotToken)
+	model.AIAPIKey = sql.NullString{String: strings.TrimSpace(req.AIAPIKey), Valid: req.AIAPIKey != ""}
+	model.ChatwootBaseURL = sql.NullString{String: strings.TrimSpace(req.ChatwootBaseURL), Valid: req.ChatwootBaseURL != ""}
+	model.ChatwootAccountToken = sql.NullString{String: strings.TrimSpace(req.ChatwootAccountToken), Valid: req.ChatwootAccountToken != ""}
+	model.ChatwootBotToken = sql.NullString{String: strings.TrimSpace(req.ChatwootBotToken), Valid: req.ChatwootBotToken != ""}
 
 	if err := s.db.WithContext(ctx).Save(&model).Error; err != nil {
 		return domainCredential.Credential{}, err
@@ -282,9 +282,17 @@ func fromModel(m credentialModel) domainCredential.Credential {
 		ID:                   m.ID,
 		Name:                 m.Name,
 		Kind:                 domainCredential.Kind(m.Kind),
-		AIAPIKey:             m.AIAPIKey,
-		ChatwootBaseURL:      m.ChatwootBaseURL,
-		ChatwootAccountToken: m.ChatwootAccountToken,
-		ChatwootBotToken:     m.ChatwootBotToken,
+		AIAPIKey:             nullStringValue(m.AIAPIKey),
+		ChatwootBaseURL:      nullStringValue(m.ChatwootBaseURL),
+		ChatwootAccountToken: nullStringValue(m.ChatwootAccountToken),
+		ChatwootBotToken:     nullStringValue(m.ChatwootBotToken),
 	}
+}
+
+// nullStringValue returns a trimmed string or empty if null to prevent legacy data panics.
+func nullStringValue(ns sql.NullString) string {
+	if !ns.Valid {
+		return ""
+	}
+	return strings.TrimSpace(ns.String)
 }

@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
@@ -14,38 +16,38 @@ import (
 // --- Persistence Models ---
 
 type workspaceModel struct {
-	ID                    string    `gorm:"primaryKey;column:id"`
-	Name                  string    `gorm:"column:name;not null"`
-	Description           string    `gorm:"column:description"`
-	OwnerID               string    `gorm:"column:owner_id;not null"`
-	ConfigTimezone        string    `gorm:"column:config_timezone;default:'UTC'"`
-	ConfigDefaultLanguage string    `gorm:"column:config_default_language;default:'en'"`
-	ConfigMetadata        string    `gorm:"column:config_metadata"` // JSON
-	MaxMessagesPerDay     int       `gorm:"column:limits_max_messages_per_day;default:10000"`
-	MaxChannels           int       `gorm:"column:limits_max_channels;default:5"`
-	MaxBots               int       `gorm:"column:limits_max_bots;default:10"`
-	RateLimitPerMinute    int       `gorm:"column:limits_rate_limit_per_minute;default:60"`
-	Enabled               bool      `gorm:"column:enabled;default:true"`
-	CreatedAt             time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt             time.Time `gorm:"column:updated_at;not null"`
+	ID                    string         `gorm:"primaryKey;column:id"`
+	Name                  string         `gorm:"column:name;not null"`
+	Description           sql.NullString `gorm:"column:description"`
+	OwnerID               string         `gorm:"column:owner_id;not null"`
+	ConfigTimezone        string         `gorm:"column:config_timezone;default:'UTC'"`
+	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:'en'"`
+	ConfigMetadata        sql.NullString `gorm:"column:config_metadata"` // JSON
+	MaxMessagesPerDay     int            `gorm:"column:limits_max_messages_per_day;default:10000"`
+	MaxChannels           int            `gorm:"column:limits_max_channels;default:5"`
+	MaxBots               int            `gorm:"column:limits_max_bots;default:10"`
+	RateLimitPerMinute    int            `gorm:"column:limits_rate_limit_per_minute;default:60"`
+	Enabled               bool           `gorm:"column:enabled;default:true"`
+	CreatedAt             time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at;not null"`
 }
 
 func (workspaceModel) TableName() string { return "workspaces" }
 
 type channelModel struct {
-	ID              string     `gorm:"primaryKey;column:id"`
-	WorkspaceID     string     `gorm:"column:workspace_id;not null;index"`
-	Type            string     `gorm:"column:type;not null"`
-	Name            string     `gorm:"column:name;not null"`
-	Enabled         bool       `gorm:"column:enabled;default:false"`
-	Config          string     `gorm:"column:config;type:text"` // JSON
-	Status          string     `gorm:"column:status;default:'pending'"`
-	ExternalRef     *string    `gorm:"column:external_ref;uniqueIndex"`
-	LastSeen        *time.Time `gorm:"column:last_seen"`
-	AccumulatedCost float64    `gorm:"column:accumulated_cost;default:0"`
-	CostBreakdown   string     `gorm:"column:cost_breakdown;default:'{}'"` // JSON
-	CreatedAt       time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt       time.Time  `gorm:"column:updated_at;not null"`
+	ID              string         `gorm:"primaryKey;column:id"`
+	WorkspaceID     string         `gorm:"column:workspace_id;not null;index"`
+	Type            string         `gorm:"column:type;not null"`
+	Name            string         `gorm:"column:name;not null"`
+	Enabled         bool           `gorm:"column:enabled;default:false"`
+	Config          sql.NullString `gorm:"column:config;type:text"` // JSON
+	Status          string         `gorm:"column:status;default:'pending'"`
+	ExternalRef     *string        `gorm:"column:external_ref;uniqueIndex"`
+	LastSeen        *time.Time     `gorm:"column:last_seen"`
+	AccumulatedCost float64        `gorm:"column:accumulated_cost;default:0"`
+	CostBreakdown   sql.NullString `gorm:"column:cost_breakdown;default:'{}'"` // JSON
+	CreatedAt       time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt       time.Time      `gorm:"column:updated_at;not null"`
 }
 
 func (channelModel) TableName() string { return "channels" }
@@ -55,7 +57,7 @@ type accessRuleModel struct {
 	ChannelID string `gorm:"column:channel_id;not null;index;uniqueIndex:idx_channel_identity"`
 	Identity  string `gorm:"not null;uniqueIndex:idx_channel_identity"`
 	Action    string `gorm:"not null"`
-	Label     string
+	Label     sql.NullString
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`
 }
@@ -63,21 +65,21 @@ type accessRuleModel struct {
 func (accessRuleModel) TableName() string { return "access_rules" }
 
 type scheduledPostModel struct {
-	ID             string `gorm:"primaryKey"`
-	ChannelID      string `gorm:"column:channel_id;not null;index"`
-	TargetID       string `gorm:"column:target_id;not null"`
-	SenderID       string `gorm:"column:sender_id"`
-	Text           string
-	MediaPath      string    `gorm:"column:media_path"`
-	MediaType      string    `gorm:"column:media_type"`
-	ScheduledAt    time.Time `gorm:"column:scheduled_at;not null;index"`
-	Status         string    `gorm:"default:'pending';index"`
-	Error          string
-	RecurrenceDays string    `gorm:"column:recurrence_days"`
-	OriginalTime   string    `gorm:"column:original_time"`
-	ExecutionCount int       `gorm:"column:execution_count;default:0"`
-	CreatedAt      time.Time `gorm:"not null"`
-	UpdatedAt      time.Time `gorm:"not null"`
+	ID             string         `gorm:"primaryKey"`
+	ChannelID      string         `gorm:"column:channel_id;not null;index"`
+	TargetID       string         `gorm:"column:target_id;not null"`
+	SenderID       sql.NullString `gorm:"column:sender_id"`
+	Text           sql.NullString
+	MediaPath      sql.NullString `gorm:"column:media_path"`
+	MediaType      sql.NullString `gorm:"column:media_type"`
+	ScheduledAt    time.Time      `gorm:"column:scheduled_at;not null;index"`
+	Status         string         `gorm:"default:'pending';index"`
+	Error          sql.NullString
+	RecurrenceDays sql.NullString `gorm:"column:recurrence_days"`
+	OriginalTime   sql.NullString `gorm:"column:original_time"`
+	ExecutionCount int            `gorm:"column:execution_count;default:0"`
+	CreatedAt      time.Time      `gorm:"not null"`
+	UpdatedAt      time.Time      `gorm:"not null"`
 }
 
 func (scheduledPostModel) TableName() string { return "scheduled_posts" }
@@ -229,8 +231,9 @@ func (r *WorkspaceGormRepository) AddChannelComplexCost(ctx context.Context, cha
 		}
 
 		breakdown := make(map[string]float64)
-		if m.CostBreakdown != "" && m.CostBreakdown != "null" {
-			_ = json.Unmarshal([]byte(m.CostBreakdown), &breakdown)
+		configJSON := nullStringValue(m.CostBreakdown)
+		if configJSON != "" && configJSON != "null" {
+			_ = json.Unmarshal([]byte(configJSON), &breakdown)
 		}
 
 		for k, v := range details {
@@ -319,10 +322,10 @@ func toWorkspaceModel(ws workspace.Workspace) workspaceModel {
 	return workspaceModel{
 		ID:                 ws.ID,
 		Name:               ws.Name,
-		Description:        ws.Description,
+		Description:        sql.NullString{String: ws.Description, Valid: ws.Description != ""},
 		OwnerID:            ws.OwnerID,
 		ConfigTimezone:     ws.Config.Timezone,
-		ConfigMetadata:     string(metadata),
+		ConfigMetadata:     sql.NullString{String: string(metadata), Valid: true},
 		MaxMessagesPerDay:  ws.Limits.MaxMessagesPerDay,
 		MaxChannels:        ws.Limits.MaxChannels,
 		MaxBots:            ws.Limits.MaxBots,
@@ -335,11 +338,14 @@ func toWorkspaceModel(ws workspace.Workspace) workspaceModel {
 
 func fromWorkspaceModel(m workspaceModel) workspace.Workspace {
 	var metadata map[string]string
-	_ = json.Unmarshal([]byte(m.ConfigMetadata), &metadata)
+	configJSON := nullStringValue(m.ConfigMetadata)
+	if configJSON != "" {
+		_ = json.Unmarshal([]byte(configJSON), &metadata)
+	}
 	return workspace.Workspace{
 		ID:          m.ID,
 		Name:        m.Name,
-		Description: m.Description,
+		Description: nullStringValue(m.Description),
 		OwnerID:     m.OwnerID,
 		Config: workspace.WorkspaceConfig{
 			Timezone: m.ConfigTimezone,
@@ -371,12 +377,12 @@ func toChannelModel(ch channel.Channel) channelModel {
 		Type:            string(ch.Type),
 		Name:            ch.Name,
 		Enabled:         ch.Enabled,
-		Config:          string(config),
+		Config:          sql.NullString{String: string(config), Valid: true},
 		Status:          string(ch.Status),
 		ExternalRef:     extRef,
 		LastSeen:        ch.LastSeen,
 		AccumulatedCost: ch.AccumulatedCost,
-		CostBreakdown:   string(breakdown),
+		CostBreakdown:   sql.NullString{String: string(breakdown), Valid: true},
 		CreatedAt:       ch.CreatedAt,
 		UpdatedAt:       ch.UpdatedAt,
 	}
@@ -384,9 +390,15 @@ func toChannelModel(ch channel.Channel) channelModel {
 
 func fromChannelModel(m channelModel) channel.Channel {
 	var config channel.ChannelConfig
-	_ = json.Unmarshal([]byte(m.Config), &config)
+	configJSON := nullStringValue(m.Config)
+	if configJSON != "" {
+		_ = json.Unmarshal([]byte(configJSON), &config)
+	}
 	var breakdown map[string]float64
-	_ = json.Unmarshal([]byte(m.CostBreakdown), &breakdown)
+	breakdownJSON := nullStringValue(m.CostBreakdown)
+	if breakdownJSON != "" {
+		_ = json.Unmarshal([]byte(breakdownJSON), &breakdown)
+	}
 	var extRef string
 	if m.ExternalRef != nil {
 		extRef = *m.ExternalRef
@@ -414,7 +426,7 @@ func toAccessRuleModel(r common.AccessRule) accessRuleModel {
 		ChannelID: r.ChannelID,
 		Identity:  r.Identity,
 		Action:    string(r.Action),
-		Label:     r.Label,
+		Label:     sql.NullString{String: r.Label, Valid: r.Label != ""},
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 	}
@@ -426,7 +438,7 @@ func fromAccessRuleModel(m accessRuleModel) common.AccessRule {
 		ChannelID: m.ChannelID,
 		Identity:  m.Identity,
 		Action:    common.AccessAction(m.Action),
-		Label:     m.Label,
+		Label:     nullStringValue(m.Label),
 		CreatedAt: m.CreatedAt,
 		UpdatedAt: m.UpdatedAt,
 	}
@@ -437,15 +449,15 @@ func toScheduledPostModel(p common.ScheduledPost) scheduledPostModel {
 		ID:             p.ID,
 		ChannelID:      p.ChannelID,
 		TargetID:       p.TargetID,
-		SenderID:       p.SenderID,
-		Text:           p.Text,
-		MediaPath:      p.MediaPath,
-		MediaType:      string(p.MediaType),
+		SenderID:       sql.NullString{String: p.SenderID, Valid: p.SenderID != ""},
+		Text:           sql.NullString{String: p.Text, Valid: p.Text != ""},
+		MediaPath:      sql.NullString{String: p.MediaPath, Valid: p.MediaPath != ""},
+		MediaType:      sql.NullString{String: string(p.MediaType), Valid: p.MediaType != ""},
 		ScheduledAt:    p.ScheduledAt,
 		Status:         string(p.Status),
-		Error:          p.Error,
-		RecurrenceDays: p.RecurrenceDays,
-		OriginalTime:   p.OriginalTime,
+		Error:          sql.NullString{String: p.Error, Valid: p.Error != ""},
+		RecurrenceDays: sql.NullString{String: p.RecurrenceDays, Valid: p.RecurrenceDays != ""},
+		OriginalTime:   sql.NullString{String: p.OriginalTime, Valid: p.OriginalTime != ""},
 		ExecutionCount: p.ExecutionCount,
 		CreatedAt:      p.CreatedAt,
 		UpdatedAt:      p.UpdatedAt,
@@ -457,17 +469,25 @@ func fromScheduledPostModel(m scheduledPostModel) common.ScheduledPost {
 		ID:             m.ID,
 		ChannelID:      m.ChannelID,
 		TargetID:       m.TargetID,
-		SenderID:       m.SenderID,
-		Text:           m.Text,
-		MediaPath:      m.MediaPath,
-		MediaType:      common.MediaType(m.MediaType),
+		SenderID:       nullStringValue(m.SenderID),
+		Text:           nullStringValue(m.Text),
+		MediaPath:      nullStringValue(m.MediaPath),
+		MediaType:      common.MediaType(nullStringValue(m.MediaType)),
 		ScheduledAt:    m.ScheduledAt,
 		Status:         common.ScheduledPostStatus(m.Status),
-		Error:          m.Error,
-		RecurrenceDays: m.RecurrenceDays,
-		OriginalTime:   m.OriginalTime,
+		Error:          nullStringValue(m.Error),
+		RecurrenceDays: nullStringValue(m.RecurrenceDays),
+		OriginalTime:   nullStringValue(m.OriginalTime),
 		ExecutionCount: m.ExecutionCount,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 	}
+}
+
+// nullStringValue returns a trimmed string or empty if null to prevent legacy data panics.
+func nullStringValue(ns sql.NullString) string {
+	if !ns.Valid {
+		return ""
+	}
+	return strings.TrimSpace(ns.String)
 }
