@@ -25,6 +25,7 @@ import {
   Video,
   FileText,
   Brain,
+  ShieldCheck,
 } from 'lucide-vue-next'
 
 const api = useApi()
@@ -92,6 +93,8 @@ const newBot = ref({
 // MCP Per Bot
 const botMCPServers = ref<any[]>([])
 const loadingBotMCPs = ref(false)
+const testingConnection = ref<Record<string, 'idle' | 'loading' | 'success' | 'error'>>({})
+const connectionMessages = ref<Record<string, string>>({})
 const expandedServers = ref<string[]>([])
 
 // Confirmation State
@@ -153,6 +156,15 @@ async function loadBotMCPs(botId: string) {
           if (!headersMap[k]) headersMap[k] = ''
         })
       }
+
+      // Logic: Auto-expand if it's a template and missing required headers
+      const needsConfig = srv.is_template && srv.template_config && 
+                         Object.keys(srv.template_config).some(k => !headersMap[k] || headersMap[k].trim() === '');
+      
+      if (needsConfig && !expandedServers.value.includes(srv.id)) {
+        expandedServers.value.push(srv.id)
+      }
+
       return { 
         ...srv, 
         headersMap,
@@ -169,22 +181,63 @@ async function loadBotMCPs(botId: string) {
 
 async function saveMCPPreference(server: any) {
   if (!editingBot.value) return
-  try {
+  const payload = {
+    enabled: server.enabled,
+    disabled_tools: server.disabled_tools || [],
+    custom_headers: server.headersMap,
+    instructions: server.botInstructions || ''
+  }
+  await api.put(`/bots/${editingBot.value.id}/mcp/${server.id}`, payload)
+}
+
+async function saveAllMCPPreferences(botId: string) {
+  const promises = botMCPServers.value.map(srv => {
     const payload = {
-      enabled: server.enabled,
-      disabled_tools: server.disabled_tools || [],
-      custom_headers: server.headersMap,
-      instructions: server.botInstructions || ''
+      enabled: srv.enabled,
+      disabled_tools: srv.disabled_tools || [],
+      custom_headers: srv.headersMap,
+      instructions: srv.botInstructions || ''
     }
-    await api.put(`/bots/${editingBot.value.id}/mcp/${server.id}`, payload)
+    return api.put(`/bots/${botId}/mcp/${srv.id}`, payload)
+  })
+  await Promise.all(promises)
+}
+
+async function testMCPConnection(server: any) {
+  if (!editingBot.value) return
+  testingConnection.value[server.id] = 'loading'
+  connectionMessages.value[server.id] = ''
+  
+  try {
+    // 1. Save preferences first to ensure API has latest context
+    await saveMCPPreference(server)
+    
+    // 2. Trigger health check via unified health endpoint
+    const res = await api.post(`/api/health/mcp/${server.id}/check`, {})
+    
+    if (res.results?.status === 'OK') {
+       testingConnection.value[server.id] = 'success'
+       connectionMessages.value[server.id] = 'Bridge verified and protocol synced.'
+    } else {
+       testingConnection.value[server.id] = 'error'
+       connectionMessages.value[server.id] = res.results?.last_message || 'MCP refused connection'
+    }
   } catch (err) {
-    alert('Failed to update MCP preferences.')
+    testingConnection.value[server.id] = 'error'
+    connectionMessages.value[server.id] = 'Failed to resolve MCP network bridge.'
+  } finally {
+    // Keep the success/error state for a few seconds before resetting to idle if needed
+    // or just leave it until the user interacts again.
+    setTimeout(() => {
+        if (testingConnection.value[server.id] === 'success') {
+            testingConnection.value[server.id] = 'idle'
+        }
+    }, 5000)
   }
 }
 
-async function toggleMCPForBot(server: any) {
+function toggleMCPForBot(server: any) {
   server.enabled = !server.enabled
-  await saveMCPPreference(server)
 }
 
 function toggleServerExpansion(id: string) {
@@ -199,7 +252,7 @@ function isToolDisabled(srv: any, toolName: string) {
   return srv.disabled_tools?.includes(toolName)
 }
 
-async function toggleToolForBot(srv: any, toolName: string) {
+function toggleToolForBot(srv: any, toolName: string) {
   let disabled = [...(srv.disabled_tools || [])]
   if (disabled.includes(toolName)) {
     disabled = disabled.filter(t => t !== toolName)
@@ -207,7 +260,6 @@ async function toggleToolForBot(srv: any, toolName: string) {
     disabled.push(toolName)
   }
   srv.disabled_tools = disabled
-  await saveMCPPreference(srv)
 }
 
 async function saveGlobalSettings() {
@@ -221,11 +273,18 @@ async function saveGlobalSettings() {
 
 async function createBot() {
   try {
+    let botId = editingBot.value?.id
     if (editingBot.value) {
       await api.put(`/bots/${editingBot.value.id}`, newBot.value)
     } else {
-      await api.post('/bots', newBot.value)
+      const res = await api.post('/bots', newBot.value)
+      botId = res?.results?.id
     }
+
+    if (botId && botMCPServers.value.length > 0) {
+      await saveAllMCPPreferences(botId)
+    }
+
     showAddBot.value = false
     resetForm()
     await loadData()
@@ -338,7 +397,7 @@ onMounted(loadData)
           <Cpu class="w-4 h-4 text-primary" />
           <span class="section-title-premium py-0 border-none pl-0 text-primary">Automation Logic</span>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-xs font-bold uppercase tracking-[0.25em] text-slate-500">Identity Blueprints</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Identity Blueprints</span>
         </div>
         <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">AI Control Board</h2>
       </div>
@@ -571,23 +630,23 @@ onMounted(loadData)
                         <div class="section-title-premium text-primary/60 pt-10">Sensory Capabilities</div>
                         <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-primary transition-all">
-                                <span class="text-[9px] font-black uppercase text-slate-500">Memory</span>
+                                <span class="text-xs font-black uppercase text-slate-500">Memory</span>
                                 <input type="checkbox" v-model="newBot.memory_enabled" class="toggle toggle-primary toggle-xs" />
                             </label>
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-primary transition-all">
-                                <span class="text-[9px] font-black uppercase text-slate-500">Audio</span>
+                                <span class="text-xs font-black uppercase text-slate-500">Audio</span>
                                 <input type="checkbox" v-model="newBot.audio_enabled" class="toggle toggle-primary toggle-xs" />
                             </label>
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-primary transition-all">
-                                <span class="text-[9px] font-black uppercase text-slate-500">Vision</span>
+                                <span class="text-xs font-black uppercase text-slate-500">Vision</span>
                                 <input type="checkbox" v-model="newBot.image_enabled" class="toggle toggle-primary toggle-xs" />
                             </label>
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-indigo-400 transition-all">
-                                <span class="text-[9px] font-black uppercase text-slate-500">Video</span>
+                                <span class="text-xs font-black uppercase text-slate-500">Video</span>
                                 <input type="checkbox" v-model="newBot.video_enabled" class="toggle toggle-info toggle-xs" />
                             </label>
                             <label class="flex items-center justify-between p-4 bg-[#161a23] border border-white/5 rounded-2xl cursor-pointer hover:border-amber-400 transition-all">
-                                <span class="text-[9px] font-black uppercase text-slate-500">Docs</span>
+                                <span class="text-xs font-black uppercase text-slate-500">Docs</span>
                                 <input type="checkbox" v-model="newBot.document_enabled" class="toggle toggle-warning toggle-xs" />
                             </label>
                         </div>
@@ -652,25 +711,70 @@ onMounted(loadData)
                                              <Zap class="w-5 h-5" />
                                          </div>
                                          <div class="flex flex-col">
-                                             <h6 class="text-xs font-black text-white uppercase tracking-tight">{{ srv.name }}</h6>
-                                             <span class="text-[9px] font-mono text-slate-600 truncate max-w-[200px]">{{ srv.url }}</span>
+                                             <div class="flex items-center gap-2">
+                                                 <h6 class="text-xs font-black text-white uppercase tracking-tight">{{ srv.name }}</h6>
+                                                 <div v-if="srv.is_template" class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-xs font-black uppercase tracking-widest border border-amber-500/20">
+                                                     Template
+                                                 </div>
+                                             </div>
+                                             <span class="text-xs font-mono text-slate-600 truncate max-w-[200px]">{{ srv.url }}</span>
                                          </div>
                                     </div>
                                     <div class="flex items-center gap-4">
-                                         <button @click="toggleServerExpansion(srv.id)" class="btn-premium btn-premium-ghost btn-premium-sm px-4">
+                                         <button @click="toggleServerExpansion(srv.id)" 
+                                                 class="btn-premium btn-premium-ghost btn-premium-sm px-4"
+                                                 :class="{ 'bg-primary/20 text-primary border-primary/30': expandedServers.includes(srv.id) }">
                                              <Settings class="w-3 h-3" />
                                          </button>
                                          <input type="checkbox" :checked="srv.enabled" @change="toggleMCPForBot(srv)" class="toggle toggle-primary toggle-sm" />
                                     </div>
                                 </div>
 
-                                <div v-if="expandedServers.includes(srv.id) || srv.enabled" class="px-6 pb-8 border-t border-white/5 pt-6 space-y-6">
+                                <div v-if="expandedServers.includes(srv.id)" class="px-6 pb-8 border-t border-white/5 pt-6 space-y-6">
                                     <div class="form-control">
                                         <label class="label-premium opacity-50">Local Instructions</label>
                                         <textarea v-model="srv.botInstructions" rows="2" class="input-premium w-full text-xs" placeholder="Guidelines for this bot..."></textarea>
-                                        <div class="flex justify-end mt-2">
-                                            <button @click="saveMCPPreference(srv)" class="text-[9px] font-black uppercase text-success tracking-widest hover:underline">Update strategy</button>
+                                    </div>
+
+                                    <!-- Required Header Configuration for Templates -->
+                                    <div v-if="srv.is_template && srv.template_config && Object.keys(srv.template_config).length" class="space-y-6 p-8 bg-amber-500/5 rounded-[2rem] border border-amber-500/10 shadow-xl">
+                                        <div class="flex items-center gap-3 mb-2">
+                                            <ShieldCheck class="w-4 h-4 text-amber-500" />
+                                            <h5 class="text-xs font-black text-amber-500 uppercase tracking-widest">Required Configuration (Bot Specific)</h5>
                                         </div>
+                                        
+                                        <div class="grid grid-cols-1 gap-5">
+                                            <div v-for="(help, key) in srv.template_config" :key="key" class="form-control">
+                                                <label class="text-xs font-bold text-amber-500/50 uppercase ml-1 mb-2">{{ key }}</label>
+                                                <input v-model="srv.headersMap[key]" type="text" 
+                                                       class="input-premium h-14 w-full bg-black/40 border-amber-500/10 text-xs text-white" 
+                                                       :placeholder="help" />
+                                            </div>
+                                        </div>
+                                        
+                                         <div class="flex flex-col items-end gap-3 pt-2">
+                                             <div v-if="connectionMessages[srv.id] && testingConnection[srv.id] === 'error'" 
+                                                  class="text-xs font-bold uppercase tracking-widest text-error">
+                                                 {{ connectionMessages[srv.id] }}
+                                             </div>
+                                             <div class="flex items-center gap-4">
+                                                 <span class="text-xs font-bold text-slate-600 uppercase tracking-widest italic pr-2">Configurations will be saved with the blueprint</span>
+                                                 <button @click="testMCPConnection(srv)" 
+                                                         class="btn-premium btn-premium-ghost btn-premium-sm border-amber-500/20 px-6 transition-all"
+                                                         :class="{
+                                                            'text-amber-500 hover:bg-amber-500/10': testingConnection[srv.id] === 'idle' || !testingConnection[srv.id],
+                                                            'text-success border-success/40 bg-success/5': testingConnection[srv.id] === 'success',
+                                                            'text-error border-error/40 bg-error/5': testingConnection[srv.id] === 'error',
+                                                            'opacity-50 cursor-wait': testingConnection[srv.id] === 'loading'
+                                                         }"
+                                                         :disabled="testingConnection[srv.id] === 'loading'">
+                                                     <span v-if="testingConnection[srv.id] === 'loading'" class="loading loading-spinner loading-xs mr-2"></span>
+                                                     <CheckCircle2 v-else-if="testingConnection[srv.id] === 'success'" class="w-3 h-3 mr-2" />
+                                                     <Activity v-else class="w-3 h-3 mr-2" />
+                                                     {{ testingConnection[srv.id] === 'success' ? 'Verified' : testingConnection[srv.id] === 'error' ? 'Retry Test' : 'Test Configuration' }}
+                                                 </button>
+                                             </div>
+                                         </div>
                                     </div>
 
                                     <div v-if="srv.tools && srv.tools.length" class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -679,8 +783,8 @@ onMounted(loadData)
                                              class="flex items-center justify-between p-4 bg-black/20 border border-white/5 rounded-2xl cursor-pointer hover:bg-black/40 transition-all"
                                              :class="{ 'opacity-40 grayscale': isToolDisabled(srv, tool.name) }">
                                             <div class="flex items-center gap-3">
-                                                <Wrench class="w-3.5 h-3.5 text-primary" />
-                                                <span class="text-[10px] font-black text-white uppercase">{{ tool.name }}</span>
+                                                <Zap class="w-3 h-3 text-primary" />
+                                                <span class="text-xs font-black text-white uppercase">{{ tool.name }}</span>
                                             </div>
                                             <div class="w-5 h-5 rounded-lg flex items-center justify-center border border-white/10"
                                                  :class="!isToolDisabled(srv, tool.name) ? 'bg-primary text-white' : 'bg-transparent text-transparent'">
