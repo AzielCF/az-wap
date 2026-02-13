@@ -27,11 +27,11 @@ type Bot struct {
 	SystemPrompt  string `json:"system_prompt,omitempty"`
 	KnowledgeBase string `json:"knowledge_base,omitempty"`
 
-	AudioEnabled    bool   `json:"audio_enabled,omitempty"`
-	ImageEnabled    bool   `json:"image_enabled,omitempty"`
-	VideoEnabled    bool   `json:"video_enabled,omitempty"`
-	DocumentEnabled bool   `json:"document_enabled,omitempty"`
-	MemoryEnabled   bool   `json:"memory_enabled,omitempty"`
+	AudioEnabled    bool   `json:"audio_enabled"`
+	ImageEnabled    bool   `json:"image_enabled"`
+	VideoEnabled    bool   `json:"video_enabled"`
+	DocumentEnabled bool   `json:"document_enabled"`
+	MemoryEnabled   bool   `json:"memory_enabled"`
 	MindsetModel    string `json:"mindset_model,omitempty"`
 	MultimodalModel string `json:"multimodal_model,omitempty"`
 	CredentialID    string `json:"credential_id,omitempty"`

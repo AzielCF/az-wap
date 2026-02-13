@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
@@ -231,7 +232,28 @@ func (s *mcpService) ToggleServerForBot(ctx context.Context, botID, serverID str
 }
 
 func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, cfg domainMCP.BotMCPConfig) error {
+	// Optimization: Skip validation if headers haven't changed and it was already enabled
+	doValidate := false
 	if cfg.Enabled {
+		existing, err := s.repo.GetBotMCPConfig(ctx, cfg.BotID, cfg.ServerID)
+		if err != nil || !existing.Enabled {
+			// If it wasn't enabled or we can't find it, we MUST validate
+			doValidate = true
+		} else {
+			// Compare custom headers
+			var bc domainMCP.BotMCPConfigJSON
+			if err := json.Unmarshal([]byte(existing.ConfigJSON), &bc); err == nil {
+				decHeaders := s.decryptMap(bc.CustomHeaders)
+				if !reflect.DeepEqual(decHeaders, cfg.CustomHeaders) {
+					doValidate = true
+				}
+			} else {
+				doValidate = true
+			}
+		}
+	}
+
+	if doValidate {
 		srv, err := s.GetServer(ctx, cfg.ServerID)
 		if err == nil {
 			if srv.Headers == nil {
