@@ -101,6 +101,7 @@ func (h *ClientHandler) CreateClient(c *fiber.Ctx) error {
 		Timezone:     req.Timezone,
 		Country:      req.Country,
 		AllowedBots:  req.AllowedBots,
+		IsTester:     req.IsTester,
 	}
 
 	if err := h.clientService.Create(c.Context(), client); err != nil {
@@ -181,6 +182,9 @@ func (h *ClientHandler) UpdateClient(c *fiber.Ctx) error {
 	}
 	if req.AllowedBots != nil {
 		client.AllowedBots = req.AllowedBots
+	}
+	if req.IsTester != nil {
+		client.IsTester = *req.IsTester
 	}
 
 	if err := h.clientService.Update(c.Context(), client); err != nil {

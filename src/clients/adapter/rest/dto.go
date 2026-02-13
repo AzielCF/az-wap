@@ -19,6 +19,7 @@ type CreateClientRequest struct {
 	Timezone     string         `json:"timezone"`
 	Country      string         `json:"country"`
 	AllowedBots  []string       `json:"allowed_bots"`
+	IsTester     bool           `json:"is_tester"`
 }
 
 // UpdateClientRequest representa la petición para actualizar un cliente
@@ -35,6 +36,7 @@ type UpdateClientRequest struct {
 	Timezone    *string        `json:"timezone"`
 	Country     *string        `json:"country"`
 	AllowedBots []string       `json:"allowed_bots"`
+	IsTester    *bool          `json:"is_tester"`
 }
 
 // CreateSubscriptionRequest representa la petición para crear una suscripción

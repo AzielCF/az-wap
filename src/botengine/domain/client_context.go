@@ -31,6 +31,7 @@ type ClientContext struct {
 
 	// Override de suscripción
 	CustomSystemPrompt string `json:"custom_system_prompt,omitempty"`
+	IsTester           bool   `json:"is_tester"`
 }
 
 // ForPrompt generates text to inject into the bot's system prompt.

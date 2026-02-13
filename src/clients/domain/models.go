@@ -43,6 +43,7 @@ type Client struct {
 	SessionTimeout        int            `json:"session_timeout,omitempty"`         // Minutos (Override)
 	InactivityWarningTime int            `json:"inactivity_warning_time,omitempty"` // Minutos (Override)
 	Enabled               bool           `json:"enabled"`
+	IsTester              bool           `json:"is_tester"` // If true, logs are NOT redacted (full audit)
 	LastInteraction       *time.Time     `json:"last_interaction,omitempty"`
 	CreatedAt             time.Time      `json:"created_at"`
 	UpdatedAt             time.Time      `json:"updated_at"`

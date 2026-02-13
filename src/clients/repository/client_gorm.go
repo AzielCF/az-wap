@@ -33,6 +33,7 @@ type clientModel struct {
 	SessionTimeout        int            `gorm:"default:0"`
 	InactivityWarningTime int            `gorm:"default:0"`
 	Enabled               bool           `gorm:"default:true"`
+	IsTester              bool           `gorm:"default:false"`
 	LastInteraction       *time.Time     `gorm:"column:last_interaction"`
 	CreatedAt             time.Time      `gorm:"not null"`
 	UpdatedAt             time.Time      `gorm:"not null"`
@@ -349,6 +350,7 @@ func toClientModel(c *domain.Client) (clientModel, error) {
 		SessionTimeout:        c.SessionTimeout,
 		InactivityWarningTime: c.InactivityWarningTime,
 		Enabled:               c.Enabled,
+		IsTester:              c.IsTester,
 		LastInteraction:       c.LastInteraction,
 		CreatedAt:             c.CreatedAt,
 		UpdatedAt:             c.UpdatedAt,
@@ -371,6 +373,7 @@ func fromClientModel(m clientModel) (*domain.Client, error) {
 		SessionTimeout:        m.SessionTimeout,
 		InactivityWarningTime: m.InactivityWarningTime,
 		Enabled:               m.Enabled,
+		IsTester:              m.IsTester,
 		LastInteraction:       m.LastInteraction,
 		CreatedAt:             m.CreatedAt,
 		UpdatedAt:             m.UpdatedAt,
