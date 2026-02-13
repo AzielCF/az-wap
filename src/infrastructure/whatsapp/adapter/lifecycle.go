@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/sirupsen/logrus"
@@ -80,7 +80,7 @@ func (wa *WhatsAppAdapter) Start(ctx context.Context, config channel.ChannelConf
 	}
 
 	dbPath := fmt.Sprintf("storages/whatsapp-%s.db?_foreign_keys=on", dbKey)
-	dbLog := waLog.Stdout("DB-"+dbKey[:8], globalConfig.WhatsappLogLevel, true)
+	dbLog := waLog.Stdout("DB-"+dbKey[:8], coreconfig.Global.Whatsapp.LogLevel, true)
 
 	container, err := sqlstore.New(ctx, "sqlite3", "file:"+dbPath, dbLog)
 	if err != nil {
@@ -114,7 +114,7 @@ func (wa *WhatsAppAdapter) Start(ctx context.Context, config channel.ChannelConf
 	store.DeviceProps.PlatformType = &chromePlatform
 	store.DeviceProps.Os = &osName
 
-	clientLog := waLog.Stdout("Client-"+wa.channelID[:8], globalConfig.WhatsappLogLevel, true)
+	clientLog := waLog.Stdout("Client-"+wa.channelID[:8], coreconfig.Global.Whatsapp.LogLevel, true)
 	wa.client = whatsmeow.NewClient(device, whatsapp.NewFilteredLogger(clientLog))
 	wa.client.EnableAutoReconnect = config.AutoReconnect
 	wa.client.AutoTrustIdentity = true

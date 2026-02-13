@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	waUtils "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter/utils"
 	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
@@ -121,7 +121,7 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 			ctx := context.Background()
 			maxSize := wa.config.MaxDownloadSize
 			if maxSize <= 0 {
-				maxSize = globalConfig.WhatsappSettingMaxDownloadSize
+				maxSize = coreconfig.Global.Whatsapp.MaxDownloadSize
 			}
 			payload, err := waUtils.CreateMessagePayload(ctx, v, wa.client, wa.workspaceID, wa.channelID, maxSize)
 			if err == nil {
@@ -277,7 +277,7 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 				// Check size limit
 				maxSize := conf.MaxDownloadSize
 				if maxSize <= 0 {
-					maxSize = globalConfig.WhatsappSettingMaxDownloadSize
+					maxSize = coreconfig.Global.Whatsapp.MaxDownloadSize
 				}
 
 				if fileSize > maxSize {
