@@ -117,15 +117,22 @@ onMounted(async () => {
     <!-- Sidebar -->
     <div class="drawer-side z-30 shadow-2xl">
       <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-      <div class="menu p-0 w-72 min-h-full bg-[#161a23] text-slate-300 border-r border-white/5">
-        <!-- Logo Area -->
-        <div class="px-8 py-10 mb-2 border-b border-white/5 flex flex-col items-center">
-           <img src="/src/assets/azwap.svg" class="w-full max-w-[140px] h-auto object-contain" alt="Az-Wap Enterprise" />
-           <div class="badge badge-primary badge-xs font-bold px-3 py-1 mt-4 text-xs tracking-widest uppercase shadow-lg border-none opacity-80 h-auto">AI WhatsApp Engine {{ appVersion }}</div>
+      <div class="w-72 h-screen bg-[#161a23] text-slate-300 border-r border-white/5 flex flex-col">
+        <!-- Logo Area (Fixed Top) -->
+        <div class="px-8 pt-10 pb-6 border-b border-white/5 flex flex-col items-center gap-3 shrink-0">
+           <img src="/src/assets/azwap.svg" class="w-full max-w-[130px] h-auto object-contain" alt="Az-Wap Enterprise" />
+           <div class="flex flex-col items-center gap-1.5">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-widest opacity-80">Enterprise Engine</span>
+              <div class="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-2 shadow-inner">
+                  <div class="w-1 h-1 rounded-full bg-primary animate-pulse shadow-[0_0_6px_rgba(var(--p),0.6)]"></div>
+                  <span class="text-xs font-black text-slate-400 tracking-widest">{{ appVersion }}</span>
+              </div>
+           </div>
         </div>
 
-        <!-- Navigation -->
-        <ul class="px-4 gap-1.5 mt-4">
+        <!-- Navigation (Scrollable Center) -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar py-6">
+            <ul class="flex flex-col gap-2 px-4 w-full">
           <li>
             <RouterLink to="/" class="py-3.5 px-5 rounded-lg flex items-center gap-4 transition-all hover:bg-white/5 text-xs font-bold uppercase tracking-wider" active-class="bg-primary text-white shadow-xl shadow-primary/20">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
@@ -182,10 +189,11 @@ onMounted(async () => {
               <span>Settings</span>
             </RouterLink>
           </li>
-        </ul>
+            </ul>
+        </div>
 
-        <!-- Bottom Cluster Node Info -->
-        <div class="mt-auto p-8 bg-black/30 border-t border-white/5">
+        <!-- Bottom Cluster Node Info (Fixed Bottom) -->
+        <div class="p-8 bg-black/30 border-t border-white/5 shrink-0">
           <div class="flex items-center gap-4">
             <div class="bg-primary/20 text-primary rounded-lg w-10 h-10 flex items-center justify-center ring-1 ring-primary/30 shadow-inner">
                  <span class="text-xs font-bold uppercase tracking-widest">AZL</span>
