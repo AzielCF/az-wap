@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/ui/rest/middleware"
 	"github.com/AzielCF/az-wap/ui/websocket"
@@ -38,7 +38,7 @@ func init() {
 func restServer(_ *cobra.Command, _ []string) {
 	fiberConfig := fiber.Config{
 		EnableTrustedProxyCheck: true,
-		BodyLimit:               int(globalConfig.WhatsappSettingMaxVideoSize),
+		BodyLimit:               int(coreconfig.Global.Whatsapp.MaxVideoSize),
 		Network:                 "tcp",
 		AppName:                 "Az-Wap Enterprise Engine",
 		DisableStartupMessage:   false, // Keep generic startup message
@@ -46,8 +46,8 @@ func restServer(_ *cobra.Command, _ []string) {
 	}
 
 	// Configure proxy settings if trusted proxies are specified
-	if len(globalConfig.AppTrustedProxies) > 0 {
-		fiberConfig.TrustedProxies = globalConfig.AppTrustedProxies
+	if len(coreconfig.Global.App.TrustedProxies) > 0 {
+		fiberConfig.TrustedProxies = coreconfig.Global.App.TrustedProxies
 		fiberConfig.ProxyHeader = fiber.HeaderXForwardedHost
 	}
 
@@ -58,9 +58,9 @@ func restServer(_ *cobra.Command, _ []string) {
 
 	// Security: Strict CORS
 	// In production, this should be restricted to the actual frontend domain.
-	origins := globalConfig.AppCorsAllowedOrigins
-	if !strings.Contains(origins, globalConfig.AppBaseUrl) {
-		origins += ", " + globalConfig.AppBaseUrl
+	origins := strings.Join(coreconfig.Global.App.CorsAllowedOrigins, ", ")
+	if !strings.Contains(origins, coreconfig.Global.App.BaseUrl) {
+		origins += ", " + coreconfig.Global.App.BaseUrl
 	}
 
 	app.Use(cors.New(cors.Config{
@@ -87,16 +87,16 @@ func restServer(_ *cobra.Command, _ []string) {
 		},
 	}))
 
-	if globalConfig.AppDebug {
+	if coreconfig.Global.App.Debug {
 		app.Use(logger.New())
 	}
 
-	if len(globalConfig.AppBasicAuthCredential) == 0 {
+	if len(coreconfig.Global.App.BasicAuth) == 0 {
 		logrus.Fatalln("APP_BASIC_AUTH is required. Nothing should be public; please set APP_BASIC_AUTH=<user>:<secret>[,<user2>:<secret2>] and restart.")
 	}
 
 	account := make(map[string]string)
-	for _, basicAuth := range globalConfig.AppBasicAuthCredential {
+	for _, basicAuth := range coreconfig.Global.App.BasicAuth {
 		ba := strings.Split(basicAuth, ":")
 		if len(ba) != 2 {
 			logrus.Fatalln("Basic auth is not valid, please this following format <user>:<secret>")
@@ -105,10 +105,10 @@ func restServer(_ *cobra.Command, _ []string) {
 	}
 
 	// System statics
-	app.Static(globalConfig.AppBasePath+"/statics", "./statics")
+	app.Static(coreconfig.Global.App.BasePath+"/statics", "./statics")
 
 	// Create API group
-	apiGroup := app.Group(globalConfig.AppBasePath + "/api")
+	apiGroup := app.Group(coreconfig.Global.App.BasePath + "/api")
 
 	// Apply BasicAuth ONLY to the API group
 	apiGroup.Use(basicauth.New(basicauth.Config{
@@ -146,7 +146,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
 	// rest.InitRestInstance(apiGroup, instanceUsecase, sendUsecase) // DEPRECATED
-	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase)
+	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
 	rest.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
@@ -175,7 +175,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	})
 
 	// Static assets from frontend/dist
-	app.Use(globalConfig.AppBasePath+"/", filesystem.New(filesystem.Config{
+	app.Use(coreconfig.Global.App.BasePath+"/", filesystem.New(filesystem.Config{
 		Root:       http.FS(EmbedFrontend),
 		PathPrefix: "frontend/dist",
 		Browse:     false,
@@ -183,7 +183,7 @@ func restServer(_ *cobra.Command, _ []string) {
 	}))
 
 	// SPA Fallback: Serve index.html for any unknown routes
-	app.Get(globalConfig.AppBasePath+"/*", func(c *fiber.Ctx) error {
+	app.Get(coreconfig.Global.App.BasePath+"/*", func(c *fiber.Ctx) error {
 		path := c.Path()
 		// Only serve index.html for non-API and non-static routes
 		// If it has a dot, it's a file that should have been caught by the filesystem middleware.
@@ -200,7 +200,7 @@ func restServer(_ *cobra.Command, _ []string) {
 		return c.Send(file)
 	})
 
-	if err := app.Listen(":" + globalConfig.AppPort); err != nil {
+	if err := app.Listen(":" + coreconfig.Global.App.Port); err != nil {
 		logrus.Fatalln("Failed to start: ", err.Error())
 	}
 }

@@ -20,12 +20,14 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"fmt"
 	"os"
-	"strings"
 	"time"
+
+	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
+	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 
 	"github.com/AzielCF/az-wap/botengine"
 	botUsecaseLayer "github.com/AzielCF/az-wap/botengine/application"
@@ -37,7 +39,7 @@ import (
 	botengineRepo "github.com/AzielCF/az-wap/botengine/repository"
 	botTools "github.com/AzielCF/az-wap/botengine/tools"
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
-	globalConfig "github.com/AzielCF/az-wap/config"
+
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
@@ -49,7 +51,6 @@ import (
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
-	botDomain "github.com/AzielCF/az-wap/botengine/domain"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	"github.com/AzielCF/az-wap/pkg/botmonitor"
@@ -66,11 +67,11 @@ import (
 	clientsRest "github.com/AzielCF/az-wap/clients/adapter/rest"
 	clientsApp "github.com/AzielCF/az-wap/clients/application"
 	clientsRepo "github.com/AzielCF/az-wap/clients/repository"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow"
 	// "go.mau.fi/whatsmeow/store/sqlstore"
 )
@@ -99,16 +100,14 @@ var (
 	botEngine *botengine.Engine
 
 	// Workspace
-	workspaceDB       *sql.DB
 	wkRepo            repository.IWorkspaceRepository
 	workspaceManager  *workspace.Manager
 	wkUsecase         *workspaceUsecaseLayer.WorkspaceUsecase
 	typingStore       channel.TypingStore
 	monitorStore      monitoring.MonitoringStore
-	contextCacheStore botDomain.ContextCacheStore
+	contextCacheStore botengineDomain.ContextCacheStore
 
 	// Clients Module
-	appDB          *sql.DB
 	clientService  *clientsApp.ClientService
 	subService     *clientsApp.SubscriptionService
 	clientResolver *clientsApp.ClientResolver
@@ -117,6 +116,9 @@ var (
 	// Shared Infra
 	vkClient *valkey.Client
 	serverID string
+
+	// Core Services
+	settingsSvc *coreSettings.SettingsService
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -127,302 +129,122 @@ you can send whatsapp over http api but your whatsapp account have to be multi d
 }
 
 func init() {
-	// Load environment variables first
-	utils.LoadConfig(".")
-
-	time.Local = time.UTC
-
-	rootCmd.CompletionOptions.DisableDefaultCmd = true
-
-	// Initialize flags first, before any subcommands are added
-	initFlags()
-
-	// Then initialize other components
-	cobra.OnInitialize(initEnvConfig, initApp)
+	// Config via coreconfig
+	cobra.OnInitialize(initApp)
 }
 
-// initEnvConfig loads configuration from environment variables
-func initEnvConfig() {
-	// Bind environment variables to viper keys
-	viper.BindEnv("app_port", "APP_PORT")
-	viper.BindEnv("app_debug", "APP_DEBUG")
-	viper.BindEnv("debug", "DEBUG")
-	viper.BindEnv("whatsapp_log_level", "WHATSAPP_LOG_LEVEL")
-	viper.BindEnv("db_uri", "DB_URI")
-	viper.BindEnv("db_keys_uri", "DB_KEYS_URI")
-
-	// Valkey settings
-	viper.BindEnv("valkey_enabled", "VALKEY_ENABLED")
-	viper.BindEnv("valkey_address", "VALKEY_ADDRESS")
-	viper.BindEnv("valkey_password", "VALKEY_PASSWORD")
-	viper.BindEnv("valkey_db", "VALKEY_DB")
-	viper.BindEnv("valkey_key_prefix", "VALKEY_KEY_PREFIX")
-
-	// If config already loaded variables via os.Getenv in init(), we sync them with viper if needed
-	// or just ensure viper doesn't overwrite them with empty defaults
-
-	// Application settings
-	if envPort := viper.GetString("app_port"); envPort != "" {
-		globalConfig.AppPort = envPort
-	}
-	if viper.IsSet("app_debug") {
-		globalConfig.AppDebug = viper.GetBool("app_debug")
-	} else if viper.IsSet("debug") {
-		globalConfig.AppDebug = viper.GetBool("debug")
-	}
-
-	if envLogLevel := viper.GetString("whatsapp_log_level"); envLogLevel != "" {
-		globalConfig.WhatsappLogLevel = strings.ToUpper(envLogLevel)
-	}
-	if envOs := viper.GetString("app_os"); envOs != "" {
-		globalConfig.AppOs = envOs
-	}
-	envBasicAuth := viper.GetString("app_basic_auth")
-	if envBasicAuth == "" {
-		envBasicAuth = os.Getenv("APP_BASIC_AUTH")
-	}
-	if envBasicAuth != "" {
-		credential := strings.Split(envBasicAuth, ",")
-		globalConfig.AppBasicAuthCredential = credential
-	}
-	if envBasePath := viper.GetString("app_base_path"); envBasePath != "" {
-		globalConfig.AppBasePath = envBasePath
-	}
-	if envTrustedProxies := viper.GetString("app_trusted_proxies"); envTrustedProxies != "" {
-		proxies := strings.Split(envTrustedProxies, ",")
-		globalConfig.AppTrustedProxies = proxies
-	}
-	if envBaseUrl := viper.GetString("app_base_url"); envBaseUrl != "" {
-		globalConfig.AppBaseUrl = envBaseUrl
-	}
-	if envCors := viper.GetString("app_cors_allowed_origins"); envCors != "" {
-		globalConfig.AppCorsAllowedOrigins = envCors
-	}
-
-	// Database settings
-	if envDBURI := viper.GetString("db_uri"); envDBURI != "" {
-		globalConfig.DBURI = envDBURI
-	}
-	if envDBKEYSURI := viper.GetString("db_keys_uri"); envDBKEYSURI != "" {
-		globalConfig.DBKeysURI = envDBKEYSURI
-	}
-
-	// WhatsApp settings
-	if envAutoReply := viper.GetString("whatsapp_auto_reply"); envAutoReply != "" {
-		trimmed := strings.TrimSpace(envAutoReply)
-		trimmed = strings.Trim(trimmed, "\"'")
-		if trimmed != "" && !strings.EqualFold(trimmed, "Auto reply message") {
-			globalConfig.WhatsappAutoReplyMessage = envAutoReply
-		}
-	}
-	if viper.IsSet("whatsapp_auto_mark_read") {
-		globalConfig.WhatsappAutoMarkRead = viper.GetBool("whatsapp_auto_mark_read")
-	}
-	if viper.IsSet("whatsapp_auto_download_media") {
-		globalConfig.WhatsappAutoDownloadMedia = viper.GetBool("whatsapp_auto_download_media")
-	}
-	if envWebhook := viper.GetString("whatsapp_webhook"); envWebhook != "" {
-		webhook := strings.Split(envWebhook, ",")
-		globalConfig.WhatsappWebhook = webhook
-	}
-	if envWebhookSecret := viper.GetString("whatsapp_webhook_secret"); envWebhookSecret != "" {
-		globalConfig.WhatsappWebhookSecret = envWebhookSecret
-	}
-	if viper.IsSet("whatsapp_webhook_insecure_skip_verify") {
-		globalConfig.WhatsappWebhookInsecureSkipVerify = viper.GetBool("whatsapp_webhook_insecure_skip_verify")
-	}
-	if viper.IsSet("whatsapp_account_validation") {
-		globalConfig.WhatsappAccountValidation = viper.GetBool("whatsapp_account_validation")
-	}
-
-	// Valkey settings sync
-	if viper.IsSet("valkey_enabled") {
-		globalConfig.ValkeyEnabled = viper.GetBool("valkey_enabled")
-	}
-	if v := viper.GetString("valkey_address"); v != "" {
-		globalConfig.ValkeyAddress = v
-	}
-	if v := viper.GetString("valkey_password"); v != "" {
-		globalConfig.ValkeyPassword = v
-	}
-	if viper.IsSet("valkey_db") {
-		globalConfig.ValkeyDB = viper.GetInt("valkey_db")
-	}
-	if v := viper.GetString("valkey_key_prefix"); v != "" {
-		globalConfig.ValkeyKeyPrefix = v
-	}
-}
-
-func initFlags() {
-	// Application flags
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.AppPort,
-		"port", "p",
-		globalConfig.AppPort,
-		"change port number with --port <number> | example: --port=8080",
-	)
-
-	rootCmd.PersistentFlags().BoolVarP(
-		&globalConfig.AppDebug,
-		"debug", "d",
-		globalConfig.AppDebug,
-		"hide or displaying log with --debug <true/false> | example: --debug=true",
-	)
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.AppOs,
-		"os", "",
-		globalConfig.AppOs,
-		`os name --os <string> | example: --os="Chrome"`,
-	)
-	rootCmd.PersistentFlags().StringSliceVarP(
-		&globalConfig.AppBasicAuthCredential,
-		"basic-auth", "b",
-		globalConfig.AppBasicAuthCredential,
-		"basic auth credential | -b=yourUsername:yourPassword",
-	)
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.AppBasePath,
-		"base-path", "",
-		globalConfig.AppBasePath,
-		`base path for subpath deployment --base-path <string> | example: --base-path="/gowa"`,
-	)
-	rootCmd.PersistentFlags().StringSliceVarP(
-		&globalConfig.AppTrustedProxies,
-		"trusted-proxies", "",
-		globalConfig.AppTrustedProxies,
-		`trusted proxy IP ranges for reverse proxy deployments --trusted-proxies <string> | example: --trusted-proxies="0.0.0.0/0" or --trusted-proxies="10.0.0.0/8,172.16.0.0/12"`,
-	)
-
-	// Database flags
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.DBURI,
-		"db-uri", "",
-		globalConfig.DBURI,
-		`the database uri to store the connection data database uri (by default, we'll use sqlite3 under storages/whatsapp.db). database uri --db-uri <string> | example: --db-uri="file:storages/whatsapp.db?_foreign_keys=on or postgres://user:password@localhost:5432/whatsapp"`,
-	)
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.DBKeysURI,
-		"db-keys-uri", "",
-		globalConfig.DBKeysURI,
-		`the database uri to store the keys database uri (by default, we'll use the same database uri). database uri --db-keys-uri <string> | example: --db-keys-uri="file::memory:?cache=shared&_foreign_keys=on"`,
-	)
-
-	// WhatsApp flags
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.WhatsappAutoReplyMessage,
-		"autoreply", "",
-		globalConfig.WhatsappAutoReplyMessage,
-		`auto reply when received message --autoreply <string> | example: --autoreply="Don't reply this message"`,
-	)
-	rootCmd.PersistentFlags().BoolVarP(
-		&globalConfig.WhatsappAutoMarkRead,
-		"auto-mark-read", "",
-		globalConfig.WhatsappAutoMarkRead,
-		`auto mark incoming messages as read --auto-mark-read <true/false> | example: --auto-mark-read=true`,
-	)
-	rootCmd.PersistentFlags().BoolVarP(
-		&globalConfig.WhatsappAutoDownloadMedia,
-		"auto-download-media", "",
-		globalConfig.WhatsappAutoDownloadMedia,
-		`auto download media from incoming messages --auto-download-media <true/false> | example: --auto-download-media=false`,
-	)
-	rootCmd.PersistentFlags().StringSliceVarP(
-		&globalConfig.WhatsappWebhook,
-		"webhook", "w",
-		globalConfig.WhatsappWebhook,
-		`forward event to webhook --webhook <string> | example: --webhook="https://yourcallback.com/callback"`,
-	)
-	rootCmd.PersistentFlags().StringVarP(
-		&globalConfig.WhatsappWebhookSecret,
-		"webhook-secret", "",
-		globalConfig.WhatsappWebhookSecret,
-		`secure webhook request --webhook-secret <string> | example: --webhook-secret="super-secret-key"`,
-	)
-	rootCmd.PersistentFlags().BoolVarP(
-		&globalConfig.WhatsappWebhookInsecureSkipVerify,
-		"webhook-insecure-skip-verify", "",
-		globalConfig.WhatsappWebhookInsecureSkipVerify,
-		`skip TLS certificate verification for webhooks (INSECURE - use only for development/self-signed certs) --webhook-insecure-skip-verify <true/false> | example: --webhook-insecure-skip-verify=true`,
-	)
-	rootCmd.PersistentFlags().BoolVarP(
-		&globalConfig.WhatsappAccountValidation,
-		"account-validation", "",
-		globalConfig.WhatsappAccountValidation,
-		`enable or disable account validation --account-validation <true/false> | example: --account-validation=true`,
-	)
-
-	// Message Worker Pool flags
-	rootCmd.PersistentFlags().IntVarP(
-		&globalConfig.MessageWorkerPoolSize,
-		"message-workers", "",
-		globalConfig.MessageWorkerPoolSize,
-		`number of concurrent message workers --message-workers <number> | example: --message-workers=30 (default: 20)`,
-	)
-	rootCmd.PersistentFlags().IntVarP(
-		&globalConfig.MessageWorkerQueueSize,
-		"message-queue-size", "",
-		globalConfig.MessageWorkerQueueSize,
-		`queue size per message worker --message-queue-size <number> | example: --message-queue-size=1500 (default: 1000)`,
-	)
-}
+// ... (imports remain)
 
 func initApp() {
+	var err error
+	ctx := context.Background()
+
+	// Load .env file if exists
+	if err := godotenv.Load(); err != nil {
+		logrus.Warn("[CORE] No .env file found or failed to load, relying on environment variables")
+	}
+
+	// --- CORE INITIALIZATION ---
+	// 1. Load Configuration
+	cfg, err := coreconfig.LoadConfig()
+	if err != nil {
+		logrus.WithError(err).Warn("[CORE] Failed to load core configuration, using defaults")
+		cfg = &coreconfig.Config{}
+	}
+
 	// Generate or Load a persistent unique ID for this server instance
-	serverID = utils.GetPersistentServerID(globalConfig.AppServerID, globalConfig.PathStorages)
+	serverID = utils.GetPersistentServerID(coreconfig.Global.App.ServerID, coreconfig.Global.Paths.Storages)
 
 	// Priority: Explicit WHATSAPP_LOG_LEVEL > APP_DEBUG logic
-	if globalConfig.AppDebug {
+	if coreconfig.Global.App.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
-		if globalConfig.WhatsappLogLevel == "" || globalConfig.WhatsappLogLevel == "ERROR" {
-			globalConfig.WhatsappLogLevel = "INFO" // For WhatsApp, INFO is enough for debug without being binary-heavy
+		if coreconfig.Global.Whatsapp.LogLevel == "" || coreconfig.Global.Whatsapp.LogLevel == "ERROR" {
+			coreconfig.Global.Whatsapp.LogLevel = "INFO" // For WhatsApp, INFO is enough for debug without being binary-heavy
 		}
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
 	}
 
 	// Set specific Level for WhatsApp if provided
-	if globalConfig.WhatsappLogLevel != "" {
+	if coreconfig.Global.Whatsapp.LogLevel != "" {
 		// This will be used when creating adapters
 	}
 
-	//preparing folder if not exist
-	err := utils.CreateFolder(globalConfig.PathSendItems, globalConfig.PathStorages)
+	// preparing folder if not exist
+	err = utils.CreateFolder(coreconfig.Global.Paths.SendItems, coreconfig.Global.Paths.Storages)
 	if err != nil {
 		logrus.Errorln(err)
 	}
 
-	ctx := context.Background()
-
-	// Workspace Initialization
-	workspaceDBPath := "storages/workspaces.db"
-	workspaceDB, err = sql.Open("sqlite3", fmt.Sprintf("file:%s?cache=shared&_journal_mode=WAL", workspaceDBPath))
+	// 2. Initialize Database (GORM)
+	gormDB, err := coreDB.NewDatabase(cfg)
 	if err != nil {
-		logrus.Fatalf("failed to open workspace db: %v", err)
+		logrus.Fatalf("[CORE] Failed to initialize database: %v", err)
 	}
 
-	wkRepo = repository.NewSQLiteRepository(workspaceDB)
+	// 3. Load Dynamic Settings (replacing settings.go init logic)
+	settingsSvc = coreSettings.NewSettingsService(gormDB)
+	if dynSettings, err := settingsSvc.GetDynamicSettings(ctx); err != nil {
+		logrus.WithError(err).Warn("[CORE] Failed to load dynamic settings from DB")
+	} else {
+		// Update Global Config from Dynamic Settings
+		if dynSettings.AIGlobalSystemPrompt != "" {
+			coreconfig.Global.AI.GlobalSystemPrompt = dynSettings.AIGlobalSystemPrompt
+		}
+		if dynSettings.AITimezone != "" {
+			coreconfig.Global.AI.Timezone = dynSettings.AITimezone
+		}
+		if dynSettings.AIDebounceMs != nil {
+			coreconfig.Global.AI.DebounceMs = *dynSettings.AIDebounceMs
+		}
+		if dynSettings.AIWaitContactIdleMs != nil {
+			coreconfig.Global.AI.WaitContactIdleMs = *dynSettings.AIWaitContactIdleMs
+		}
+		if dynSettings.AITypingEnabled != nil {
+			coreconfig.Global.AI.TypingEnabled = *dynSettings.AITypingEnabled
+		}
+		if dynSettings.WhatsappMaxDownloadSize != nil {
+			coreconfig.Global.Whatsapp.MaxDownloadSize = *dynSettings.WhatsappMaxDownloadSize
+		}
+
+		logrus.Info("[CORE] Dynamic settings loaded successfully")
+	}
+
+	// 3. Load Dynamic Settings (replacing settings.go init logic)
+	settingsSvc = coreSettings.NewSettingsService(gormDB)
+
+	// Workspace Initialization (Separate DB file, but using GORM for robust schema management)
+	workspaceDBPath := "storages/workspaces.db"
+
+	// Create a dedicated GORM connection for the workspaces database
+	wkGormDB, err := coreDB.NewDatabaseWithCustomPath(cfg, workspaceDBPath)
+	if err != nil {
+		logrus.Fatalf("failed to open workspace db via GORM: %v", err)
+	}
+
+	wkRepo = repository.NewWorkspaceGormRepository(wkGormDB)
 	if err := wkRepo.Init(ctx); err != nil {
 		logrus.Fatalf("failed to init workspace repo: %v", err)
 	}
 
 	// 1. Basic Usecases (No complex dependencies)
-	credentialUsecase = usecase.NewCredentialService()
+	credentialUsecase = usecase.NewCredentialService(gormDB)
 	botUsecase = botUsecaseLayer.NewBotService(credentialUsecase)
-	cacheUsecase = usecase.NewCacheService()
+	cacheUsecase = usecase.NewCacheService(settingsSvc)
 	cacheUsecase.StartBackgroundCleanup(ctx)
-	mcpUsecase = botUsecaseLayer.NewMCPService()
+	mcpUsecase = botUsecaseLayer.NewMCPService(gormDB)
 
 	// 2. Bot Engine Initialization (Needs BotUsecase, MCPUsecase)
 	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
 
 	// Initialize Shared Infrastrucutre (Valkey)
-	if globalConfig.ValkeyEnabled {
+	if coreconfig.Global.Database.ValkeyEnabled {
 		var vkErr error
 		vkClient, vkErr = valkey.NewClient(valkey.Config{
-			Address:        globalConfig.ValkeyAddress,
-			Password:       globalConfig.ValkeyPassword,
-			DB:             globalConfig.ValkeyDB,
-			KeyPrefix:      globalConfig.ValkeyKeyPrefix,
+			Address:        coreconfig.Global.Database.ValkeyAddress,
+			Password:       coreconfig.Global.Database.ValkeyPassword,
+			DB:             coreconfig.Global.Database.ValkeyDB,
+			KeyPrefix:      coreconfig.Global.Database.ValkeyKeyPrefix,
 			ConnectTimeout: 5 * time.Second,
 		})
 		if vkErr != nil {
@@ -446,21 +268,16 @@ func initApp() {
 	botEngine.RegisterProvider(string(domainBot.ProviderOpenAI), openaiProvider)
 	// botEngine.RegisterProvider(string(domainBot.ProviderClaude), geminiProvider)
 
-	// 2.1 Clients Module Initialization (Needed for Workspace Manager)
-	appDBPath := "storages/app.db"
-	appDB, err = sql.Open("sqlite3", fmt.Sprintf("file:%s?cache=shared&_journal_mode=WAL", appDBPath))
-	if err != nil {
-		logrus.Fatalf("failed to open app db: %v", err)
-	}
+	// 2.1 Clients Module Initialization (Using appDB from Core)
 
 	// Client Repository (app.db)
-	clientRepo := clientsRepo.NewSQLiteClientRepository(appDB)
+	clientRepo := clientsRepo.NewClientGormRepository(gormDB)
 	if err := clientRepo.InitSchema(ctx); err != nil {
 		logrus.Fatalf("failed to init client repo: %v", err)
 	}
 
-	// Subscription Repository (workspaces.db) - reuse workspaceDB opened earlier
-	subRepo := clientsRepo.NewSQLiteSubscriptionRepository(workspaceDB)
+	// Subscription Repository (Uses the separate workspaceDB)
+	subRepo := clientsRepo.NewSubscriptionGormRepository(wkGormDB)
 	if err := subRepo.InitSchema(ctx); err != nil {
 		logrus.Fatalf("failed to init subscription repo: %v", err)
 	}
@@ -499,10 +316,10 @@ func initApp() {
 
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED
-	appUsecase = usecase.NewAppService(workspaceManager)
+	appUsecase = usecase.NewAppService(workspaceManager, settingsSvc)
 	userUsecase = usecase.NewUserService(workspaceManager)
 	groupUsecase = usecase.NewGroupService(workspaceManager)
-	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, monitorStore, vkClient)
+	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, subRepo, monitorStore, vkClient)
 	sendUsecase = usecase.NewSendService(appUsecase, workspaceManager)
 	messageUsecase = usecase.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)
@@ -523,6 +340,9 @@ func initApp() {
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
 	uiRest.SetBotEngine(botEngine, workspaceManager)
+
+	// Initialize Integrations
+	chatwoot.SetRepositories(wkRepo, gormDB)
 
 	// Hooks (Bot Engine depends on wkRepo)
 	botEngine.RegisterPostReplyHook(func(ctx context.Context, b domainBot.Bot, input botengineDomain.BotInput, output botengineDomain.BotOutput) {

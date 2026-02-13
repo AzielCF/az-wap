@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/ui/mcp"
 	"github.com/AzielCF/az-wap/ui/rest/helpers"
 	"github.com/mark3labs/mcp-go/server"
@@ -23,13 +23,21 @@ var mcpCmd = &cobra.Command{
 	Run:   mcpServer,
 }
 
+var (
+	mcpPort string
+	mcpHost string
+)
+
 func init() {
 	rootCmd.AddCommand(mcpCmd)
-	mcpCmd.Flags().StringVar(&globalConfig.McpPort, "port", "8080", "Port for the SSE MCP server")
-	mcpCmd.Flags().StringVar(&globalConfig.McpHost, "host", "localhost", "Host for the SSE MCP server")
+	mcpCmd.Flags().StringVar(&mcpPort, "port", "8080", "Port for the SSE MCP server")
+	mcpCmd.Flags().StringVar(&mcpHost, "host", "localhost", "Host for the SSE MCP server")
 }
 
 func mcpServer(_ *cobra.Command, _ []string) {
+	// Sync flags to global config
+	coreconfig.Global.MCP.Port = mcpPort
+	coreconfig.Global.MCP.Host = mcpHost
 	// Set auto reconnect to whatsapp server after booting
 	go helpers.SetAutoConnectAfterBooting(appUsecase)
 
@@ -39,7 +47,7 @@ func mcpServer(_ *cobra.Command, _ []string) {
 	// Create MCP server with capabilities
 	mcpServer := server.NewMCPServer(
 		"WhatsApp Web Multidevice MCP Server",
-		globalConfig.AppVersion,
+		coreconfig.Global.App.Version,
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(true, true),
 	)
@@ -60,15 +68,15 @@ func mcpServer(_ *cobra.Command, _ []string) {
 	// Create SSE server
 	sseServer := server.NewSSEServer(
 		mcpServer,
-		server.WithBaseURL(fmt.Sprintf("http://%s:%s", globalConfig.McpHost, globalConfig.McpPort)),
+		server.WithBaseURL(fmt.Sprintf("http://%s:%s", coreconfig.Global.MCP.Host, coreconfig.Global.MCP.Port)),
 		server.WithKeepAlive(true),
 	)
 
 	// Start the SSE server
-	addr := fmt.Sprintf("%s:%s", globalConfig.McpHost, globalConfig.McpPort)
+	addr := fmt.Sprintf("%s:%s", coreconfig.Global.MCP.Host, coreconfig.Global.MCP.Port)
 	logrus.Printf("Starting WhatsApp MCP SSE server on %s", addr)
-	logrus.Printf("SSE endpoint: http://%s:%s/sse", globalConfig.McpHost, globalConfig.McpPort)
-	logrus.Printf("Message endpoint: http://%s:%s/message", globalConfig.McpHost, globalConfig.McpPort)
+	logrus.Printf("SSE endpoint: http://%s:%s/sse", coreconfig.Global.MCP.Host, coreconfig.Global.MCP.Port)
+	logrus.Printf("Message endpoint: http://%s:%s/message", coreconfig.Global.MCP.Host, coreconfig.Global.MCP.Port)
 
 	// Graceful shutdown handler
 	sigChan := make(chan os.Signal, 1)
