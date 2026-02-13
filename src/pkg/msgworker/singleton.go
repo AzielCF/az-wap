@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,12 +20,12 @@ func GetGlobalPool() *MessageWorkerPool {
 	globalPoolOnce.Do(func() {
 		globalPoolCtx, globalCancel = context.WithCancel(context.Background())
 
-		size := config.MessageWorkerPoolSize
+		size := coreconfig.Global.WorkerPool.Size
 		if size <= 0 {
 			size = 6
 		}
 
-		queue := config.MessageWorkerQueueSize
+		queue := coreconfig.Global.WorkerPool.QueueSize
 		if queue <= 0 {
 			queue = 250
 		}

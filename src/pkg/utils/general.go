@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/sirupsen/logrus"
 	_ "golang.org/x/image/webp" // Register WebP format
@@ -177,7 +177,7 @@ func GetMetaDataFromURL(urlStr string) (meta Metadata, err error) {
 					logrus.Warnf("URL returned non-image content type: %s", contentType)
 				} else {
 					// Read image data with size limit
-					imageData, err := io.ReadAll(io.LimitReader(imgResponse.Body, int64(config.WhatsappSettingMaxImageSize)))
+					imageData, err := io.ReadAll(io.LimitReader(imgResponse.Body, int64(coreconfig.Global.Whatsapp.MaxImageSize)))
 					if err != nil {
 						logrus.Warnf("Failed to read image data: %v", err)
 					} else if len(imageData) == 0 {
@@ -257,11 +257,11 @@ func DownloadImageFromURL(url string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("invalid content type: %s", contentType)
 	}
 	// Check content length if available
-	if contentLength := response.ContentLength; contentLength > int64(config.WhatsappSettingMaxImageSize) {
-		return nil, "", fmt.Errorf("image size %d exceeds maximum allowed size %d", contentLength, config.WhatsappSettingMaxImageSize)
+	if contentLength := response.ContentLength; contentLength > int64(coreconfig.Global.Whatsapp.MaxImageSize) {
+		return nil, "", fmt.Errorf("image size %d exceeds maximum allowed size %d", contentLength, coreconfig.Global.Whatsapp.MaxImageSize)
 	}
 	// Limit the size from config
-	reader := io.LimitReader(response.Body, int64(config.WhatsappSettingMaxImageSize))
+	reader := io.LimitReader(response.Body, int64(coreconfig.Global.Whatsapp.MaxImageSize))
 	// Extract the file name from the URL and remove query parameters if present
 	segments := strings.Split(url, "/")
 	fileName := segments[len(segments)-1]
@@ -359,7 +359,7 @@ func DownloadAudioFromURL(audioURL string) ([]byte, string, error) {
 	}
 
 	// Validate content length when it is provided by the server.
-	maxSize := config.WhatsappSettingMaxDownloadSize
+	maxSize := coreconfig.Global.Whatsapp.MaxDownloadSize
 	if resp.ContentLength > 0 && resp.ContentLength > maxSize {
 		return nil, "", fmt.Errorf("audio size %d exceeds maximum allowed size %d", resp.ContentLength, maxSize)
 	}
@@ -430,7 +430,7 @@ func DownloadVideoFromURL(videoURL string) ([]byte, string, error) {
 	}
 
 	// Validate content length if provided
-	maxSize := config.WhatsappSettingMaxDownloadSize
+	maxSize := coreconfig.Global.Whatsapp.MaxDownloadSize
 	if resp.ContentLength > 0 && resp.ContentLength > maxSize {
 		return nil, "", fmt.Errorf("video size %d exceeds maximum allowed size %d", resp.ContentLength, maxSize)
 	}

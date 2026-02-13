@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -405,10 +405,10 @@ func (suite *UtilsTestSuite) TestDownloadImageFromURLEdgeCases() {
 
 func (suite *UtilsTestSuite) TestDownloadAudioFromURL() {
 	// Mock original config values
-	origMaxSize := config.WhatsappSettingMaxDownloadSize
-	config.WhatsappSettingMaxDownloadSize = 1024 * 1024 // 1MB for testing
+	origMaxSize := coreconfig.Global.Whatsapp.MaxDownloadSize
+	coreconfig.Global.Whatsapp.MaxDownloadSize = 1024 * 1024 // 1MB for testing
 	defer func() {
-		config.WhatsappSettingMaxDownloadSize = origMaxSize
+		coreconfig.Global.Whatsapp.MaxDownloadSize = origMaxSize
 	}()
 
 	// Test successful audio download
@@ -509,10 +509,10 @@ func (suite *UtilsTestSuite) TestDownloadAudioFromURL() {
 
 func (suite *UtilsTestSuite) TestDownloadVideoFromURL() {
 	// Mock original config values
-	origMaxSize := config.WhatsappSettingMaxDownloadSize
-	config.WhatsappSettingMaxDownloadSize = 1024 * 1024 // 1MB for testing
+	origMaxSize := coreconfig.Global.Whatsapp.MaxDownloadSize
+	coreconfig.Global.Whatsapp.MaxDownloadSize = 1024 * 1024 // 1MB for testing
 	defer func() {
-		config.WhatsappSettingMaxDownloadSize = origMaxSize
+		coreconfig.Global.Whatsapp.MaxDownloadSize = origMaxSize
 	}()
 
 	// Test successful video download

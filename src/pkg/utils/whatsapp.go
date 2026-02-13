@@ -18,7 +18,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"go.mau.fi/whatsmeow"
 )
@@ -583,7 +583,7 @@ func ExtractMedia(ctx context.Context, client *whatsmeow.Client, storageLocation
 
 	// 1. Mandatory Metadata Check (Before RAM usage)
 	if maxSize <= 0 {
-		maxSize = config.WhatsappSettingMaxDownloadSize
+		maxSize = coreconfig.Global.Whatsapp.MaxDownloadSize
 	}
 
 	if fileLength > uint64(maxSize) && maxSize > 0 {
@@ -712,9 +712,9 @@ const maxPhoneNumberLength = 15 // Maximum digits in a phone number
 func SanitizePhone(phone *string) {
 	if phone != nil && len(*phone) > 0 && !strings.Contains(*phone, "@") {
 		if len(*phone) <= maxPhoneNumberLength {
-			*phone = fmt.Sprintf("%s%s", *phone, config.WhatsappTypeUser)
+			*phone = fmt.Sprintf("%s%s", *phone, coreconfig.Global.Whatsapp.TypeUser)
 		} else {
-			*phone = fmt.Sprintf("%s%s", *phone, config.WhatsappTypeGroup)
+			*phone = fmt.Sprintf("%s%s", *phone, coreconfig.Global.Whatsapp.TypeGroup)
 		}
 	}
 }
@@ -745,7 +745,7 @@ func ValidateJidWithLogin(client *whatsmeow.Client, jid string) (types.JID, erro
 		return types.JID{}, err
 	}
 
-	if config.WhatsappAccountValidation && !IsOnWhatsapp(client, jid) {
+	if coreconfig.Global.Whatsapp.AccountValidation && !IsOnWhatsapp(client, jid) {
 		return types.JID{}, pkgError.InvalidJID(fmt.Sprintf("Phone %s is not on whatsapp", jid))
 	}
 
