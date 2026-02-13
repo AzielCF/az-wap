@@ -139,7 +139,8 @@ const newSub = ref({
   expires_at: '',
   session_timeout: 10, // User requested defaults for subscription
   inactivity_warning_time: 3,
-  max_history_limit: null as number | null
+  max_history_limit: null as number | null,
+  max_recurring_reminders: 5 as number | null // Default to 5
 })
 
 watch(() => newSub.value.workspace_id, async (newID, oldID) => {
@@ -223,7 +224,8 @@ async function createSubscription() {
         clear_session_timeout: !newSub.value.session_timeout,
         clear_inactivity_warning: !newSub.value.inactivity_warning_time,
         max_history_limit: newSub.value.max_history_limit,
-        clear_max_history_limit: newSub.value.max_history_limit === undefined || newSub.value.max_history_limit === null
+        clear_max_history_limit: newSub.value.max_history_limit === undefined || newSub.value.max_history_limit === null,
+        max_recurring_reminders: newSub.value.max_recurring_reminders
     }
 
     if (editingSub.value) {
@@ -280,7 +282,8 @@ async function openEditSub(sub: any) {
         expires_at: sub.expires_at ? sub.expires_at.split('T')[0] : '',
         session_timeout: sub.session_timeout || null,
         inactivity_warning_time: sub.inactivity_warning_time || null,
-        max_history_limit: sub.max_history_limit !== undefined ? sub.max_history_limit : null
+        max_history_limit: sub.max_history_limit !== undefined ? sub.max_history_limit : null,
+        max_recurring_reminders: sub.max_recurring_reminders !== undefined ? sub.max_recurring_reminders : 5
     }
 
     workspaceSearch.value = ''
@@ -317,7 +320,8 @@ function resetForm() {
         expires_at: '',
         session_timeout: 10,
         inactivity_warning_time: 3,
-        max_history_limit: null
+        max_history_limit: null,
+        max_recurring_reminders: 5
     }
     availableChannels.value = []
 }
@@ -534,6 +538,22 @@ onMounted(loadData)
                     v-model="newSub.max_history_limit" 
                     :isOverride="true"
                 />
+             </div>
+
+             <div class="form-control">
+                <label class="label-premium text-slate-400">Max Recurring Reminders</label>
+                <div class="relative group">
+                    <Calendar class="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600 group-focus-within:text-primary transition-colors" />
+                    <input 
+                        v-model.number="newSub.max_recurring_reminders" 
+                        type="number" 
+                        min="0" 
+                        max="20"
+                        class="input-premium h-16 pl-14 w-full text-sm font-bold" 
+                        placeholder="Limit (Default 5)"
+                    />
+                </div>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest">Maximum number of active recurring reminders allowed (Max 20).</p>
              </div>
 
             <div class="form-control">

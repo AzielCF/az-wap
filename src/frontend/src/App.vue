@@ -84,7 +84,7 @@ onMounted(async () => {
   <div v-else class="drawer lg:drawer-open font-sans">
     <input id="main-drawer" type="checkbox" class="drawer-toggle" />
     
-    <div class="drawer-content flex flex-col bg-[#0b0e14] min-h-screen">
+    <div class="drawer-content flex flex-col bg-[#0b0e14] h-screen overflow-hidden">
       <!-- Navbar (Mobile only toggle + Title) -->
       <div class="navbar bg-[#161a23] lg:hidden shadow-md px-4 shrink-0 border-b border-white/5">
         <label for="main-drawer" class="btn btn-ghost drawer-button lg:hidden">
