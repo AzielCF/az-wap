@@ -180,6 +180,7 @@ func ToBotEngineContext(ctx *domain.ClientContext) *botengineDomain.ClientContex
 		result.Country = ctx.Client.Country
 		result.AllowedBots = ctx.Client.AllowedBots
 		result.Metadata = ctx.Client.Metadata
+		result.IsTester = ctx.Client.IsTester
 
 		// Extraer nombre social de metadata
 		if ctx.Client.Metadata != nil {

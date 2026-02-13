@@ -56,6 +56,47 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 		costDetails = append(costDetails, domain.ExecutionCost{BotID: botID, Model: model, Cost: cost})
 	}
 
+	// REDACTION LOGIC: Check if client is a tester
+	isTester := false
+	if input.ClientContext != nil {
+		isTester = input.ClientContext.IsTester
+	}
+
+	// Helper for redaction
+	redactIfNeeded := func(text string) string {
+		if isTester {
+			return text
+		}
+		return "[REDACTED]"
+	}
+
+	// Helper for tool args redaction
+	redactArgsIfNeeded := func(toolName string, args map[string]interface{}, isNative bool) string {
+		if isTester {
+			js, _ := json.Marshal(args)
+			return string(js)
+		}
+		// Operational args allowed ONLY for native tools
+		if isNative {
+			allowedProps := []string{"time", "date", "duration", "quantity", "status"}
+			cleanArgs := make(map[string]interface{})
+			for k, v := range args {
+				for _, allowed := range allowedProps {
+					if strings.Contains(strings.ToLower(k), allowed) {
+						cleanArgs[k] = v
+						break
+					}
+				}
+			}
+			if len(cleanArgs) > 0 {
+				cleanArgs["_redacted"] = "Sensitive content hidden"
+				js, _ := json.Marshal(cleanArgs)
+				return string(js)
+			}
+		}
+		return `{"_redacted": "Content hidden for privacy"}`
+	}
+
 	// Preparar historial para evitar repetición de UserText en el bucle (Identidad Paridad)
 	if req.UserText != "" {
 		req.History = append(req.History, domain.ChatTurn{
@@ -74,8 +115,8 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 			Metadata: map[string]string{
 				"trace_id":            traceID,
 				"iteration":           fmt.Sprintf("%d", i+1),
-				"system_instructions": req.SystemPrompt,
-				"input":               originalUserText,
+				"system_instructions": redactIfNeeded(req.SystemPrompt),
+				"input":               redactIfNeeded(originalUserText),
 			},
 		})
 
@@ -99,7 +140,7 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 		// Identidad Original: Extraer multimodal_content para el log si existe
 		md := map[string]string{
 			"trace_id": traceID,
-			"response": res.Text,
+			"response": redactIfNeeded(res.Text),
 		}
 		if idx := strings.Index(res.Text, "]: "); idx != -1 && idx < 20 {
 			md["multimodal_content"] = res.Text
@@ -169,15 +210,13 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 					toolResult = map[string]any{"content": mcpRes.Content, "is_error": mcpRes.IsError}
 				}
 
-				argsJS, _ := json.Marshal(tc.Args)
-				resJS, _ := json.Marshal(toolResult)
 				botmonitor.Record(botmonitor.Event{
 					TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
 					Provider: "mcp", Stage: "mcp_call", Kind: tc.Name, Status: "ok", DurationMs: duration,
 					Metadata: map[string]string{
 						"trace_id": traceID,
-						"request":  string(argsJS),
-						"response": string(resJS),
+						"request":  redactArgsIfNeeded(tc.Name, tc.Args, false),    // MCP: Not Native
+						"response": redactArgsIfNeeded(tc.Name, toolResult, false), // Redact response too
 					},
 				})
 			} else if o.nativeToolCaller != nil {
@@ -271,12 +310,10 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 					}
 				}
 
-				argsJS, _ := json.Marshal(tc.Args)
-				resJS, _ := json.Marshal(toolResult)
 				md := map[string]string{
 					"trace_id": traceID,
-					"request":  string(argsJS),
-					"response": string(resJS),
+					"request":  redactArgsIfNeeded(tc.Name, tc.Args, true), // Native: Is Native
+					"response": redactArgsIfNeeded(tc.Name, toolResult, true),
 				}
 				// Si hubo un análisis multimodal en esta tool, extraer su costo para el monitor
 				if usageRaw, ok := toolResult["usage"]; ok {

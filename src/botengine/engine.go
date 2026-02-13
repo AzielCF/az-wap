@@ -152,6 +152,18 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 
 	meta := map[string]string{"trace_id": input.TraceID}
 
+	// REDACTION LOGIC
+	isTester := false
+	if input.ClientContext != nil {
+		isTester = input.ClientContext.IsTester
+	}
+	redactIfNeeded := func(text string) string {
+		if isTester {
+			return text
+		}
+		return "[REDACTED]"
+	}
+
 	// 0. Record Inbound
 	botmonitor.Record(botmonitor.Event{
 		TraceID:    input.TraceID,
@@ -162,9 +174,10 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		Kind:       "text",
 		Status:     "ok",
 		Metadata: map[string]string{
-			"trace_id": input.TraceID,
-			"input":    input.Text,
-			"platform": string(input.Platform),
+			"trace_id":  input.TraceID,
+			"input":     redactIfNeeded(input.Text),
+			"platform":  string(input.Platform),
+			"is_tester": fmt.Sprintf("%v", isTester),
 		},
 	})
 
@@ -273,7 +286,7 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			"pace":           mindset.Pace,
 			"focus":          fmt.Sprintf("%v", mindset.Focus),
 			"work":           fmt.Sprintf("%v", mindset.Work),
-			"ack":            mindset.Acknowledgement,
+			"ack":            redactIfNeeded(mindset.Acknowledgement),
 			"should_respond": fmt.Sprintf("%v", mindset.ShouldRespond),
 		}
 		if usageInt != nil {
@@ -349,7 +362,7 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 						TraceID:    input.TraceID,
 						InstanceID: input.InstanceID, ChatJID: input.ChatID,
 						Stage: "outbound_ack", Status: "ok",
-						Metadata: map[string]string{"text": mindset.Acknowledgement},
+						Metadata: map[string]string{"text": redactIfNeeded(mindset.Acknowledgement)},
 					})
 				}
 			}()
@@ -687,7 +700,7 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 					Metadata: map[string]string{
 						"trace_id":             input.TraceID,
 						"model":                b.Model,
-						"output":               bubble,
+						"output":               redactIfNeeded(bubble),
 						"bubbles":              fmt.Sprintf("%d", len(bubbles)),
 						"total_execution_cost": fmt.Sprintf("$%.6f", output.TotalCost),
 					},
