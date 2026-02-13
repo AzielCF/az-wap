@@ -1,7 +1,9 @@
+```
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppTabModal from '@/components/AppTabModal.vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import { 
@@ -26,6 +28,7 @@ import {
   FileText,
   Brain,
   ShieldCheck,
+  Search
 } from 'lucide-vue-next'
 
 const api = useApi()
@@ -108,6 +111,16 @@ const confirmModal = ref({
 })
 
 const activeTab = ref('general')
+const search = ref('')
+
+const filteredBots = computed(() => {
+  if (!search.value) return bots.value
+  const s = search.value.toLowerCase()
+  return bots.value.filter(b => 
+    b.name.toLowerCase().includes(s) || 
+    b.description?.toLowerCase().includes(s)
+  )
+})
 
 async function loadData() {
   loading.value = true
@@ -356,6 +369,11 @@ function openEdit(bot: any) {
   showAddBot.value = true
 }
 
+function openAdd() {
+  showAddBot.value = true;
+  resetForm();
+}
+
 function resetForm() {
   editingBot.value = null
   newBot.value = {
@@ -391,28 +409,29 @@ onMounted(loadData)
 
   <div v-else class="space-y-12 animate-in fade-in duration-700 max-w-[1400px] mx-auto pb-20">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-8 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-4 flex-1">
-        <div class="flex items-center gap-3">
-          <Cpu class="w-4 h-4 text-primary" />
-          <span class="section-title-premium py-0 border-none pl-0 text-primary">Automation Logic</span>
-          <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Identity Blueprints</span>
+    <AppPageHeader title="Bots">
+      <template #breadcrumb>
+        <Cpu class="w-4 h-4 text-primary shrink-0" />
+        <span class="text-xs font-black uppercase tracking-widest text-primary">Automation Logic</span>
+        <span class="opacity-30 text-xs font-black text-slate-500">/</span>
+        <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Identity Blueprints</span>
+      </template>
+
+      <template #actions>
+        <div class="relative group">
+            <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-primary transition-colors" />
+            <input v-model="search" type="text" placeholder="Search templates..." class="input-premium h-14 pl-12 w-64 text-sm" />
         </div>
-        <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">AI Control Board</h2>
-      </div>
-      
-      <div class="flex flex-col lg:flex-row gap-4">
         <button class="btn-premium btn-premium-ghost px-8" @click="showGlobalSettings = true">
            <Settings class="w-4 h-4" />
            Engine Configuration
         </button>
-        <button class="btn-premium btn-premium-primary px-12" @click="showAddBot = true; resetForm()">
-           <Plus class="w-4 h-4" />
-           New Bot Template
+        <button class="btn-premium btn-premium-primary px-16 h-14 w-full lg:w-auto" @click="openAdd">
+             <Plus class="w-5 h-5 mr-2" />
+             Compose Template
         </button>
-      </div>
-    </div>
+      </template>
+    </AppPageHeader>
 
     <!-- Content Area -->
     <div class="px-6 lg:px-0">
@@ -428,7 +447,7 @@ onMounted(loadData)
             </div>
 
             <!-- Bot Cards -->
-            <div v-for="bot in bots" :key="bot.id" class="card-premium min-h-[340px]">
+            <div v-for="bot in filteredBots" :key="bot.id" class="card-premium min-h-[340px]">
                 <div class="relative z-10 flex flex-col h-full">
                     <div class="flex justify-between items-start mb-10">
                         <div class="icon-box-premium icon-box-primary">

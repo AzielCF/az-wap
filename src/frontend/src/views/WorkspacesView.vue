@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppModal from '@/components/AppModal.vue'
 import { Layers, RefreshCw, Plus, Edit3, Trash2, CheckCircle2, MoreVertical } from 'lucide-vue-next'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
@@ -113,18 +114,15 @@ onMounted(loadWorkspaces)
 <template>
   <div class="space-y-10 max-w-[1500px] mx-auto pb-20 animate-in fade-in duration-500">
     <!-- Professional Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-10 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-6 flex-1">
-        <div class="flex items-center gap-3">
-          <Layers class="w-4 h-4 text-primary" />
-          <span class="section-title-premium py-0 border-none pl-0 text-primary">Multi-Tenant Core</span>
-          <span class="opacity-10 text-xl font-thin text-white">/</span>
+    <AppPageHeader title="Workspaces">
+      <template #breadcrumb>
+          <Layers class="w-4 h-4 text-primary shrink-0" />
+          <span class="text-sm font-bold uppercase tracking-widest text-primary">Multi-Tenant Core</span>
+          <span class="opacity-30 text-xs font-black text-slate-500">/</span>
           <span class="text-xs font-black uppercase tracking-widest text-slate-500">Infrastructure Nodes</span>
-        </div>
-        <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">Workspaces</h2>
-      </div>
-      
-      <div class="flex flex-col lg:flex-row gap-4">
+      </template>
+
+      <template #actions>
         <button class="btn-premium btn-premium-ghost px-10 h-14 w-full lg:w-auto" @click="loadWorkspaces" :class="{ loading: loading }">
             <RefreshCw v-if="!loading" class="w-4 h-4 mr-2" />
             Synchronize
@@ -133,8 +131,8 @@ onMounted(loadWorkspaces)
             <Plus class="w-5 h-5 mr-2" />
             New Environment
         </button>
-      </div>
-    </div>
+      </template>
+    </AppPageHeader>
 
     <!-- Workspaces Table (Serious Manager Style) -->
     <div class="px-6 lg:px-0">

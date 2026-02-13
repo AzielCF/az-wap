@@ -2,12 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppModal from '@/components/AppModal.vue'
 import WhatsAppControl from '@/components/WhatsAppControl.vue'
 import ChannelConfig from '@/components/ChannelConfig.vue'
 import ChannelInfo from '@/components/ChannelInfo.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
-import { Trash2, Plus, Settings, Globe, ShieldAlert, CheckCircle2, Cpu, Edit3, Info } from 'lucide-vue-next'
+import { Plus, Settings, Trash2, Globe, Info } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -174,18 +175,18 @@ onMounted(loadData)
 
   <div v-else-if="workspace" class="space-y-10 animate-in fade-in duration-700 max-w-[1600px] mx-auto pb-20">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-10 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-6 flex-1 w-full">
-        <div class="flex items-center gap-3">
+    <AppPageHeader :title="workspace.name">
+      <template #breadcrumb>
           <RouterLink to="/workspaces" class="text-xs font-black text-slate-500 hover:text-primary uppercase tracking-widest transition-colors">Infrastructure</RouterLink>
-          <span class="opacity-10 text-xl font-thin text-white">/</span>
+          <span class="opacity-30 text-xs font-black text-slate-500">/</span>
           <span class="text-xs font-black uppercase tracking-widest text-primary/70">{{ workspace.id.substring(0,8) }}</span>
-        </div>
-        <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none break-words">{{ workspace.name }}</h2>
-        <div class="text-sm text-slate-500 font-bold uppercase tracking-widest pl-1">{{ workspace.description || 'No description provided' }}</div>
-      </div>
-      
-      <div class="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+      </template>
+
+      <template #subtitle>
+        {{ workspace.description || 'No description provided' }}
+      </template>
+
+      <template #actions>
         <button class="btn-premium btn-premium-ghost w-full sm:w-auto h-14 border border-white/10 px-8" @click="showEditWorkspace = true">
            <Settings class="w-5 h-5 mr-3" />
            Configure
@@ -194,8 +195,8 @@ onMounted(loadData)
            <Plus class="w-5 h-5 mr-2" />
            New Channel
         </button>
-      </div>
-    </div>
+      </template>
+    </AppPageHeader>
 
     <!-- Table List -->
     <div class="px-6 lg:px-0">

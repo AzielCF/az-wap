@@ -6,6 +6,7 @@ import {
   RefreshCw
 } from 'lucide-vue-next'
 
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import BotEventMonitor from '@/components/monitoring/BotEventMonitor.vue'
 import InfrastructureMonitor from '@/components/monitoring/InfrastructureMonitor.vue'
 import SessionMonitor from '@/components/monitoring/SessionMonitor.vue'
@@ -93,15 +94,16 @@ onUnmounted(() => {
 <template>
   <div class="space-y-8 max-w-[1600px] mx-auto pb-20 animate-in fade-in duration-500">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-white/5 pb-8 px-6 lg:px-0">
-      <div class="space-y-3">
-        <div class="flex items-center gap-3">
+    <AppPageHeader title="System Monitoring">
+      <template #breadcrumb>
           <Activity class="w-5 h-5 text-primary" />
-          <h2 class="text-4xl font-bold tracking-tight text-white uppercase">System Monitoring</h2>
-        </div>
-        <p class="text-sm text-slate-500 font-medium">Real-time Bot activity and Infrastructure health metrics.</p>
-      </div>
-      <div class="flex items-center gap-3">
+      </template>
+      
+      <template #subtitle>
+        Real-time Bot activity and Infrastructure health metrics.
+      </template>
+
+      <template #actions>
         <div class="flex items-center bg-white/[0.03] border border-white/5 rounded-xl p-1 gap-1">
             <button class="btn-premium btn-premium-ghost px-4 h-9 text-xs" @click="loadBotData">
                 <RefreshCw class="w-3.5 h-3.5 mr-2" />
@@ -112,8 +114,8 @@ onUnmounted(() => {
                 Infra Sync
             </button>
         </div>
-      </div>
-    </div>
+      </template>
+    </AppPageHeader>
 
     <!-- Active Sessions Table (Upper Priority) -->
     <SessionMonitor />

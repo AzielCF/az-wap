@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import TierBadge from '@/components/clients/TierBadge.vue'
 import AppTabModal from '@/components/AppTabModal.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
@@ -11,17 +12,13 @@ import {
   Trash2, 
   Edit3,
   Calendar,
-  Bot,
   Terminal,
   Hash,
   Activity,
   User,
-  Search,
   X,
   Target,
   Cpu,
-  Globe,
-  Layout,
 } from 'lucide-vue-next'
 import ResourceSelector from '@/components/ResourceSelector.vue'
 import SessionTimers from '@/components/SessionTimers.vue'
@@ -336,26 +333,24 @@ onMounted(loadData)
 
   <div v-else-if="client" class="space-y-12 animate-in fade-in duration-700 max-w-[1200px] mx-auto pb-20">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-8 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-4 flex-1">
-        <button @click="router.back()" class="flex items-center gap-2 text-slate-500 hover:text-primary transition-colors text-xs font-bold uppercase tracking-widest mb-4">
-           <ArrowLeft class="w-4 h-4" /> Back to Clients
+    <AppPageHeader :title="client.display_name">
+      <template #breadcrumb>
+        <button @click="router.back()" class="flex items-center gap-2 text-slate-500 hover:text-primary transition-colors text-xs font-bold uppercase tracking-widest mr-4">
+           <ArrowLeft class="w-4 h-4" /> Back
         </button>
-        <div class="flex items-center gap-3">
-          <User class="w-4 h-4 text-primary" />
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Client Subscriptions</span>
-        </div>
-        <h2 class="text-4xl lg:text-5xl font-black tracking-tighter text-white uppercase leading-none">
-          {{ client.display_name }}
-          <TierBadge :tier="client.tier" class="ml-4 inline-block align-middle" />
-        </h2>
-      </div>
-      
-      <button class="btn-premium btn-premium-primary px-16 h-14 w-full lg:w-auto" @click="resetForm(); showAddModal = true">
-           <Plus class="w-5 h-5 mr-2" />
-           New Subscription
-      </button>
-    </div>
+        <User class="w-4 h-4 text-primary shrink-0" />
+        <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Client Subscriptions</span>
+        <span class="opacity-30 text-xs font-black text-slate-500">/</span>
+        <TierBadge :tier="client.tier" />
+      </template>
+
+      <template #actions>
+        <button class="btn-premium btn-premium-primary px-16 h-14 w-full lg:w-auto" @click="resetForm(); showAddModal = true">
+             <Plus class="w-5 h-5 mr-2" />
+             New Subscription
+        </button>
+      </template>
+    </AppPageHeader>
 
     <!-- Client Info Summary -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 px-6 lg:px-0">

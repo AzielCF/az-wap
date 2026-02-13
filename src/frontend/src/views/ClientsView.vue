@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppTabModal from '@/components/AppTabModal.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import TierBadge from '@/components/clients/TierBadge.vue'
@@ -380,18 +381,15 @@ onMounted(() => {
 
   <div v-else class="space-y-12 animate-in fade-in duration-700 max-w-[1400px] mx-auto pb-20">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-8 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-4 flex-1">
-        <div class="flex items-center gap-3">
-          <Users class="w-4 h-4 text-primary" />
-          <span class="section-title-premium py-0 border-none pl-0 text-primary">Customer Hub</span>
-          <span class="opacity-10 text-xl font-thin text-white">/</span>
+    <AppPageHeader title="Clients">
+      <template #breadcrumb>
+          <Users class="w-4 h-4 text-primary shrink-0" />
+          <span class="text-sm font-bold uppercase tracking-widest text-primary">Customer Hub</span>
+          <span class="opacity-30 text-xs font-black text-slate-500">/</span>
           <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Global Registry</span>
-        </div>
-        <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">Clients</h2>
-      </div>
-      
-      <div class="flex flex-col lg:flex-row gap-4">
+      </template>
+
+      <template #actions>
         <div class="relative group">
             <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-primary transition-colors" />
             <input v-model="search" type="text" placeholder="Search clients..." class="input-premium h-14 pl-12 w-64 text-sm" />
@@ -404,8 +402,8 @@ onMounted(() => {
              <Plus class="w-5 h-5 mr-2" />
              New Client
         </button>
-      </div>
-    </div>
+      </template>
+    </AppPageHeader>
 
     <!-- Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-6 px-6 lg:px-0">

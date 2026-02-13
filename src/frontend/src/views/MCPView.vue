@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useApi } from '@/composables/useApi'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppModal from '@/components/AppModal.vue'
 import { 
   Zap, 
   Trash2, 
   Edit3, 
   Activity, 
-  Search, 
-  Settings2, 
+  Search,
   ShieldAlert, 
   Heart, 
   Terminal, 
@@ -234,22 +234,21 @@ onUnmounted(() => {
 
   <div v-else class="space-y-12 animate-in fade-in duration-700 max-w-[1400px] mx-auto pb-20">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-8 border-b border-white/5 mx-6 lg:mx-0">
-      <div class="space-y-4 flex-1">
-        <div class="flex items-center gap-3">
-          <Terminal class="w-4 h-4 text-primary" />
-          <span class="section-title-premium py-0 border-none pl-0 text-primary">MCP Network</span>
-          <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Node Management</span>
-        </div>
-        <h2 class="text-6xl font-black tracking-tighter text-white uppercase leading-none">MCP Manager</h2>
-      </div>
-      
-      <button class="btn-premium btn-premium-primary px-12" @click="openAdd">
-         <PlusCircle class="w-4 h-4" />
-         Connect New Node
-      </button>
-    </div>
+    <AppPageHeader title="MCP Manager">
+      <template #breadcrumb>
+          <Terminal class="w-4 h-4 text-primary shrink-0" />
+          <span class="text-sm font-bold uppercase tracking-widest text-primary">MCP Network</span>
+          <span class="opacity-30 text-xs font-black text-slate-500">/</span>
+          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Node Management</span>
+      </template>
+
+      <template #actions>
+        <button class="btn-premium btn-premium-primary px-12 h-14" @click="openAdd">
+           <PlusCircle class="w-4 h-4 mr-2" />
+           Connect New Node
+        </button>
+      </template>
+    </AppPageHeader>
 
     <!-- Main Grid -->
     <div class="px-6 lg:px-0">

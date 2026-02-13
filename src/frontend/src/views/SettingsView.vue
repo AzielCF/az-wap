@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import SystemCacheControl from '@/components/settings/SystemCacheControl.vue'
 import GlobalSettings from '@/components/settings/GlobalSettings.vue'
 
@@ -19,16 +20,13 @@ function saveInfrastructure() {
 <template>
   <div class="max-w-4xl mx-auto space-y-16 animate-in fade-in duration-700 pb-20 font-sans">
     <!-- Header -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 py-10 border-b border-white/5 mx-6 lg:mx-0">
-        <div class="space-y-4">
-            <div class="flex items-center gap-3">
-                <span class="text-xs font-black uppercase tracking-widest text-primary/70">Gateway Cluster</span>
-                <span class="opacity-10 text-xl font-thin text-white">/</span>
-                <span class="text-xs font-black uppercase tracking-widest text-slate-500">Node Management</span>
-            </div>
-            <h2 class="text-6xl font-black tracking-tighter text-white uppercase leading-none">Settings</h2>
-        </div>
-    </div>
+    <AppPageHeader title="Settings">
+      <template #breadcrumb>
+          <span class="text-xs font-black uppercase tracking-widest text-primary/70">Gateway Cluster</span>
+          <span class="opacity-30 text-xs font-black text-slate-500">/</span>
+          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Node Management</span>
+      </template>
+    </AppPageHeader>
 
     <!-- Infrastructure Settings -->
     <div class="space-y-8 px-6 lg:px-0">
