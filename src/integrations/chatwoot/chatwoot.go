@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,12 +20,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AzielCF/az-wap/config"
 	"github.com/AzielCF/az-wap/pkg/chatmedia"
 	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow/types/events"
+	"gorm.io/gorm"
 )
 
 // --- CONFIG & CACHE ---
@@ -49,7 +49,15 @@ var (
 	contactCache        = make(map[string]cachedContact)
 	conversationCacheMu sync.RWMutex
 	conversationCache   = make(map[string]cachedConversation)
+
+	wkRepo repository.IWorkspaceRepository
+	mainDB *gorm.DB
 )
+
+func SetRepositories(wr repository.IWorkspaceRepository, db *gorm.DB) {
+	wkRepo = wr
+	mainDB = db
+}
 
 type Config struct {
 	InstanceID         string
@@ -297,94 +305,69 @@ func sendTextToConversation(ctx context.Context, cfg *Config, convID int64, text
 // --- LOGIC: CONFIG LOADING ---
 
 func loadChannelConfig(ctx context.Context, externalRef string) (*Config, error) {
-	dbPath := fmt.Sprintf("%s/workspaces.db", config.PathStorages)
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=on", dbPath))
+	if wkRepo == nil {
+		return nil, fmt.Errorf("workspace repository not initialized")
+	}
+
+	ch, err := wkRepo.GetChannelByExternalRef(ctx, externalRef)
 	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	var configJSON sql.NullString
-	query := `SELECT config FROM channels WHERE external_ref = ?`
-	if err := db.QueryRowContext(ctx, query, externalRef).Scan(&configJSON); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+		return nil, nil // Not found or error
 	}
 
-	if !configJSON.Valid || configJSON.String == "" {
+	if !ch.Enabled || ch.Config.Chatwoot == nil || !ch.Config.Chatwoot.Enabled {
 		return nil, nil
 	}
 
-	var chConfig struct {
-		Chatwoot *struct {
-			Enabled         bool   `json:"enabled"`
-			AccountID       int64  `json:"account_id"`
-			InboxID         int64  `json:"inbox_id"`
-			Token           string `json:"token"`
-			URL             string `json:"url"`
-			BotToken        string `json:"bot_token,omitempty"`
-			InboxIdentifier string `json:"inbox_identifier,omitempty"`
-			CredentialID    string `json:"credential_id,omitempty"`
-		} `json:"chatwoot"`
-		BotID string `json:"bot_id"`
-	}
-
-	if err := json.Unmarshal([]byte(configJSON.String), &chConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal channel config: %w", err)
-	}
-
-	if chConfig.Chatwoot == nil || !chConfig.Chatwoot.Enabled {
-		return nil, nil
-	}
-
-	cw := chConfig.Chatwoot
+	cw := ch.Config.Chatwoot
 	cfg := &Config{
-		InstanceID:   externalRef,
-		BaseURL:      strings.TrimRight(strings.TrimSpace(cw.URL), "/"),
-		AccountToken: strings.TrimSpace(cw.Token),
-		Enabled:      cw.Enabled,
-		AccountID:    cw.AccountID,
-		InboxID:      cw.InboxID,
-		BotToken:     strings.TrimSpace(cw.BotToken),
+		InstanceID:         externalRef,
+		BaseURL:            strings.TrimRight(strings.TrimSpace(cw.URL), "/"),
+		AccountToken:       strings.TrimSpace(cw.Token),
+		Enabled:            cw.Enabled,
+		AccountID:          int64(cw.AccountID),
+		InboxID:            int64(cw.InboxID),
+		BotToken:           strings.TrimSpace(cw.BotToken),
+		InsecureSkipVerify: ch.Config.SkipTLSVerification,
 	}
 
-	appDB, _ := config.GetAppDB()
-
-	// Resolve Credential if provided
-	if cw.CredentialID != "" && appDB != nil {
-		var credTok sql.NullString
-		var credURL sql.NullString
-		var botToken sql.NullString
-		err := appDB.QueryRowContext(ctx, `SELECT chatwoot_account_token, chatwoot_base_url, chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, cw.CredentialID).
-			Scan(&credTok, &credURL, &botToken)
-		if err == nil {
-			if cfg.AccountToken == "" {
-				cfg.AccountToken = strings.TrimSpace(credTok.String)
+	if mainDB != nil {
+		// Resolve Credential if provided
+		if cw.CredentialID != "" {
+			var cred struct {
+				ChatwootAccountToken string `gorm:"column:chatwoot_account_token"`
+				ChatwootBaseURL      string `gorm:"column:chatwoot_base_url"`
+				ChatwootBotToken     string `gorm:"column:chatwoot_bot_token"`
 			}
-			if cfg.BaseURL == "" {
-				cfg.BaseURL = strings.TrimRight(strings.TrimSpace(credURL.String), "/")
-			}
-			if cfg.BotToken == "" {
-				cfg.BotToken = strings.TrimSpace(botToken.String)
+			if err := mainDB.Table("credentials").Where("id = ? AND kind = 'chatwoot'", cw.CredentialID).First(&cred).Error; err == nil {
+				if cfg.AccountToken == "" {
+					cfg.AccountToken = strings.TrimSpace(cred.ChatwootAccountToken)
+				}
+				if cfg.BaseURL == "" {
+					cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cred.ChatwootBaseURL), "/")
+				}
+				if cfg.BotToken == "" {
+					cfg.BotToken = strings.TrimSpace(cred.ChatwootBotToken)
+				}
 			}
 		}
-	}
 
-	// Resolve Bot Token if BotID provided
-	if chConfig.BotID != "" && cfg.BotToken == "" && appDB != nil {
-		var botTok, botCred sql.NullString
-		if err := appDB.QueryRowContext(ctx, `SELECT chatwoot_bot_token, chatwoot_credential_id FROM bots WHERE id = ?`, chConfig.BotID).
-			Scan(&botTok, &botCred); err == nil {
-			if strings.TrimSpace(botTok.String) != "" {
-				cfg.BotToken = strings.TrimSpace(botTok.String)
+		// Resolve Bot Token if BotID provided
+		if ch.Config.BotID != "" && cfg.BotToken == "" {
+			var bot struct {
+				ChatwootBotToken     string `gorm:"column:chatwoot_bot_token"`
+				ChatwootCredentialID string `gorm:"column:chatwoot_credential_id"`
 			}
-			if botCred.Valid && strings.TrimSpace(botCred.String) != "" && cfg.BotToken == "" {
-				var credBotTok sql.NullString
-				if err := appDB.QueryRowContext(ctx, `SELECT chatwoot_bot_token FROM credentials WHERE id = ? AND kind = 'chatwoot'`, strings.TrimSpace(botCred.String)).
-					Scan(&credBotTok); err == nil {
-					cfg.BotToken = strings.TrimSpace(credBotTok.String)
+			if err := mainDB.Table("bots").Where("id = ?", ch.Config.BotID).First(&bot).Error; err == nil {
+				if strings.TrimSpace(bot.ChatwootBotToken) != "" {
+					cfg.BotToken = strings.TrimSpace(bot.ChatwootBotToken)
+				}
+				if strings.TrimSpace(bot.ChatwootCredentialID) != "" && cfg.BotToken == "" {
+					var cred struct {
+						ChatwootBotToken string `gorm:"column:chatwoot_bot_token"`
+					}
+					if err := mainDB.Table("credentials").Where("id = ? AND kind = 'chatwoot'", bot.ChatwootCredentialID).First(&cred).Error; err == nil {
+						cfg.BotToken = strings.TrimSpace(cred.ChatwootBotToken)
+					}
 				}
 			}
 		}
