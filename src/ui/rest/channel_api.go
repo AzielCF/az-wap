@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
@@ -24,13 +25,15 @@ type ChannelHandler struct {
 	WorkspaceUsecase *workspaceUsecase.WorkspaceUsecase
 	WorkspaceManager *workspace.Manager
 	SendService      domainSend.ISendUsecase
+	SettingsService  *coreSettings.SettingsService
 }
 
-func InitChannelAPI(app fiber.Router, wkUsecase *workspaceUsecase.WorkspaceUsecase, wkManager *workspace.Manager, sendService domainSend.ISendUsecase) ChannelHandler {
+func InitChannelAPI(app fiber.Router, wkUsecase *workspaceUsecase.WorkspaceUsecase, wkManager *workspace.Manager, sendService domainSend.ISendUsecase, settingsSvc *coreSettings.SettingsService) ChannelHandler {
 	handler := ChannelHandler{
 		WorkspaceUsecase: wkUsecase,
 		WorkspaceManager: wkManager,
 		SendService:      sendService,
+		SettingsService:  settingsSvc,
 	}
 
 	// Legacy /instances routes
@@ -52,6 +55,49 @@ func InitChannelAPI(app fiber.Router, wkUsecase *workspaceUsecase.WorkspaceUseca
 	app.Put("/settings/ai", handler.UpdateAISettings)
 
 	return handler
+}
+
+// ... (mapChannelToLegacy omitted) ...
+
+// ... (Other handlers omitted) ...
+
+func (handler *ChannelHandler) UpdateAISettings(c *fiber.Ctx) error {
+	var request struct {
+		GlobalSystemPrompt string `json:"global_system_prompt"`
+		Timezone           string `json:"timezone"`
+		DebounceMs         *int   `json:"debounce_ms"`
+		WaitContactIdleMs  *int   `json:"wait_contact_idle_ms"`
+		TypingEnabled      *bool  `json:"typing_enabled"`
+	}
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(utils.ResponseData{Status: 400, Code: "BAD_REQUEST", Message: err.Error()})
+	}
+
+	ctx := c.UserContext()
+
+	// Save configs using Core Service
+	if request.GlobalSystemPrompt != "" {
+		_ = handler.SettingsService.SetSystemPrompt(ctx, request.GlobalSystemPrompt)
+		coreconfig.Global.AI.GlobalSystemPrompt = request.GlobalSystemPrompt
+	}
+	if request.Timezone != "" {
+		_ = handler.SettingsService.SetTimezone(ctx, request.Timezone)
+		coreconfig.Global.AI.Timezone = request.Timezone
+	}
+	if request.DebounceMs != nil {
+		_ = handler.SettingsService.SetDebounce(ctx, *request.DebounceMs)
+		coreconfig.Global.AI.DebounceMs = *request.DebounceMs
+	}
+	if request.WaitContactIdleMs != nil {
+		_ = handler.SettingsService.SetContactIdle(ctx, *request.WaitContactIdleMs)
+		coreconfig.Global.AI.WaitContactIdleMs = *request.WaitContactIdleMs
+	}
+	if request.TypingEnabled != nil {
+		_ = handler.SettingsService.SetTypingEnabled(ctx, *request.TypingEnabled)
+		coreconfig.Global.AI.TypingEnabled = *request.TypingEnabled
+	}
+
+	return handler.GetAISettings(c)
 }
 
 // Helper to map Channel to LegacyInstanceResponse
@@ -583,44 +629,13 @@ func (handler *ChannelHandler) handleMessageCreated(c *fiber.Ctx, id string, ch 
 // Global settings handlers
 func (handler *ChannelHandler) GetAISettings(c *fiber.Ctx) error {
 	response := map[string]any{
-		"global_system_prompt": config.AIGlobalSystemPrompt, // Still using config for now, but API is generic
-		"timezone":             config.AITimezone,
-		"debounce_ms":          config.AIDebounceMs,
-		"wait_contact_idle_ms": config.AIWaitContactIdleMs,
-		"typing_enabled":       config.AITypingEnabled,
+		"global_system_prompt": coreconfig.Global.AI.GlobalSystemPrompt, // Still using config for now, but API is generic
+		"timezone":             coreconfig.Global.AI.Timezone,
+		"debounce_ms":          coreconfig.Global.AI.DebounceMs,
+		"wait_contact_idle_ms": coreconfig.Global.AI.WaitContactIdleMs,
+		"typing_enabled":       coreconfig.Global.AI.TypingEnabled,
 	}
 	return c.JSON(utils.ResponseData{Status: 200, Code: "SUCCESS", Message: "AI settings fetched", Results: response})
-}
-
-func (handler *ChannelHandler) UpdateAISettings(c *fiber.Ctx) error {
-	var request struct {
-		GlobalSystemPrompt string `json:"global_system_prompt"`
-		Timezone           string `json:"timezone"`
-		DebounceMs         *int   `json:"debounce_ms"`
-		WaitContactIdleMs  *int   `json:"wait_contact_idle_ms"`
-		TypingEnabled      *bool  `json:"typing_enabled"`
-	}
-	if err := c.BodyParser(&request); err != nil {
-		return c.Status(400).JSON(utils.ResponseData{Status: 400, Code: "BAD_REQUEST", Message: err.Error()})
-	}
-	// Save configs...
-	if request.GlobalSystemPrompt != "" {
-		config.SaveAIGlobalSystemPrompt(request.GlobalSystemPrompt)
-	}
-	if request.Timezone != "" {
-		config.SaveAITimezone(request.Timezone)
-	}
-	if request.DebounceMs != nil {
-		config.SaveAIDebounceMs(*request.DebounceMs)
-	}
-	if request.WaitContactIdleMs != nil {
-		config.SaveAIWaitContactIdleMs(*request.WaitContactIdleMs)
-	}
-	if request.TypingEnabled != nil {
-		config.SaveAITypingEnabled(*request.TypingEnabled)
-	}
-
-	return handler.GetAISettings(c)
 }
 
 func (handler *ChannelHandler) ListGroups(c *fiber.Ctx) error {
