@@ -240,7 +240,7 @@ onUnmounted(() => {
           <Terminal class="w-4 h-4 text-primary" />
           <span class="section-title-premium py-0 border-none pl-0 text-primary">MCP Network</span>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Node Management</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Node Management</span>
         </div>
         <h2 class="text-6xl font-black tracking-tighter text-white uppercase leading-none">MCP Manager</h2>
       </div>
@@ -264,7 +264,7 @@ onUnmounted(() => {
                         <div class="flex items-center gap-3">
                             <span class="text-xs font-mono text-slate-600 uppercase tracking-widest">{{ mcp.id.substring(0,8) }}</span>
                             <div class="flex items-center gap-2 px-2 py-1 rounded bg-white/5 border border-white/10">
-                                <span class="text-[10px] font-black uppercase text-slate-400">{{ mcp.type }}</span>
+                                <span class="text-xs font-black uppercase text-slate-400">{{ mcp.type }}</span>
                             </div>
                         </div>
                     </div>
@@ -281,7 +281,7 @@ onUnmounted(() => {
                 <div class="relative z-10 flex flex-col h-full">
                     <div class="flex items-center gap-3 mb-3">
                         <h4 class="text-2xl font-black text-white uppercase tracking-tighter group-hover:text-primary transition-colors leading-none">{{ mcp.name }}</h4>
-                        <div v-if="mcp.is_template" class="px-2 py-1 rounded bg-amber-500/10 text-amber-500 text-[10px] font-black uppercase tracking-widest border border-amber-500/20 flex items-center gap-1">
+                        <div v-if="mcp.is_template" class="px-2 py-1 rounded bg-amber-500/10 text-amber-500 text-xs font-black uppercase tracking-widest border border-amber-500/20 flex items-center gap-1">
                             <Settings2 class="w-2.5 h-2.5" />
                             Template
                         </div>
@@ -293,7 +293,7 @@ onUnmounted(() => {
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <Activity class="w-3 h-3 text-slate-500" />
-                                <span class="text-[9px] font-black uppercase text-slate-500 tracking-widest">Health Record</span>
+                                <span class="text-xs font-black uppercase text-slate-500 tracking-widest">Health Record</span>
                             </div>
                             <div class="flex items-center gap-2">
                                 <div class="w-2 h-2 rounded-full animate-pulse" :class="getHealth(mcp.id).status === 'OK' ? 'bg-success shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-error'"></div>
@@ -306,7 +306,7 @@ onUnmounted(() => {
                         <div v-if="mcp.tools && mcp.tools.length" class="pt-2 border-t border-white/5 flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <Wrench class="w-3 h-3 text-slate-600" />
-                                <span class="text-[10px] font-black uppercase text-slate-600 tracking-widest">Capabilty Set</span>
+                                <span class="text-xs font-black uppercase text-slate-600 tracking-widest">Capabilty Set</span>
                             </div>
                             <span class="text-xs font-black text-success">{{ mcp.tools.length }} Tools Loaded</span>
                         </div>
@@ -360,11 +360,11 @@ onUnmounted(() => {
                     </div>
                     <p class="text-xs text-slate-400 leading-relaxed font-medium uppercase italic">{{ tool.description || 'No specialized description.' }}</p>
                     <div class="pt-4">
-                        <div class="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <div class="text-xs font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
                             <Terminal class="w-3 h-3" />
                             Input Specification
                         </div>
-                        <pre class="bg-black/40 p-6 rounded-2xl text-[10px] font-mono text-slate-500 overflow-x-auto border border-white/5">{{ JSON.stringify(tool.input_schema, null, 2) }}</pre>
+                        <pre class="bg-black/40 p-6 rounded-2xl text-xs font-mono text-slate-500 overflow-x-auto border border-white/5">{{ JSON.stringify(tool.input_schema, null, 2) }}</pre>
                     </div>
                 </div>
             </div>
@@ -385,7 +385,7 @@ onUnmounted(() => {
             <div class="lg:w-80 bg-[#161a23] border-r border-white/5 p-12 flex flex-col items-center text-center flex-none">
                 <div class="w-24 h-24 rounded-[2rem] bg-primary/10 flex items-center justify-center text-primary mb-8 border border-primary/20 shadow-2xl relative">
                     <Zap class="w-12 h-12" />
-                    <div class="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-success flex items-center justify-center text-white text-[10px] font-black border-4 border-[#161a23]">v2</div>
+                    <div class="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-success flex items-center justify-center text-white text-xs font-black border-4 border-[#161a23]">v2</div>
                 </div>
                 <h4 class="text-xl font-black text-white uppercase tracking-tighter mb-4">{{ editingMCP ? 'Modify Port' : 'Establish Link' }}</h4>
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-widest leading-relaxed opacity-60">Interface definition for external brain extensions.</p>
@@ -411,12 +411,12 @@ onUnmounted(() => {
                         <div class="form-control">
                             <label class="label-premium text-slate-400">Transport Type</label>
                             <div class="grid grid-cols-2 gap-3 h-16">
-                                <button @click="newMCP.type = 'http'" class="btn-premium btn-premium-ghost rounded-xl border transition-all font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2" 
+                                <button @click="newMCP.type = 'http'" class="btn-premium btn-premium-ghost rounded-xl border transition-all font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2" 
                                     :class="newMCP.type === 'http' ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 border-white/10 text-slate-500'">
                                     <Globe class="w-4 h-4" />
                                     HTTP
                                 </button>
-                                <button @click="newMCP.type = 'sse'" class="btn-premium btn-premium-ghost rounded-xl border transition-all font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
+                                <button @click="newMCP.type = 'sse'" class="btn-premium btn-premium-ghost rounded-xl border transition-all font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
                                     :class="newMCP.type === 'sse' ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 border-white/10 text-slate-500'">
                                     <Zap class="w-4 h-4" />
                                     SSE
@@ -436,7 +436,7 @@ onUnmounted(() => {
                     <div class="form-control">
                         <label class="label-premium">Authentication & Proxy Headers (Optional)</label>
                         <textarea v-model="headersString" rows="3" class="input-premium w-full p-6 font-mono text-xs leading-relaxed" placeholder="Authorization: Bearer xyz...&#10;X-MCP-Token: custom-auth..."></textarea>
-                        <p class="mt-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider">Line by line: Key: Value</p>
+                        <p class="mt-3 text-xs text-slate-600 font-bold uppercase tracking-wider">Line by line: Key: Value</p>
                     </div>
 
                     <div class="grid grid-cols-1 gap-10">
@@ -446,8 +446,8 @@ onUnmounted(() => {
                                     <Settings2 class="w-5 h-5" />
                                 </div>
                                 <div class="flex flex-col">
-                                    <span class="text-[11px] font-black uppercase tracking-widest text-slate-400">Is Capability Template</span>
-                                    <span class="text-[9px] text-slate-600 font-bold uppercase">Require credentials per individual bot</span>
+                                    <span class="text-xs font-black uppercase tracking-widest text-slate-400">Is Capability Template</span>
+                                    <span class="text-xs text-slate-600 font-bold uppercase">Require credentials per individual bot</span>
                                 </div>
                             </div>
                             <input type="checkbox" v-model="newMCP.is_template" class="toggle toggle-warning" />
@@ -468,16 +468,16 @@ onUnmounted(() => {
                         </div>
                         
                         <div v-if="templateHeadersList.length === 0" class="py-10 text-center border border-dashed border-amber-500/20 rounded-3xl">
-                            <p class="text-[9px] font-bold text-amber-500/40 uppercase tracking-[0.2em]">No credential requirements defined yet.</p>
+                            <p class="text-xs font-bold text-amber-500/40 uppercase tracking-widest">No credential requirements defined yet.</p>
                         </div>
 
                         <div v-for="(th, idx) in templateHeadersList" :key="idx" class="flex gap-6 items-end animate-in fade-in scale-in duration-300">
                             <div class="flex-1 space-y-3">
-                                 <label class="text-[9px] font-bold text-amber-500/40 uppercase ml-1">Header Name</label>
+                                 <label class="text-xs font-bold text-amber-500/40 uppercase ml-1">Header Name</label>
                                  <input v-model="th.key" type="text" class="input-premium h-14 w-full bg-black/40 border-amber-500/10" placeholder="e.g. X-User-ID" />
                             </div>
                             <div class="flex-1 space-y-3">
-                                 <label class="text-[9px] font-bold text-amber-500/40 uppercase ml-1">Helper Instruction</label>
+                                 <label class="text-xs font-bold text-amber-500/40 uppercase ml-1">Helper Instruction</label>
                                  <input v-model="th.help" type="text" class="input-premium h-14 w-full bg-black/40 border-amber-500/10" placeholder="Ask user for their ID..." />
                             </div>
                             <button @click="removeTemplateHeader(idx)" class="btn-card-action btn-card-action-red">
@@ -493,7 +493,7 @@ onUnmounted(() => {
                             <label class="label-premium mb-0">Universal AI System Instructions</label>
                         </div>
                         <textarea v-model="newMCP.instructions" rows="5" class="input-premium w-full p-8 leading-relaxed text-sm" placeholder="Define boundaries and usage patterns for the AI..."></textarea>
-                        <p class="mt-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider">These guidelines are injected into the bot's system prompt whenever this node is active.</p>
+                        <p class="mt-3 text-xs text-slate-600 font-bold uppercase tracking-wider">These guidelines are injected into the bot's system prompt whenever this node is active.</p>
                     </div>
                 </div>
 

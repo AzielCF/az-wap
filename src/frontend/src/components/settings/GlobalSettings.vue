@@ -58,11 +58,11 @@ onMounted(loadSettings)
         <div v-if="saveStatus" class="absolute top-6 right-6 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
             <div v-if="saveStatus === 'success'" class="bg-emerald-500/20 border border-emerald-500/50 backdrop-blur-xl px-6 py-3 rounded-2xl flex items-center gap-3">
                 <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span class="text-emerald-400 text-[10px] font-black uppercase tracking-widest">Settings Synchronized</span>
+                <span class="text-emerald-400 text-xs font-black uppercase tracking-widest">Settings Synchronized</span>
             </div>
             <div v-if="saveStatus === 'error'" class="bg-rose-500/20 border border-rose-500/50 backdrop-blur-xl px-6 py-3 rounded-2xl flex items-center gap-3">
                 <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
-                <span class="text-rose-400 text-[10px] font-black uppercase tracking-widest">Failed to sync settings</span>
+                <span class="text-rose-400 text-xs font-black uppercase tracking-widest">Failed to sync settings</span>
             </div>
         </div>
 
@@ -76,7 +76,7 @@ onMounted(loadSettings)
                 <div class="form-control w-full space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <HardDrive class="w-5 h-5 text-primary" />
-                        <label class="text-[11px] font-black uppercase tracking-widest text-slate-400">WhatsApp Max Download Size</label>
+                        <label class="text-xs font-black uppercase tracking-widest text-slate-400">WhatsApp Max Download Size</label>
                     </div>
                     <div class="flex items-end gap-3">
                         <div class="relative flex-1">
@@ -89,7 +89,7 @@ onMounted(loadSettings)
                             <div class="absolute right-6 top-1/2 -translate-y-1/2 text-slate-600 font-black text-xs uppercase tracking-widest pointer-events-none">MB</div>
                         </div>
                     </div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
+                    <p class="text-xs text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
                         Default safety limit for all channels. Individual channel limits override this value.
                     </p>
                 </div>
@@ -98,13 +98,13 @@ onMounted(loadSettings)
                 <div class="form-control w-full space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <Cpu class="w-5 h-5 text-indigo-400" />
-                        <label class="text-[11px] font-black uppercase tracking-widest text-slate-400">AI Global Presence (Typing)</label>
+                        <label class="text-xs font-black uppercase tracking-widest text-slate-400">AI Global Presence (Typing)</label>
                     </div>
                     <label class="flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl p-6 cursor-pointer hover:bg-white/10 transition-all h-16 group/toggle">
                         <span class="text-xs font-bold uppercase tracking-widest text-slate-300 group-hover/toggle:text-white transition-colors">Simulate Human Typing</span>
                         <input type="checkbox" v-model="settings.ai_typing_enabled" class="toggle toggle-primary" />
                     </label>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
+                    <p class="text-xs text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
                         When enabled, the bot will show "typing..." status before responding to appear more human.
                     </p>
                 </div>
@@ -114,14 +114,14 @@ onMounted(loadSettings)
             <div class="form-control w-full space-y-4">
                 <div class="flex items-center gap-3 mb-2">
                     <Cpu class="w-5 h-5 text-purple-400" />
-                    <label class="text-[11px] font-black uppercase tracking-widest text-slate-400">Global AI System Prompt</label>
+                    <label class="text-xs font-black uppercase tracking-widest text-slate-400">Global AI System Prompt</label>
                 </div>
                 <textarea 
                     v-model="settings.ai_global_system_prompt"
                     class="textarea textarea-bordered w-full bg-white/5 border-white/10 focus:border-primary focus:outline-none min-h-[120px] text-slate-300 font-medium leading-relaxed"
                     placeholder="Enter global instructions for all bots..."
                 ></textarea>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-wider leading-relaxed opacity-70">
                     This prompt is prepended to all bot interactions unless overridden at the channel level.
                 </p>
             </div>
@@ -129,7 +129,7 @@ onMounted(loadSettings)
             <!-- Timezone -->
             <div class="form-control w-full space-y-4 max-w-md">
                 <div class="flex items-center gap-3 mb-2">
-                    <label class="text-[11px] font-black uppercase tracking-widest text-slate-400">Default AI Timezone</label>
+                    <label class="text-xs font-black uppercase tracking-widest text-slate-400">Default AI Timezone</label>
                 </div>
                 <input 
                     type="text" 
@@ -143,7 +143,7 @@ onMounted(loadSettings)
                 <button 
                     @click="saveSettings" 
                     :disabled="saving"
-                    class="btn btn-primary rounded-2xl px-12 h-14 border-none uppercase text-[10px] font-black tracking-[0.2em] transition-all shadow-xl shadow-primary/20 hover:scale-[1.02] flex items-center gap-3"
+                    class="btn btn-primary rounded-2xl px-12 h-14 border-none uppercase text-xs font-black tracking-widest transition-all shadow-xl shadow-primary/20 hover:scale-[1.02] flex items-center gap-3"
                 >
                     <Save v-if="!saving" class="w-4 h-4" />
                     <Loader2 v-else class="w-4 h-4 animate-spin" />

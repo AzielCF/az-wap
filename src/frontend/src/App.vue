@@ -67,7 +67,7 @@ onMounted(async () => {
             <img src="/src/assets/azwap.svg" class="w-full h-full object-contain" alt="Loading..." />
         </div>
         <div class="flex flex-col items-center gap-2">
-            <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white">Az-Wap Enterprise</h2>
+            <h2 class="text-xs font-black uppercase tracking-widest text-white">Az-Wap Enterprise</h2>
             <div class="flex gap-1">
                 <span class="w-1 h-1 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
                 <span class="w-1 h-1 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
@@ -107,7 +107,7 @@ onMounted(async () => {
       </main>
 
       <!-- Footer -->
-      <footer class="footer footer-center p-6 bg-[#0b0e14] text-slate-500 text-[10px] font-bold uppercase tracking-widest border-t border-white/5">
+      <footer class="footer footer-center p-6 bg-[#0b0e14] text-slate-500 text-xs font-bold uppercase tracking-widest border-t border-white/5">
         <aside>
           <p>© 2026 <a href="https://azielcruzado.com" target="_blank" rel="noopener noreferrer" class="text-primary">AzielCF</a> - AI WhatsApp Automation Engine - <a href="https://github.com/AzielCF/az-wap" target="_blank" rel="noopener noreferrer" class="hover:text-primary transition-colors">Source Code</a></p>
         </aside>
@@ -121,7 +121,7 @@ onMounted(async () => {
         <!-- Logo Area -->
         <div class="px-8 py-10 mb-2 border-b border-white/5 flex flex-col items-center">
            <img src="/src/assets/azwap.svg" class="w-full max-w-[140px] h-auto object-contain" alt="Az-Wap Enterprise" />
-           <div class="badge badge-primary badge-xs font-bold px-3 py-1 mt-4 text-[8px] tracking-[0.2em] uppercase shadow-lg border-none opacity-80 h-auto">AI WhatsApp Engine {{ appVersion }}</div>
+           <div class="badge badge-primary badge-xs font-bold px-3 py-1 mt-4 text-xs tracking-widest uppercase shadow-lg border-none opacity-80 h-auto">AI WhatsApp Engine {{ appVersion }}</div>
         </div>
 
         <!-- Navigation -->
@@ -188,11 +188,11 @@ onMounted(async () => {
         <div class="mt-auto p-8 bg-black/30 border-t border-white/5">
           <div class="flex items-center gap-4">
             <div class="bg-primary/20 text-primary rounded-lg w-10 h-10 flex items-center justify-center ring-1 ring-primary/30 shadow-inner">
-                <span class="text-[10px] font-bold uppercase tracking-tighter">AZL</span>
+                 <span class="text-xs font-bold uppercase tracking-widest">AZL</span>
             </div>
             <div>
               <p class="text-xs font-bold text-white uppercase tracking-tight">Cloud Master</p>
-              <p class="text-[9px] text-success font-bold uppercase tracking-widest animate-pulse">Running Pulse</p>
+               <p class="text-xs text-success font-bold uppercase tracking-widest animate-pulse">Running Pulse</p>
             </div>
           </div>
         </div>

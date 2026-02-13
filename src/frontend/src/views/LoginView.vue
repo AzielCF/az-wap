@@ -56,12 +56,12 @@ async function handleLogin() {
 
       <form @submit.prevent="handleLogin" class="space-y-6">
         <div class="space-y-2">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Identity</label>
+            <label class="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Identity</label>
             <input v-model="username" type="text" class="input-premium w-full h-14 bg-black/20 focus:bg-black/40" placeholder="Username" autofocus />
         </div>
         
         <div class="space-y-2">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Security Key</label>
+            <label class="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Security Key</label>
             <input v-model="password" type="password" class="input-premium w-full h-14 bg-black/20 focus:bg-black/40" placeholder="Password" />
         </div>
 
@@ -76,7 +76,7 @@ async function handleLogin() {
       </form>
 
       <div class="mt-8 text-center">
-        <p class="text-[9px] text-slate-600 font-mono">v2.0.0 Secure Environment</p>
+        <p class="text-xs text-slate-600 font-mono">v2.0.0 Secure Environment</p>
       </div>
     </div>
   </div>

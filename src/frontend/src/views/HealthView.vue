@@ -60,9 +60,9 @@ onMounted(loadHealth)
     <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-10 border-b border-white/5 mx-6 lg:mx-0">
       <div class="space-y-4 flex-1">
         <div class="flex items-center gap-3">
-          <span class="text-[10px] font-black uppercase tracking-[0.25em] text-primary/70">Structural Integrity</span>
+          <span class="text-xs font-black uppercase tracking-widest text-primary/70">Structural Integrity</span>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Global Cluster Health</span>
+          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Global Cluster Health</span>
         </div>
         <h2 class="text-6xl font-black tracking-tighter text-white uppercase leading-none">Health Monitor</h2>
       </div>
@@ -92,11 +92,11 @@ onMounted(loadHealth)
             <div class="flex items-center gap-4 mt-6">
                 <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-success"></span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-success">Secure Node</span>
+                    <span class="text-xs font-black uppercase tracking-widest text-success">Secure Node</span>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-primary">Streaming Data</span>
+                    <span class="text-xs font-black uppercase tracking-widest text-primary">Streaming Data</span>
                 </div>
             </div>
           </div>
@@ -108,7 +108,7 @@ onMounted(loadHealth)
       <div class="flex flex-wrap items-center gap-3 bg-white/[0.02] border border-white/5 p-2 rounded-3xl mx-6 lg:mx-0 sticky top-24 z-20 backdrop-blur-xl">
           <button v-for="type in entityTypes" :key="type.id"
                   @click="selectedType = type.id"
-                  class="flex items-center gap-3 px-6 py-3 rounded-2xl transition-all duration-300 font-black text-[10px] uppercase tracking-widest"
+                  class="flex items-center gap-3 px-6 py-3 rounded-2xl transition-all duration-300 font-black text-xs uppercase tracking-widest"
                   :class="selectedType === type.id 
                     ? 'bg-primary text-white shadow-lg shadow-primary/20' 
                     : 'text-slate-500 hover:text-white hover:bg-white/5'">
@@ -130,10 +130,10 @@ onMounted(loadHealth)
                   </div>
                   <div>
                       <h3 class="font-black text-sm tracking-tight text-white group-hover:text-primary transition-colors">{{ res.name || res.entity_id.substring(0, 8) }}</h3>
-                      <p class="text-[9px] font-black uppercase tracking-widest text-slate-600">{{ res.entity_type.replace('_', ' ') }}</p>
+                      <p class="text-xs font-black uppercase tracking-widest text-slate-600">{{ res.entity_type.replace('_', ' ') }}</p>
                   </div>
                </div>
-               <div class="badge badge-sm font-black text-[9px] tracking-widest" 
+               <div class="badge badge-sm font-black text-xs tracking-widest" 
                     :class="(res.status === 'OK' || res.status === 'HEALTHY') ? 'badge-success shadow-lg shadow-success/20' : 'badge-error shadow-lg shadow-error/20'">
                     {{ res.status }}
                </div>
@@ -142,18 +142,18 @@ onMounted(loadHealth)
             <div class="space-y-4">
                <p class="text-sm text-white/40 font-medium leading-relaxed min-h-[40px]">{{ res.last_message || 'No status message available' }}</p>
                
-               <div v-if="res.error" class="text-[10px] text-error bg-error/5 p-4 rounded-2xl font-mono break-all border border-error/10 leading-relaxed italic">
+               <div v-if="res.error" class="text-xs text-error bg-error/5 p-4 rounded-2xl font-mono break-all border border-error/10 leading-relaxed italic">
                   {{ res.error }}
                </div>
                
                <div class="flex items-center justify-between pt-6 border-t border-white/5">
                   <div class="flex flex-col">
-                      <span class="text-[8px] text-white/20 font-black uppercase tracking-widest">Reference ID</span>
-                      <span class="text-[10px] text-white/40 font-mono">{{ res.entity_id.substring(0, 12) }}...</span>
+                      <span class="text-xs text-white/20 font-black uppercase tracking-widest">Reference ID</span>
+                      <span class="text-xs text-white/40 font-mono">{{ res.entity_id.substring(0, 12) }}...</span>
                   </div>
                   <div class="flex items-center gap-1.5 opacity-40">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <span class="text-[10px] font-mono tracking-tighter">{{ res.latency_ms || 0 }}ms</span>
+                      <span class="text-xs font-mono tracking-tighter">{{ res.latency_ms || 0 }}ms</span>
                   </div>
                </div>
             </div>

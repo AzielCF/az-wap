@@ -111,7 +111,7 @@ const maxWarning = computed(() => activeTimeout.value - 1)
             </div>
 
             <div v-if="!isCustomized && isOverride" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                 <span class="text-xs font-black text-white/20 uppercase tracking-[0.5em]">Active Channel Configuration</span>
+                 <span class="text-xs font-black text-white/20 uppercase tracking-widest">Active Channel Configuration</span>
             </div>
         </div>
 

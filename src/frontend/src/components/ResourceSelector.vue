@@ -91,7 +91,7 @@ const activeBorderClass = computed(() => {
                 </div>
                 <div>
                     <div class="font-black text-white uppercase text-sm tracking-tight">{{ selectedItem.name }}</div>
-                    <div class="text-[9px] font-mono uppercase" :class="[props.color === 'indigo' ? 'text-indigo-400' : 'text-primary/60']">
+                    <div class="text-xs font-mono uppercase" :class="[props.color === 'indigo' ? 'text-indigo-400' : 'text-primary/60']">
                         {{ resourceLabel || 'Selected' }}
                     </div>
                 </div>
@@ -119,7 +119,7 @@ const activeBorderClass = computed(() => {
                 
                 <!-- Null option -->
                 <button v-if="nullable" @click="clearSelection" class="w-full p-4 hover:bg-white/5 rounded-2xl text-left border border-white/5 mb-2 group transition-all">
-                    <div class="text-[10px] font-black uppercase text-slate-500 group-hover:text-white transition-colors">
+                    <div class="text-xs font-black uppercase text-slate-500 group-hover:text-white transition-colors">
                         {{ nullable === true ? 'None / Reset Selection' : 'Reset Selection' }}
                     </div>
                 </button>
@@ -141,7 +141,7 @@ const activeBorderClass = computed(() => {
                     
                     <div class="flex-1 min-w-0">
                         <div class="text-xs font-black uppercase text-white tracking-wide truncate">{{ item.name }}</div>
-                        <div class="text-[9px] font-mono text-slate-500 truncate uppercase mt-0.5">ID: {{ String(item.id).substring(0,8) }}</div>
+                        <div class="text-xs font-mono text-slate-500 truncate uppercase mt-0.5">ID: {{ String(item.id).substring(0,8) }}</div>
                     </div>
                 </button>
             </div>

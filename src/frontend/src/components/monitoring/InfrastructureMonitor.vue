@@ -71,7 +71,7 @@ function formatChatKey(key: string) {
             <div class="flex items-center gap-3">
                 <Layers class="w-4 h-4 text-primary" />
                 <h3 class="text-sm font-bold text-white uppercase tracking-widest">Cluster Intelligence Dashboard</h3>
-                <div class="badge badge-neutral bg-white/5 border-white/10 text-[10px] font-black tracking-widest px-3 py-1 ml-2">
+                <div class="badge badge-neutral bg-white/5 border-white/10 text-xs font-black tracking-widest px-3 py-1 ml-2">
                     {{ activeServers.length }} NODES CONNECTED
                 </div>
             </div>
@@ -88,10 +88,10 @@ function formatChatKey(key: string) {
                     <div class="p-2 rounded-xl" :class="globalStats.valkey_enabled ? 'bg-primary/10' : 'bg-warning/10'">
                         <Database class="w-5 h-5" :class="globalStats.valkey_enabled ? 'text-primary' : 'text-warning'" />
                     </div>
-                    <span class="text-[10px] font-black uppercase" :class="globalStats.valkey_enabled ? 'text-primary' : 'text-warning'">Infrastructure</span>
+                    <span class="text-xs font-black uppercase" :class="globalStats.valkey_enabled ? 'text-primary' : 'text-warning'">Infrastructure</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.valkey_enabled ? 'Valkey' : 'Hybrid' }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">
                     {{ globalStats.valkey_enabled ? 'Distributed Mode: ON' : 'Fallback Mode: RAM' }}
                 </p>
             </div>
@@ -101,10 +101,10 @@ function formatChatKey(key: string) {
                     <div class="bg-success/10 p-2 rounded-xl">
                         <CheckCircle class="w-5 h-5 text-success" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Handled</span>
+                    <span class="text-xs font-black text-slate-700 uppercase">Handled</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.total_processed || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Global Messages</p>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Global Messages</p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
@@ -112,10 +112,10 @@ function formatChatKey(key: string) {
                     <div class="bg-warning/10 p-2 rounded-xl">
                         <Hourglass class="w-5 h-5 text-warning" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Today's Pool</span>
+                    <span class="text-xs font-black text-slate-700 uppercase">Today's Pool</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.pending_tasks_memory || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">In-Memory Tasks</p>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">In-Memory Tasks</p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
@@ -123,10 +123,10 @@ function formatChatKey(key: string) {
                     <div class="bg-slate-500/10 p-2 rounded-xl">
                         <RotateCw class="w-5 h-5 text-slate-500" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Scheduled</span>
+                    <span class="text-xs font-black text-slate-700 uppercase">Scheduled</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ globalStats.pending_tasks_db || 0 }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Long-term (SQLite)</p>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Long-term (SQLite)</p>
             </div>
 
             <div class="bg-[#161a23] border border-white/5 rounded-2xl overflow-hidden shadow-sm flex flex-col p-6 group transition-all hover:bg-white/[0.02]">
@@ -134,10 +134,10 @@ function formatChatKey(key: string) {
                     <div class="bg-purple-500/10 p-2 rounded-xl">
                         <Cpu class="w-5 h-5 text-purple-500" />
                     </div>
-                    <span class="text-[10px] font-black text-slate-700 uppercase">Cluster Load</span>
+                    <span class="text-xs font-black text-slate-700 uppercase">Cluster Load</span>
                 </div>
                 <h3 class="text-3xl font-bold text-white mb-1">{{ activeWorkersCount }} / {{ totalWorkersCount }}</h3>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Processing Threads</p>
+                <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Processing Threads</p>
             </div>
         </div>
     </div>
@@ -156,17 +156,17 @@ function formatChatKey(key: string) {
                         <div class="flex items-center gap-3">
                              <div class="flex items-center gap-1.5">
                                 <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Server Online</span>
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Server Online</span>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <Clock class="w-3 h-3 text-slate-600" />
-                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uptime: {{ formatUptime(server.uptime_seconds) }}</span>
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Uptime: {{ formatUptime(server.uptime_seconds) }}</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="bg-black/20 px-3 py-1.5 rounded-lg border border-white/5">
-                    <span class="text-[10px] font-black text-slate-600 italic">{{ server.version ? server.version : 'v2.0-beta' }}</span>
+                    <span class="text-xs font-black text-slate-600 italic">{{ server.version ? server.version : 'v2.0-beta' }}</span>
                 </div>
             </div>
 
@@ -176,7 +176,7 @@ function formatChatKey(key: string) {
                 <div class="space-y-4">
                     <div class="flex items-center gap-2 mb-2">
                         <div class="w-1.5 h-4 bg-primary rounded-full"></div>
-                        <h5 class="text-[10px] font-black text-white uppercase tracking-widest mt-0.5">Primary Processor Hub</h5>
+                        <h5 class="text-xs font-black text-white uppercase tracking-widest mt-0.5">Primary Processor Hub</h5>
                     </div>
                     
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -185,7 +185,7 @@ function formatChatKey(key: string) {
                              :class="w.is_processing ? 'border-primary/30 ring-1 ring-primary/20' : ''"
                         >
                             <div class="flex justify-between items-start mb-3">
-                                <span class="text-[9px] font-black text-slate-600 uppercase">Worker #{{ w.worker_id }}</span>
+                                <span class="text-xs font-black text-slate-600 uppercase">Worker #{{ w.worker_id }}</span>
                                 <div v-if="w.is_processing" class="flex items-center gap-2">
                                     <div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
                                 </div>
@@ -205,7 +205,7 @@ function formatChatKey(key: string) {
                 <div class="space-y-4 pt-4 border-t border-white/5">
                     <div class="flex items-center gap-2 mb-2">
                         <div class="w-1.5 h-4 bg-secondary rounded-full"></div>
-                        <h5 class="text-[10px] font-black text-white uppercase tracking-widest mt-0.5">Webhook Dispatcher Array</h5>
+                        <h5 class="text-xs font-black text-white uppercase tracking-widest mt-0.5">Webhook Dispatcher Array</h5>
                     </div>
                     
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -214,10 +214,10 @@ function formatChatKey(key: string) {
                              :class="w.is_processing ? 'bg-secondary/5 border-secondary/30' : ''"
                         >
                             <div class="flex items-center justify-between mb-1">
-                                <span class="text-[8px] font-black text-slate-700 uppercase">W-{{ w.worker_id }}</span>
+                                <span class="text-xs font-black text-slate-700 uppercase">W-{{ w.worker_id }}</span>
                                 <Zap v-if="w.is_processing" class="w-2.5 h-2.5 text-secondary animate-pulse" />
                             </div>
-                            <div class="text-[9px] font-bold text-white transition-opacity truncate" :class="w.is_processing ? 'opacity-100' : 'opacity-20'">
+                            <div class="text-xs font-bold text-white transition-opacity truncate" :class="w.is_processing ? 'opacity-100' : 'opacity-20'">
                                 {{ w.is_processing ? 'ACTIVE' : 'READY' }}
                             </div>
                         </div>

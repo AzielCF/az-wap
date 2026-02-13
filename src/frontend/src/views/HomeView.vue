@@ -105,7 +105,7 @@ onMounted(loadStats)
             <div class="relative z-10 max-w-2xl text-center lg:text-left">
                 <div class="flex items-center justify-center lg:justify-start gap-4 mb-8">
                     <span class="w-10 h-[2px] bg-primary/40 hidden lg:block"></span>
-                    <span class="text-[10px] font-black uppercase tracking-[0.4em] text-primary">Az-Wap AI WhatsApp Engine</span>
+                    <span class="text-xs font-black uppercase tracking-widest text-primary">Az-Wap AI WhatsApp Engine</span>
                 </div>
                 
                 <h1 class="text-5xl lg:text-7xl font-black tracking-tighter mb-6 text-white leading-[0.9]">
@@ -134,7 +134,7 @@ onMounted(loadStats)
     <!-- Stats Grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
       <div v-for="stat in stats" :key="stat.label" class="bg-[#161a23]/40 border border-white/5 rounded-[2rem] p-8 hover:border-primary/20 transition-all duration-500 group shadow-2xl backdrop-blur-xl relative overflow-hidden">
-        <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6 group-hover:text-primary transition-colors">{{ stat.label }}</p>
+        <p class="text-xs font-black uppercase tracking-widest text-slate-500 mb-6 group-hover:text-primary transition-colors">{{ stat.label }}</p>
         <div class="flex items-baseline justify-between relative z-10">
             <h3 class="text-5xl font-black text-white tracking-tighter">{{ stat.value }}</h3>
             <span class="badge-premium" :class="stat.trend === 'up' ? 'badge-success' : 'badge-ghost opacity-60'">
@@ -153,7 +153,7 @@ onMounted(loadStats)
                 <div class="overflow-x-auto">
                     <table class="table-premium w-full border-collapse">
                         <thead>
-                            <tr class="text-[10px] text-slate-500 uppercase tracking-[0.2em] border-b border-white/5 bg-white/[0.02]">
+                            <tr class="text-xs text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
                                 <th class="py-6 pl-10">Event Time</th>
                                 <th>Subsystem</th>
                                 <th>Operational Data</th>
@@ -194,22 +194,22 @@ onMounted(loadStats)
                     </div>
                     <div>
                         <h4 class="text-base font-black text-white uppercase tracking-tight">Cloud Master</h4>
-                        <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1 opacity-60">Global Persistence Session</p>
+                        <p class="text-xs font-black text-slate-500 uppercase tracking-widest mt-1 opacity-60">Global Persistence Session</p>
                     </div>
                 </div>
                 
                 <div class="space-y-4 pt-6">
                     <div class="p-6 rounded-[1.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-between group/item cursor-pointer hover:bg-white/[0.05] transition-all shadow-lg" @click="router.push('/settings')">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover/item:text-primary transition-colors">Core Backbone</span>
+                        <span class="text-xs font-black uppercase tracking-widest text-slate-400 group-hover/item:text-primary transition-colors">Core Backbone</span>
                         <div class="flex items-center gap-2">
                             <div class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></div>
-                            <span class="text-[9px] font-black text-success uppercase">Active</span>
+                            <span class="text-xs font-black text-success uppercase">Active</span>
                         </div>
                     </div>
                     <div class="p-6 rounded-[1.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-between group/item cursor-pointer hover:bg-white/[0.05] transition-all shadow-lg" @click="router.push('/monitoring')">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover/item:text-primary transition-colors">Neural Monitor</span>
+                        <span class="text-xs font-black uppercase tracking-widest text-slate-400 group-hover/item:text-primary transition-colors">Neural Monitor</span>
                         <div class="flex items-center gap-2">
-                             <span class="text-[9px] font-black text-primary uppercase">Syncing</span>
+                             <span class="text-xs font-black text-primary uppercase">Syncing</span>
                         </div>
                     </div>
                 </div>

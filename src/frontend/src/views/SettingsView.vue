@@ -22,9 +22,9 @@ function saveInfrastructure() {
     <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 py-10 border-b border-white/5 mx-6 lg:mx-0">
         <div class="space-y-4">
             <div class="flex items-center gap-3">
-                <span class="text-sm font-black uppercase tracking-[0.25em] text-primary/70">Gateway Cluster</span>
+                <span class="text-xs font-black uppercase tracking-widest text-primary/70">Gateway Cluster</span>
                 <span class="opacity-10 text-xl font-thin text-white">/</span>
-                <span class="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Node Management</span>
+                <span class="text-xs font-black uppercase tracking-widest text-slate-500">Node Management</span>
             </div>
             <h2 class="text-6xl font-black tracking-tighter text-white uppercase leading-none">Settings</h2>
         </div>
@@ -39,13 +39,13 @@ function saveInfrastructure() {
                 <div class="form-control w-full">
                     <label class="label-premium text-slate-400">API Gateway Base URL</label>
                     <input v-model="apiBaseUrl" type="text" placeholder="http://localhost:3000" class="input-premium h-16 w-full text-lg font-black" />
-                    <p class="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-3 px-1">Must include protocol (http/https). Default Node: 3000</p>
+                    <p class="text-xs text-slate-600 font-bold uppercase tracking-widest mt-3 px-1">Must include protocol (http/https). Default Node: 3000</p>
                 </div>
 
                 <div class="form-control w-full">
                     <label class="label-premium text-slate-400">Master Auth Token</label>
                     <input v-model="apiToken" type="password" placeholder="••••••••••••••••" class="input-premium h-16 w-full text-lg font-black" />
-                    <p class="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-3 px-1">Encrypted in browser local-storage.</p>
+                    <p class="text-xs text-slate-600 font-bold uppercase tracking-widest mt-3 px-1">Encrypted in browser local-storage.</p>
                 </div>
             </div>
 
@@ -78,8 +78,8 @@ function saveInfrastructure() {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
         </div>
         <div>
-            <h4 class="text-sm font-black uppercase tracking-[0.25em] text-white/90 mb-2">Infrastructure Security Enforcement</h4>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed opacity-60">
+            <h4 class="text-xs font-black uppercase tracking-widest text-white/90 mb-2">Infrastructure Security Enforcement</h4>
+            <p class="text-xs text-slate-500 font-bold uppercase tracking-widest leading-relaxed opacity-60">
                 To maintain node integrity, ensure your API Gateway is deployed behind a secure Reverse Proxy with TLS/SSL. Unauthorized access to the Backbone URL may compromise all connected WhatsApp instances.
             </p>
         </div>

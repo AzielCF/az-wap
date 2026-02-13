@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
     <div class="flex items-center justify-between border-b border-white/5 pb-6">
         <div class="space-y-1">
             <h4 class="text-xs font-black text-white uppercase tracking-widest">Connection Protocol</h4>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] font-mono">NODE: {{ channel.id.substring(0,12) }}</p>
+            <p class="text-xs text-slate-500 font-bold uppercase tracking-widest font-mono">NODE: {{ channel.id.substring(0,12) }}</p>
         </div>
         <div class="flex gap-3">
             <div v-if="status.isHibernating" class="badge-premium border-primary/20 text-primary animate-pulse">
@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="flex items-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10">
                     <div class="w-2 h-2 rounded-full bg-primary animate-ping"></div>
-                    <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Scanning Active</span>
+                    <span class="text-xs font-black text-slate-300 uppercase tracking-widest">Scanning Active</span>
                 </div>
             </div>
 
@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
                         <!-- Upload Overlay -->
                         <div v-if="!uploadingPhoto" @click="fileInput?.click()" class="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                            <span class="text-[8px] font-black text-white uppercase tracking-widest">Update</span>
+                            <span class="text-xs font-black text-white uppercase tracking-widest">Update</span>
                         </div>
                         <div v-else class="absolute inset-0 bg-black/60 flex items-center justify-center">
                             <span class="loading loading-spinner loading-sm text-primary"></span>
@@ -239,11 +239,11 @@ onBeforeUnmount(() => {
 
                 <div class="text-center">
                     <h3 class="text-2xl font-black text-white uppercase tracking-tighter mb-1">Instance Linked</h3>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Protocol Sync Complete</p>
+                    <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Protocol Sync Complete</p>
                 </div>
 
                 <div v-if="status.isPaused" class="mt-6 px-4 py-1.5 bg-warning/10 border border-warning/20 rounded-lg w-full text-center">
-                   <p class="text-[9px] text-warning font-bold uppercase tracking-widest">Bot is Paused • Resume to restore real-time sync</p>
+                   <p class="text-xs text-warning font-bold uppercase tracking-widest">Bot is Paused • Resume to restore real-time sync</p>
                 </div>
             </div>
 
@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
                 <div class="w-20 h-20 mb-6 flex items-center justify-center bg-white/5 rounded-full ring-1 ring-white/10">
                     <i class="whatsapp icon big" style="color: white !important"></i>
                 </div>
-                <p class="text-[11px] font-black text-white uppercase tracking-[0.3em]">Ready for Auth</p>
+                 <p class="text-xs font-black text-white uppercase tracking-widest">Ready for Auth</p>
             </div>
 
             <!-- Status Indicator Overlay (Bottom) -->
@@ -268,12 +268,12 @@ onBeforeUnmount(() => {
         <div v-if="!status.loggedIn" class="space-y-6">
             <!-- Toggle Method -->
             <div class="flex p-1.5 bg-black/40 rounded-[1.25rem] border border-white/5 shadow-2xl">
-                <button class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer" 
+                <button class="flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer" 
                     :class="loginMethod === 'qr' ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-slate-500 hover:text-slate-300'"
                     @click="loginMethod = 'qr'; status.qr = null; pairingCode = null">
                     Digital QR
                 </button>
-                <button class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer" 
+                <button class="flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer" 
                     :class="loginMethod === 'code' ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-slate-500 hover:text-slate-300'"
                     @click="loginMethod = 'code'; status.qr = null; pairingCode = null">
                     Pairing Code
@@ -289,8 +289,8 @@ onBeforeUnmount(() => {
             <div v-if="loginMethod === 'code' && !pairingCode" class="space-y-4 animate-in fade-in slide-in-from-bottom-2">
                  <div class="form-control">
                     <label class="label-premium px-1">Infrastructure Phone Number</label>
-                    <input v-model="phoneNumber" type="tel" placeholder="e.g. 51999999999" class="input-premium bg-black/40 text-center font-mono text-xl tracking-[0.2em] w-full h-16" />
-                    <p class="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-2 px-1">Include country code without special characters</p>
+                    <input v-model="phoneNumber" type="tel" placeholder="e.g. 51999999999" class="input-premium bg-black/40 text-center font-mono text-xl tracking-widest w-full h-16" />
+                    <p class="text-xs text-slate-600 font-bold uppercase tracking-widest mt-2 px-1">Include country code without special characters</p>
                 </div>
                 <button @click="loginWithCode" class="btn-premium btn-premium-primary w-full h-16" :disabled="status.loading || !phoneNumber">
                     Request Secure Code
@@ -305,11 +305,11 @@ onBeforeUnmount(() => {
                      </span>
                 </div>
                 <div class="p-6 bg-primary/5 border border-primary/20 rounded-2xl">
-                    <p class="text-[10px] text-primary/80 font-bold uppercase tracking-widest text-center max-w-sm leading-relaxed">
+                    <p class="text-xs text-primary/80 font-bold uppercase tracking-widest text-center max-w-sm leading-relaxed">
                         WhatsApp > Linked Devices > Link a Device > Link with phone number instead
                     </p>
                 </div>
-                <button @click="pairingCode = null" class="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-primary transition-colors cursor-pointer">Abort & Reset</button>
+                <button @click="pairingCode = null" class="text-xs font-black uppercase tracking-widest text-slate-600 hover:text-primary transition-colors cursor-pointer">Abort & Reset</button>
             </div>
         </div>
 
@@ -320,11 +320,11 @@ onBeforeUnmount(() => {
             </button>
             <div class="p-5 bg-success/5 border border-success/10 rounded-2xl flex items-center justify-center gap-3">
                <div class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></div>
-               <p class="text-[10px] text-success/70 font-black uppercase tracking-widest text-center">Protocol Synchronized • Session Healthy</p>
+               <p class="text-xs text-success/70 font-black uppercase tracking-widest text-center">Protocol Synchronized • Session Healthy</p>
             </div>
         </div>
 
-        <button class="btn-premium btn-premium-ghost h-12 w-full text-[10px] opacity-40 hover:opacity-100" @click="refresh" :disabled="status.loading">
+        <button class="btn-premium btn-premium-ghost h-12 w-full text-xs opacity-40 hover:opacity-100" @click="refresh" :disabled="status.loading">
             Force Status Sync
         </button>
     </div>

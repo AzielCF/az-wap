@@ -119,7 +119,7 @@ onMounted(loadWorkspaces)
           <Layers class="w-4 h-4 text-primary" />
           <span class="section-title-premium py-0 border-none pl-0 text-primary">Multi-Tenant Core</span>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Infrastructure Nodes</span>
+          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Infrastructure Nodes</span>
         </div>
         <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">Workspaces</h2>
       </div>
@@ -142,7 +142,7 @@ onMounted(loadWorkspaces)
             <div class="overflow-x-auto lg:overflow-visible">
                 <table class="table w-full border-collapse">
                     <thead>
-                        <tr class="text-[10px] text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+                        <tr class="text-xs text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
                             <th class="py-6 pl-10 font-black">Node Identification</th>
                             <th class="font-black">Operational Context</th>
                             <th class="font-black">Owner ID</th>
@@ -159,16 +159,16 @@ onMounted(loadWorkspaces)
                                     </div>
                                     <div>
                                         <div class="text-lg font-black text-white uppercase tracking-tighter leading-none mb-1 group-hover:text-primary transition-colors cursor-pointer" @click="router.push(`/workspaces/${ws.id}`)">{{ ws.name }}</div>
-                                        <div class="text-[9px] font-mono text-slate-600 uppercase tracking-widest select-all">{{ ws.id }}</div>
+                                        <div class="text-xs font-mono text-slate-600 uppercase tracking-widest select-all">{{ ws.id }}</div>
                                     </div>
                                 </div>
                             </td>
                             <td class="text-xs text-slate-500 max-w-xs truncate font-medium uppercase italic">{{ ws.description || 'No operational manifest defined.' }}</td>
-                            <td class="text-[10px] font-black text-slate-600 uppercase tracking-widest font-mono">{{ ws.owner_id || 'SYSTEM_CORE' }}</td>
+                            <td class="text-xs font-black text-slate-600 uppercase tracking-widest font-mono">{{ ws.owner_id || 'SYSTEM_CORE' }}</td>
                             <td>
                                 <div class="flex items-center gap-2">
                                     <div class="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(var(--su),0.5)] animate-pulse"></div>
-                                    <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest">ACTIVE</span>
+                                    <span class="text-xs font-black text-slate-300 uppercase tracking-widest">ACTIVE</span>
                                 </div>
                             </td>
                             <td class="pr-10 text-right">
@@ -176,7 +176,7 @@ onMounted(loadWorkspaces)
                                     <button @click="openEdit(ws)" class="btn-premium btn-premium-square btn-premium-sm btn-premium-ghost border border-white/10 lg:hidden" title="Edit Metadata">
                                         <Edit3 class="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
                                     </button>
-                                     <button @click="router.push(`/workspaces/${ws.id}`)" class="btn-premium btn-premium-primary px-6 h-10 text-[10px] shadow-lg shadow-primary/20">
+                                     <button @click="router.push(`/workspaces/${ws.id}`)" class="btn-premium btn-premium-primary px-6 h-10 text-xs shadow-lg shadow-primary/20">
                                         Open Cluster
                                     </button>
                                     <div class="dropdown dropdown-end">
@@ -204,7 +204,7 @@ onMounted(loadWorkspaces)
                             <td colspan="5" class="py-32 text-center bg-black/5">
                                 <div class="flex flex-col items-center gap-4 opacity-20">
                                     <Layers class="w-12 h-12 text-slate-500" />
-                                    <div class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-300">Central Gateway: No nodes found in cluster.</div>
+                                    <div class="text-xs font-black uppercase tracking-widest text-slate-300">Central Gateway: No nodes found in cluster.</div>
                                 </div>
                             </td>
                         </tr>

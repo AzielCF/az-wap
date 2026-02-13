@@ -299,7 +299,7 @@ function parseMetadata(val: any) {
         <div class="bg-[#161a23] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
             <table class="table w-full table-fixed">
                 <thead>
-                    <tr class="text-[10px] text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.01]">
+                    <tr class="text-xs text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.01]">
                         <th class="py-4 pl-6 w-24">Time</th>
                         <th class="w-24">Stage</th>
                         <th class="w-24">Kind</th>
@@ -325,9 +325,9 @@ function parseMetadata(val: any) {
                                     <div class="ml-auto flex items-center gap-4">
                                         <div v-if="g.total_cost > 0" class="flex items-center gap-1.5 px-2 py-1 bg-primary/10 border border-primary/20 rounded-md">
                                             <Zap class="w-3 h-3 text-primary" />
-                                            <span class="text-[10px] font-black text-primary tracking-tighter">${{ g.total_cost.toFixed(6) }}</span>
+                                            <span class="text-xs font-black text-primary tracking-widest">${{ g.total_cost.toFixed(6) }}</span>
                                         </div>
-                                        <span class="text-[10px] uppercase font-bold tracking-widest text-slate-600">{{ g.events.length }} EVENTS</span>
+                                        <span class="text-xs uppercase font-bold tracking-widest text-slate-600">{{ g.events.length }} EVENTS</span>
                                     </div>
                                 </div>
                             </td>
@@ -356,29 +356,29 @@ function parseMetadata(val: any) {
                                     <td class="py-3">
                                         <div v-if="getStepType(e) === 'mcp'" class="inline-flex items-center px-2 py-1 rounded bg-teal-500/10 border border-teal-500/20 text-teal-400 shadow-sm">
                                             <Wrench class="w-3 h-3 mr-1.5" />
-                                            <span class="text-[10px] font-bold uppercase tracking-wide">mcp_call</span>
+                                            <span class="text-xs font-bold uppercase tracking-widest">mcp_call</span>
                                         </div>
                                         <div v-else-if="e.stage === 'ai_request'" class="inline-flex items-center px-2 py-1 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 shadow-sm">
                                             <Brain class="w-3 h-3 mr-1.5" />
-                                            <span class="text-[10px] font-bold uppercase tracking-wide">request</span>
+                                            <span class="text-xs font-bold uppercase tracking-widest">request</span>
                                         </div>
                                         <div v-else-if="e.stage === 'ai_reply'" class="inline-flex items-center px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-sm">
                                             <Bot class="w-3 h-3 mr-1.5" />
-                                            <span class="text-[10px] font-bold uppercase tracking-wide">response</span>
+                                            <span class="text-xs font-bold uppercase tracking-widest">response</span>
                                         </div>
                                         <div v-else-if="e.stage === 'intuition'" class="flex items-center gap-2">
                                             <div class="inline-flex items-center px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 shadow-sm">
                                                 <Lightbulb class="w-3 h-3 mr-1.5" />
-                                                <span class="text-[10px] font-bold uppercase tracking-wide">intuition</span>
+                                                <span class="text-xs font-bold uppercase tracking-widest">intuition</span>
                                             </div>
                                             <div v-if="e.metadata?.system_cached === 'true'" class="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 shadow-sm" title="System prompt served from cache">
                                                 <Database class="w-2.5 h-2.5 mr-1" />
-                                                <span class="text-[8px] font-black uppercase">cached</span>
+                                                <span class="text-xs font-black uppercase">cached</span>
                                             </div>
                                         </div>
                                         <div v-else-if="e.stage === 'outbound_ack'" class="inline-flex items-center px-2 py-1 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-sm">
                                             <MessageSquare class="w-3 h-3 mr-1.5" />
-                                            <span class="text-[10px] font-bold uppercase tracking-wide">quick ack</span>
+                                            <span class="text-xs font-bold uppercase tracking-widest">quick ack</span>
                                         </div>
                                         <div v-else class="text-xs font-bold text-slate-500 pl-2">
                                             {{ e.stage }}
@@ -391,7 +391,7 @@ function parseMetadata(val: any) {
                                             <Wrench class="w-3 h-3 text-teal-600" />
                                             <span class="text-sm font-bold text-slate-200 truncate">{{ e.kind || 'unknown_tool' }}</span>
                                         </div>
-                                        <div v-else-if="e.stage === 'ai_request'" class="text-[10px] font-black text-blue-500/60 uppercase tracking-tighter italic">
+                                        <div v-else-if="e.stage === 'ai_request'" class="text-xs font-black text-blue-500/60 uppercase tracking-widest italic">
                                             {{ e.kind || 'PROMPT' }}
                                         </div>
                                         <div v-else-if="e.kind" class="text-xs text-slate-500 font-medium truncate">
@@ -401,10 +401,10 @@ function parseMetadata(val: any) {
 
                                     <!-- Model -->
                                     <td class="py-3">
-                                        <span v-if="e.metadata?.model" class="text-[10px] font-bold text-primary/80 uppercase truncate block mr-4" :title="e.metadata.model">
+                                        <span v-if="e.metadata?.model" class="text-xs font-bold text-primary/80 uppercase truncate block mr-4" :title="e.metadata.model">
                                             {{ e.metadata.model }}
                                         </span>
-                                        <span v-else class="text-[10px] text-slate-700">-</span>
+                                        <span v-else class="text-xs text-slate-700">-</span>
                                     </td>
 
                                     <!-- Channel Name (Resolved) -->
@@ -421,13 +421,13 @@ function parseMetadata(val: any) {
                                                 {{ e.metadata.usage_cost || e.metadata.cost }}
                                             </span>
                                             <div class="flex items-center gap-1.5 mt-0.5 opacity-60">
-                                                <span v-if="e.metadata.usage_input_tokens" class="text-[9px] font-mono text-blue-400">
+                                                <span v-if="e.metadata.usage_input_tokens" class="text-xs font-mono text-blue-400">
                                                     I:{{ e.metadata.usage_input_tokens }}
                                                 </span>
-                                                <span v-if="e.metadata.usage_output_tokens" class="text-[9px] font-mono text-emerald-400">
+                                                <span v-if="e.metadata.usage_output_tokens" class="text-xs font-mono text-emerald-400">
                                                     O:{{ e.metadata.usage_output_tokens }}
                                                 </span>
-                                                <span v-if="e.metadata.usage_cached_tokens" class="text-[9px] font-mono text-amber-400 flex items-center gap-0.5" title="Cached Tokens">
+                                                <span v-if="e.metadata.usage_cached_tokens" class="text-xs font-mono text-amber-400 flex items-center gap-0.5" title="Cached Tokens">
                                                     <Zap class="w-2 h-2" />{{ e.metadata.usage_cached_tokens }}
                                                 </span>
                                             </div>
@@ -436,35 +436,35 @@ function parseMetadata(val: any) {
                                             <div v-if="(e.stage === 'ai_reply' || e.stage === 'intuition') && e.metadata.usage_system_tokens" class="hidden group-hover/cost:block absolute bottom-full left-0 mb-2 p-2 bg-[#1a1e29] border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] animate-in fade-in slide-in-from-bottom-1 duration-200">
                                                 <div class="space-y-1.5">
                                                     <div class="flex justify-between gap-4">
-                                                        <span class="text-[8px] font-bold text-slate-500 uppercase">System</span>
-                                                        <span class="text-[9px] font-mono text-blue-400">{{ e.metadata.usage_system_tokens }}</span>
+                                                        <span class="text-xs font-bold text-slate-500 uppercase">System</span>
+                                                        <span class="text-xs font-mono text-blue-400">{{ e.metadata.usage_system_tokens }}</span>
                                                     </div>
                                                     <div class="flex justify-between gap-4">
-                                                        <span class="text-[8px] font-bold text-slate-500 uppercase">User</span>
-                                                        <span class="text-[9px] font-mono text-indigo-400">{{ e.metadata.usage_user_tokens }}</span>
+                                                        <span class="text-xs font-bold text-slate-500 uppercase">User</span>
+                                                        <span class="text-xs font-mono text-indigo-400">{{ e.metadata.usage_user_tokens }}</span>
                                                     </div>
                                                     <div class="flex justify-between gap-4">
-                                                        <span class="text-[8px] font-bold text-slate-500 uppercase">History</span>
-                                                        <span class="text-[9px] font-mono text-violet-400">{{ e.metadata.usage_history_tokens }}</span>
+                                                        <span class="text-xs font-bold text-slate-500 uppercase">History</span>
+                                                        <span class="text-xs font-mono text-violet-400">{{ e.metadata.usage_history_tokens }}</span>
                                                     </div>
                                                     <div v-if="e.metadata.usage_cached_tokens" class="pt-1 border-t border-white/5 flex justify-between gap-4">
-                                                        <span class="text-[8px] font-bold text-amber-500 uppercase">Cached</span>
-                                                        <span class="text-[9px] font-mono text-amber-400">{{ e.metadata.usage_cached_tokens }}</span>
+                                                        <span class="text-xs font-bold text-amber-500 uppercase">Cached</span>
+                                                        <span class="text-xs font-mono text-amber-400">{{ e.metadata.usage_cached_tokens }}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                        <span v-else class="text-[10px] text-slate-700">-</span>
+                                        <span v-else class="text-xs text-slate-700">-</span>
                                     </td>
 
                                     <!-- Status Badge -->
                                     <td class="py-3">
                                         <div class="flex flex-col gap-1">
-                                            <div class="w-fit px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shadow-inner" 
+                                            <div class="w-fit px-2 py-0.5 rounded text-xs font-black uppercase tracking-widest shadow-inner" 
                                                 :class="e.status === 'ok' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'">
                                                 {{ e.status }}
                                             </div>
-                                            <span v-if="e.duration_ms" class="text-[9px] text-slate-500 font-mono italic">
+                                            <span v-if="e.duration_ms" class="text-xs text-slate-500 font-mono italic">
                                                 {{ e.duration_ms }}ms
                                             </span>
                                         </div>
@@ -486,15 +486,15 @@ function parseMetadata(val: any) {
                                             <div v-if="e.kind === 'mcp_call'" class="mb-2 p-3 bg-teal-950/20 border border-teal-500/10 rounded-lg">
                                                 <div class="flex items-center gap-2 mb-1">
                                                     <Wrench class="w-3 h-3 text-teal-500" />
-                                                    <span class="text-[10px] font-bold text-teal-400 uppercase tracking-widest">MCP Call Details</span>
+                                                    <span class="text-xs font-bold text-teal-400 uppercase tracking-widest">MCP Call Details</span>
                                                 </div>
                                             </div>
 
                                             <div v-for="(val, key) in e.metadata" :key="key" class="space-y-2">
                                                 <!-- Skip the usage keys we'll show in a better way -->
                                                 <template v-if="!['usage_system_tokens', 'usage_user_tokens', 'usage_history_tokens', 'usage_input_tokens', 'usage_output_tokens', 'usage_cached_tokens', 'usage_cost', 'cost', 'input_tokens', 'output_tokens'].includes(key as string)">
-                                                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-600">{{ String(key).replace(/_/g, ' ') }}</div>
-                                                    <pre class="bg-black/40 p-3 rounded border border-white/5 text-[11px] font-mono text-slate-400 overflow-auto max-h-60 select-all custom-scrollbar">{{ parseMetadata(val) }}</pre>
+                                                    <div class="text-xs font-bold uppercase tracking-widest text-slate-600">{{ String(key).replace(/_/g, ' ') }}</div>
+                                                    <pre class="bg-black/40 p-3 rounded border border-white/5 text-xs font-mono text-slate-400 overflow-auto max-h-60 select-all custom-scrollbar">{{ parseMetadata(val) }}</pre>
                                                 </template>
                                             </div>
 
@@ -504,7 +504,7 @@ function parseMetadata(val: any) {
                                                     <component :is="e.stage === 'intuition' ? Lightbulb : Brain" 
                                                                class="w-3 h-3" 
                                                                :class="e.stage === 'intuition' ? 'text-amber-400' : 'text-primary'" />
-                                                    <span class="text-[10px] font-black text-white uppercase tracking-widest">
+                                                    <span class="text-xs font-black text-white uppercase tracking-widest">
                                                         {{ e.stage === 'intuition' ? 'INTUITION METRICS' : 'TOKEN INTELLIGENCE (USAGE BREAKDOWN)' }}
                                                     </span>
                                                 </div>
@@ -512,40 +512,40 @@ function parseMetadata(val: any) {
                                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                                                     <!-- Detailed Table -->
                                                     <div class="space-y-3">
+                                                         <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+                                                              <span class="text-xs font-bold text-slate-500 uppercase">System Prompt</span>
+                                                              <div class="flex items-center gap-3">
+                                                                  <span v-if="e.metadata.system_cached === 'true' || e.metadata.usage_cached_tokens > 0" class="text-xs font-black text-purple-500 uppercase tracking-widest bg-purple-500/10 px-1.5 rounded border border-purple-500/20 flex items-center gap-1">
+                                                                      <Database class="w-2.5 h-2.5" /> CACHED
+                                                                  </span>
+                                                                  <span class="text-xs font-mono" :class="e.metadata.system_cached === 'true' ? 'text-purple-400' : 'text-blue-400'">
+                                                                     {{ e.metadata.usage_system_tokens || 0 }} tokens
+                                                                  </span>
+                                                              </div>
+                                                         </div>
                                                         <div class="flex items-center justify-between py-1.5 border-b border-white/5">
-                                                             <span class="text-[10px] font-bold text-slate-500 uppercase">System Prompt</span>
-                                                             <div class="flex items-center gap-3">
-                                                                 <span v-if="e.metadata.system_cached === 'true' || e.metadata.usage_cached_tokens > 0" class="text-[9px] font-black text-purple-500 uppercase tracking-tighter bg-purple-500/10 px-1.5 rounded border border-purple-500/20 flex items-center gap-1">
-                                                                     <Database class="w-2.5 h-2.5" /> CACHED
-                                                                 </span>
-                                                                 <span class="text-xs font-mono" :class="e.metadata.system_cached === 'true' ? 'text-purple-400' : 'text-blue-400'">
-                                                                    {{ e.metadata.usage_system_tokens || 0 }} tokens
-                                                                 </span>
-                                                             </div>
+                                                             <span class="text-xs font-bold text-slate-500 uppercase">User Input</span>
+                                                             <span class="text-xs font-mono text-indigo-400">{{ e.metadata.usage_user_tokens || 0 }} tokens</span>
                                                         </div>
-                                                       <div class="flex items-center justify-between py-1.5 border-b border-white/5">
-                                                            <span class="text-[10px] font-bold text-slate-500 uppercase">User Input</span>
-                                                            <span class="text-xs font-mono text-indigo-400">{{ e.metadata.usage_user_tokens || 0 }} tokens</span>
-                                                       </div>
-                                                       <div class="flex items-center justify-between py-1.5 border-b border-white/5">
-                                                            <span class="text-[10px] font-bold text-slate-500 uppercase">Conversation History</span>
-                                                            <span class="text-xs font-mono text-violet-400">{{ e.metadata.usage_history_tokens || 0 }} tokens</span>
-                                                       </div>
-                                                       <div class="flex items-center justify-between py-2 mt-2 bg-white/[0.02] px-3 rounded-lg border border-white/5">
-                                                            <span class="text-[10px] font-black text-white uppercase">TOTAL INPUT</span>
-                                                            <span class="text-sm font-black text-white font-mono">{{ e.metadata.usage_input_tokens || e.metadata.input_tokens || 0 }}</span>
-                                                       </div>
+                                                        <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+                                                             <span class="text-xs font-bold text-slate-500 uppercase">Conversation History</span>
+                                                             <span class="text-xs font-mono text-violet-400">{{ e.metadata.usage_history_tokens || 0 }} tokens</span>
+                                                        </div>
+                                                        <div class="flex items-center justify-between py-2 mt-2 bg-white/[0.02] px-3 rounded-lg border border-white/5">
+                                                             <span class="text-xs font-black text-white uppercase">TOTAL INPUT</span>
+                                                             <span class="text-sm font-black text-white font-mono">{{ e.metadata.usage_input_tokens || e.metadata.input_tokens || 0 }}</span>
+                                                        </div>
                                                     </div>
 
                                                     <!-- Model & Cost Summary -->
                                                     <div class="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                                         <div class="flex flex-col gap-1">
-                                                            <span class="text-[9px] font-bold text-slate-600 uppercase">Model Output tokens</span>
-                                                            <span class="text-xl font-mono text-emerald-400">{{ e.metadata.usage_output_tokens || e.metadata.output_tokens || 0 }} <span class="text-[10px] text-slate-500">tokens</span></span>
+                                                            <span class="text-xs font-bold text-slate-600 uppercase">Model Output tokens</span>
+                                                            <span class="text-xl font-mono text-emerald-400">{{ e.metadata.usage_output_tokens || e.metadata.output_tokens || 0 }} <span class="text-xs text-slate-500">tokens</span></span>
                                                         </div>
                                                         <div class="flex flex-col gap-1 pt-4 border-t border-white/5">
-                                                            <span class="text-[9px] font-bold text-slate-600 uppercase">Total Transaction Cost</span>
-                                                            <span class="text-2xl font-black text-white font-mono tracking-tighter">{{ e.metadata.usage_cost || e.metadata.cost || '$0.0000' }}</span>
+                                                            <span class="text-xs font-bold text-slate-600 uppercase">Total Transaction Cost</span>
+                                                            <span class="text-2xl font-black text-white font-mono tracking-widest">{{ e.metadata.usage_cost || e.metadata.cost || '$0.0000' }}</span>
                                                         </div>
                                                     </div>
                                                 </div>

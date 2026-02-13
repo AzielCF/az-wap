@@ -103,11 +103,11 @@ onUnmounted(() => {
       </div>
       <div class="flex items-center gap-3">
         <div class="flex items-center bg-white/[0.03] border border-white/5 rounded-xl p-1 gap-1">
-            <button class="btn-premium btn-premium-ghost px-4 h-9 text-[10px]" @click="loadBotData">
+            <button class="btn-premium btn-premium-ghost px-4 h-9 text-xs" @click="loadBotData">
                 <RefreshCw class="w-3.5 h-3.5 mr-2" />
                 Bot Sync
             </button>
-            <button class="btn-premium btn-premium-ghost px-4 h-9 text-[10px]" @click="loadInfraData">
+            <button class="btn-premium btn-premium-ghost px-4 h-9 text-xs" @click="loadInfraData">
                 <RefreshCw class="w-3.5 h-3.5 mr-2" />
                 Infra Sync
             </button>

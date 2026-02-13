@@ -343,7 +343,7 @@ onMounted(loadData)
         </button>
         <div class="flex items-center gap-3">
           <User class="w-4 h-4 text-primary" />
-          <span class="text-xs font-bold uppercase tracking-[0.25em] text-slate-500">Client Subscriptions</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Client Subscriptions</span>
         </div>
         <h2 class="text-4xl lg:text-5xl font-black tracking-tighter text-white uppercase leading-none">
           {{ client.display_name }}
@@ -360,15 +360,15 @@ onMounted(loadData)
     <!-- Client Info Summary -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 px-6 lg:px-0">
         <div class="p-6 bg-[#161a23]/30 border border-white/5 rounded-3xl space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Platform ID</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Platform ID</span>
             <div class="text-sm font-mono text-white">{{ client.platform_id }} ({{ client.platform_type }})</div>
         </div>
         <div class="p-6 bg-[#161a23]/30 border border-white/5 rounded-3xl space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Contact</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Contact</span>
             <div class="text-sm text-slate-300 italic">{{ client.email || 'No email' }} • {{ client.phone || 'No phone' }}</div>
         </div>
         <div class="p-6 bg-[#161a23]/30 border border-white/5 rounded-3xl space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Active Subscriptions</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Active Subscriptions</span>
             <div class="text-xl font-black text-primary">{{ subscriptions.length }}</div>
         </div>
     </div>
@@ -395,10 +395,10 @@ onMounted(loadData)
                             <h4 class="text-xl font-black text-white uppercase tracking-tighter">Channel: {{ getChannelName(sub.channel_id) }}</h4>
                             <span class="badge badge-success badge-xs font-bold uppercase py-2">Active</span>
                         </div>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                             <Activity class="w-3 h-3 text-primary" /> UUID: {{ sub.id.substring(0,8) }}
                         </p>
-                        <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2 mt-1">
+                        <p class="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2 mt-1">
                             <Calendar class="w-3 h-3" /> Expires: {{ sub.expires_at ? new Date(sub.expires_at).toLocaleDateString() : 'Never' }}
                         </p>
                     </div>
@@ -515,7 +515,7 @@ onMounted(loadData)
                     :nullable="true"
                     color="indigo"
                 />
-                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-[0.2em]">Defaults to channel configuration if signal is null.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest">Defaults to channel configuration if signal is null.</p>
             </div>
 
              <!-- Session Override Section -->

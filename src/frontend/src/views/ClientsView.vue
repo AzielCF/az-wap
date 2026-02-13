@@ -386,7 +386,7 @@ onMounted(() => {
           <Users class="w-4 h-4 text-primary" />
           <span class="section-title-premium py-0 border-none pl-0 text-primary">Customer Hub</span>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-xs font-bold uppercase tracking-[0.25em] text-slate-500">Global Registry</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Global Registry</span>
         </div>
         <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none">Clients</h2>
       </div>
@@ -410,28 +410,28 @@ onMounted(() => {
     <!-- Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-6 px-6 lg:px-0">
         <div class="p-8 bg-[#161a23]/30 border border-white/5 rounded-[2rem] space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Total</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Total</span>
             <div class="flex items-baseline gap-2">
                 <span class="text-4xl font-black text-white">{{ clients.length }}</span>
                 <span class="text-xs font-bold text-primary uppercase">Clients</span>
             </div>
         </div>
         <div class="p-8 bg-[#161a23]/30 border border-white/5 rounded-[2rem] space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">VIP</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">VIP</span>
             <div class="flex items-baseline gap-2">
                 <span class="text-4xl font-black text-white">{{ stats['vip'] || 0 }}</span>
                 <span class="text-xs font-bold text-amber-500 uppercase">Crown</span>
             </div>
         </div>
         <div class="p-8 bg-[#161a23]/30 border border-white/5 rounded-[2rem] space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Premium</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Premium</span>
             <div class="flex items-baseline gap-2">
                 <span class="text-4xl font-black text-white">{{ stats['premium'] || 0 }}</span>
                 <span class="text-xs font-bold text-indigo-400 uppercase">Stars</span>
             </div>
         </div>
         <div class="p-8 bg-[#161a23]/30 border border-white/5 rounded-[2rem] space-y-2">
-            <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Enterprise</span>
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">Enterprise</span>
             <div class="flex items-baseline gap-2">
                 <span class="text-4xl font-black text-white">{{ stats['enterprise'] || 0 }}</span>
                 <span class="text-xs font-bold text-rose-400 uppercase">Accounts</span>
@@ -447,7 +447,7 @@ onMounted(() => {
             <div class="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center text-slate-700 mb-6">
                 <Users class="w-8 h-8 opacity-20" />
             </div>
-            <p class="text-sm font-bold text-slate-600 uppercase tracking-[0.2em]">No clients found</p>
+            <p class="text-sm font-bold text-slate-600 uppercase tracking-widest">No clients found</p>
             <button v-if="search" @click="search = ''" class="mt-4 text-xs font-black text-primary uppercase tracking-widest hover:underline">Clear search</button>
         </div>
 
@@ -478,13 +478,13 @@ onMounted(() => {
                     <div class="flex items-center gap-3 mb-4">
                         <TierBadge :tier="client.tier" />
                         <div class="w-1 h-1 rounded-full bg-slate-800"></div>
-                        <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{{ client.platform_type }}</span>
+                        <span class="text-xs font-bold text-slate-600 uppercase tracking-widest">{{ client.platform_type }}</span>
                     </div>
 
                     <div class="space-y-4 mt-auto">
                         <div class="storage-box-premium">
                             <div class="flex items-baseline justify-between mb-1">
-                                <span class="text-[10px] font-bold text-slate-600 uppercase">Platform ID</span>
+                                <span class="text-xs font-bold text-slate-600 uppercase">Platform ID</span>
                                 <MessageSquare class="w-3 h-3 text-slate-800" />
                             </div>
                             <div class="font-mono text-xs text-slate-400 break-all leading-relaxed tracking-tight truncate">
@@ -494,10 +494,10 @@ onMounted(() => {
 
                         <div v-if="client.tags?.length" class="flex flex-wrap gap-2">
                             <span v-for="tag in client.tags.slice(0, 3)" :key="tag" 
-                                  class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider bg-white/5 text-slate-400 rounded-lg">
+                                  class="px-2 py-1 text-xs font-bold uppercase tracking-wider bg-white/5 text-slate-400 rounded-lg">
                                 #{{ tag }}
                             </span>
-                            <span v-if="client.tags.length > 3" class="px-2 py-1 text-[9px] font-bold text-slate-600">
+                            <span v-if="client.tags.length > 3" class="px-2 py-1 text-xs font-bold text-slate-600">
                                 +{{ client.tags.length - 3 }}
                             </span>
                         </div>
@@ -505,11 +505,11 @@ onMounted(() => {
                         <div class="flex items-center justify-between pt-4">
                             <div class="flex items-center gap-2">
                                 <div class="w-1.5 h-1.5 rounded-full" :class="client.enabled ? 'bg-primary animate-pulse' : 'bg-slate-700'"></div>
-                                <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                <span class="text-xs font-black text-slate-500 uppercase tracking-widest">
                                   {{ client.enabled ? 'Active' : 'Inactive' }}
                                 </span>
                             </div>
-                            <router-link :to="`/clients/${client.id}/subscriptions`" class="text-[10px] font-black text-primary uppercase tracking-widest hover:underline flex items-center gap-1">
+                            <router-link :to="`/clients/${client.id}/subscriptions`" class="text-xs font-black text-primary uppercase tracking-widest hover:underline flex items-center gap-1">
                                 <Link2 class="w-3 h-3" /> Subscriptions
                             </router-link>
                         </div>
@@ -569,8 +569,8 @@ onMounted(() => {
                         </button>
                     </div>
                     <div class="flex items-center justify-between mt-2">
-                        <p class="text-[9px] text-slate-600 font-bold uppercase">Unique identifier for the selected platform.</p>
-                        <p v-if="lidVerified" class="text-[9px] text-green-500 font-black uppercase flex items-center gap-1 animate-in fade-in slide-in-from-right-2">
+                        <p class="text-xs text-slate-600 font-bold uppercase">Unique identifier for the selected platform.</p>
+                        <p v-if="lidVerified" class="text-xs text-green-500 font-black uppercase flex items-center gap-1 animate-in fade-in slide-in-from-right-2">
                              <CheckCircle2 class="w-2.5 h-2.5" /> 
                              Number: {{ lastValidatedPhone }} <span class="mx-1 opacity-40">→</span> LID: {{ newClient.platform_id }}
                         </p>
@@ -638,11 +638,11 @@ onMounted(() => {
                 </div>
                 <div class="flex flex-wrap gap-2 p-4 bg-black/40 rounded-2xl border border-white/5 min-h-[60px]">
                     <span v-for="tag in newClient.tags" :key="tag" 
-                          class="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-xl flex items-center gap-3">
+                          class="px-4 py-2 text-xs font-black uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-xl flex items-center gap-3">
                         {{ tag }}
                         <button @click="removeTag(tag)" class="hover:text-white transition-colors">&times;</button>
                     </span>
-                    <p v-if="newClient.tags.length === 0" class="text-[10px] text-slate-700 font-bold uppercase items-center flex">No tags assigned / global pool</p>
+                    <p v-if="newClient.tags.length === 0" class="text-xs text-slate-700 font-bold uppercase items-center flex">No tags assigned / global pool</p>
                 </div>
             </div>
         </div>
@@ -699,7 +699,7 @@ onMounted(() => {
                         <option value="Australia/Sydney">🇦🇺 (GMT+10:00) Australia/Sydney</option>
                     </select>
                 </div>
-                <p class="text-[9px] text-slate-600 font-bold uppercase mt-2">Individual timezone for this client. Overrides channel defaults.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2">Individual timezone for this client. Overrides channel defaults.</p>
             </div>
 
             <div class="form-control max-w-sm">
@@ -729,7 +729,7 @@ onMounted(() => {
                         <option value="AU">🇦🇺 AU - Australia</option>
                     </select>
                 </div>
-                <p class="text-[9px] text-slate-600 font-bold uppercase mt-2">Helps AI determine default currency and regional context.</p>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2">Helps AI determine default currency and regional context.</p>
             </div>
 
             <div class="form-control">
@@ -761,7 +761,7 @@ onMounted(() => {
                     <!-- Search Results Dropdown -->
                     <div v-if="showBotResults && (botSearch || filteredBots.length > 0)" 
                             class="absolute z-20 top-full left-0 right-0 mt-2 bg-[#12161f] border border-white/10 rounded-2xl shadow-2xl max-h-64 overflow-y-auto p-2">
-                        <div v-if="filteredBots.length === 0" class="py-4 text-center text-[10px] text-slate-600 font-black uppercase">Zero matching agents</div>
+                        <div v-if="filteredBots.length === 0" class="py-4 text-center text-xs text-slate-600 font-black uppercase">Zero matching agents</div>
                         <button v-for="bot in filteredBots" :key="bot.id"
                                 @click="addAllowedBot(bot.id)"
                                 class="w-full flex items-center gap-4 p-3 hover:bg-primary/10 rounded-xl transition-all group text-left border border-transparent hover:border-primary/20">
@@ -769,8 +769,8 @@ onMounted(() => {
                                 <Bot class="w-5 h-5" />
                             </div>
                             <div class="flex-1 min-w-0">
-                                <div class="text-[11px] font-black uppercase text-white truncate">{{ bot.name }}</div>
-                                <div class="text-[9px] font-mono text-slate-600 truncate uppercase">{{ bot.id.substring(0,25) }}...</div>
+                                <div class="text-xs font-black uppercase text-white truncate">{{ bot.name }}</div>
+                                <div class="text-xs font-mono text-slate-600 truncate uppercase">{{ bot.id.substring(0,25) }}...</div>
                             </div>
                             <Plus class="w-4 h-4 text-slate-800 group-hover:text-primary" />
                         </button>
@@ -781,8 +781,8 @@ onMounted(() => {
 
             <div class="flex-1 min-h-0 flex flex-col">
                 <div class="flex items-center justify-between mb-4">
-                    <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest">Currently Whitelisted</span>
-                    <span v-if="newClient.allowed_bots.length === 0" class="text-[9px] font-bold text-slate-500 uppercase italic">Unrestricted Global Access</span>
+                    <span class="text-xs font-black text-slate-600 uppercase tracking-widest">Currently Whitelisted</span>
+                    <span v-if="newClient.allowed_bots.length === 0" class="text-xs font-bold text-slate-500 uppercase italic">Unrestricted Global Access</span>
                 </div>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
@@ -793,8 +793,8 @@ onMounted(() => {
                                 <Bot class="w-5 h-5" />
                             </div>
                             <div class="min-w-0">
-                                <div class="text-[11px] font-black uppercase text-white truncate">{{ getBotById(botId).name }}</div>
-                                <div class="text-[9px] font-mono text-slate-500 truncate">{{ botId.substring(0,12) }}...</div>
+                                <div class="text-xs font-black uppercase text-white truncate">{{ getBotById(botId).name }}</div>
+                                <div class="text-xs font-mono text-slate-500 truncate">{{ botId.substring(0,12) }}...</div>
                             </div>
                         </div>
                         <button @click="removeAllowedBot(botId)" class="p-2 text-slate-700 hover:text-red-500 transition-colors">

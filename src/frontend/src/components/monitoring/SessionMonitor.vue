@@ -16,12 +16,12 @@
         <table class="table table-compact w-full">
           <thead class="bg-base-200/30">
             <tr>
-              <th class="text-[10px] uppercase opacity-50">Channel / Instance</th>
-              <th class="text-[10px] uppercase opacity-50">Contact (Chat JID)</th>
-              <th class="text-[10px] uppercase opacity-50">Bot State</th>
-              <th class="text-[10px] uppercase opacity-50">Human Activity</th>
-              <th class="text-[10px] uppercase opacity-50 text-right">Updated</th>
-              <th class="text-[10px] uppercase opacity-50 text-center">Actions</th>
+              <th class="text-xs uppercase opacity-50 tracking-widest">Channel / Instance</th>
+              <th class="text-xs uppercase opacity-50 tracking-widest">Contact (Chat JID)</th>
+              <th class="text-xs uppercase opacity-50 tracking-widest">Bot State</th>
+              <th class="text-xs uppercase opacity-50 tracking-widest">Human Activity</th>
+              <th class="text-xs uppercase opacity-50 text-right tracking-widest">Updated</th>
+              <th class="text-xs uppercase opacity-50 text-center tracking-widest">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -33,8 +33,8 @@
             <tr v-for="session in mergedSessions" :key="session.key" 
                 class="hover:bg-base-200/20 transition-colors"
                 :class="{ 'active-glow': session.is_bot_active }">
-              <td class="font-mono text-[11px] font-bold">{{ session.channel_id }}</td>
-              <td class="font-mono text-[11px]">{{ session.chat_id }}</td>
+              <td class="font-mono text-xs font-bold">{{ session.channel_id }}</td>
+              <td class="font-mono text-xs">{{ session.chat_id }}</td>
               <td>
                 <div class="flex items-center gap-2">
                   <span v-if="session.is_bot_active" class="relative flex h-2 w-2">
@@ -53,18 +53,18 @@
                     <span class="w-2 h-2 rounded-full bg-primary animate-bounce delay-100" style="animation-delay: 0.1s"></span>
                     <span class="w-2 h-2 rounded-full bg-primary animate-bounce delay-200" style="animation-delay: 0.2s"></span>
                   </div>
-                  <span class="text-[10px] font-black text-primary uppercase tracking-tighter">
+                  <span class="text-xs font-black text-primary uppercase tracking-widest">
                     {{ session.typing.media === 'audio' ? 'Recording Audio' : 'Typing...' }}
                   </span>
                 </div>
-                <span v-else class="text-[10px] opacity-20 italic px-2">No activity</span>
+                <span v-else class="text-xs opacity-20 italic px-2">No activity</span>
               </td>
               <td class="text-right">
                 <div class="flex flex-col items-end">
-                  <span class="text-[10px] font-mono font-bold text-success" v-if="session.expires_in > 0">
+                  <span class="text-xs font-mono font-bold text-success" v-if="session.expires_in > 0">
                     Closes in: {{ formatTimeLeft(session.expires_in) }}
                   </span>
-                  <span class="text-[10px] font-mono opacity-30">{{ session.time }}</span>
+                  <span class="text-xs font-mono opacity-30">{{ session.time }}</span>
                 </div>
               </td>
               <td class="text-center">

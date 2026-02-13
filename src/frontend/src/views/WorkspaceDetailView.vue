@@ -177,9 +177,9 @@ onMounted(loadData)
     <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-10 py-10 border-b border-white/5 mx-6 lg:mx-0">
       <div class="space-y-6 flex-1 w-full">
         <div class="flex items-center gap-3">
-          <RouterLink to="/workspaces" class="text-[10px] font-black text-slate-500 hover:text-primary uppercase tracking-[0.25em] transition-colors">Infrastructure</RouterLink>
+          <RouterLink to="/workspaces" class="text-xs font-black text-slate-500 hover:text-primary uppercase tracking-widest transition-colors">Infrastructure</RouterLink>
           <span class="opacity-10 text-xl font-thin text-white">/</span>
-          <span class="text-[10px] font-black uppercase tracking-[0.25em] text-primary/70">{{ workspace.id.substring(0,8) }}</span>
+          <span class="text-xs font-black uppercase tracking-widest text-primary/70">{{ workspace.id.substring(0,8) }}</span>
         </div>
         <h2 class="text-4xl lg:text-6xl font-black tracking-tighter text-white uppercase leading-none break-words">{{ workspace.name }}</h2>
         <div class="text-sm text-slate-500 font-bold uppercase tracking-widest pl-1">{{ workspace.description || 'No description provided' }}</div>
@@ -204,7 +204,7 @@ onMounted(loadData)
             <div class="overflow-x-auto">
                 <table class="table w-full border-collapse">
                     <thead>
-                        <tr class="text-[10px] text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
+                        <tr class="text-xs text-slate-500 uppercase tracking-widest border-b border-white/5 bg-white/[0.02]">
                             <th class="py-6 pl-10 font-bold">Instance Identification</th>
                             <th class="font-bold">Operational Status</th>
                             <th class="font-bold">Logic Engine</th>
@@ -227,10 +227,10 @@ onMounted(loadData)
                                     <div class="min-w-0">
                                         <div class="flex items-center gap-3">
                                             <div class="text-lg font-black text-white uppercase tracking-tighter leading-none mb-1 group-hover:text-primary transition-colors truncate max-w-[280px]" :title="ch.name">{{ ch.name }}</div>
-                                            <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1.5 py-0.5 bg-white/5 border border-white/5 rounded-md flex-shrink-0">{{ ch.type }}</span>
+                                            <span class="text-xs font-black text-slate-500 uppercase tracking-widest px-1.5 py-0.5 bg-white/5 border border-white/5 rounded-md flex-shrink-0">{{ ch.type }}</span>
                                         </div>
                                         <div class="flex items-center gap-2 group/id cursor-pointer select-all" @click="copyId(ch.id)">
-                                            <div class="text-[9px] font-mono text-slate-600 tracking-widest uppercase truncate">{{ ch.id }}</div>
+                                            <div class="text-xs font-mono text-slate-600 tracking-widest uppercase truncate">{{ ch.id }}</div>
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-slate-800 group-hover/id:text-primary transition-colors flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                                         </div>
                                     </div>
@@ -240,29 +240,29 @@ onMounted(loadData)
                                 <div class="flex items-center gap-3">
                                     <template v-if="ch.status === 'hibernating'">
                                         <div class="w-2.5 h-2.5 rounded-full bg-primary/40 shadow-[0_0_10px_rgba(var(--p),0.3)]"></div>
-                                        <span class="text-[10px] font-black uppercase tracking-widest text-primary/60 italic">Hibernating</span>
+                                        <span class="text-xs font-black uppercase tracking-widest text-primary/60 italic">Hibernating</span>
                                     </template>
                                     <template v-else>
                                         <div class="w-2.5 h-2.5 rounded-full" :class="ch.enabled ? 'bg-success shadow-[0_0_10px_rgba(var(--su),0.5)] animate-pulse' : 'bg-warning shadow-[0_0_10px_rgba(var(--wa),0.5)]'"></div>
-                                        <span class="text-[10px] font-black uppercase tracking-widest" :class="ch.enabled ? 'text-slate-300' : 'text-slate-500'">{{ ch.enabled ? 'ACTIVE' : 'ON HOLD' }}</span>
+                                        <span class="text-xs font-black uppercase tracking-widest" :class="ch.enabled ? 'text-slate-300' : 'text-slate-500'">{{ ch.enabled ? 'ACTIVE' : 'ON HOLD' }}</span>
                                     </template>
                                 </div>
                             </td>
                             <td class="align-middle">
                                 <div class="flex items-center gap-2.5">
                                     <div class="w-1.5 h-1.5 rounded-full" :class="ch.config?.bot_id ? 'bg-primary' : 'bg-slate-800'"></div>
-                                    <span class="text-[10px] font-black uppercase tracking-widest" :class="ch.config?.bot_id ? 'text-slate-400' : 'text-slate-700'">{{ ch.config?.bot_id ? 'LINKED' : 'UNASSIGNED' }}</span>
+                                    <span class="text-xs font-black uppercase tracking-widest" :class="ch.config?.bot_id ? 'text-slate-400' : 'text-slate-700'">{{ ch.config?.bot_id ? 'LINKED' : 'UNASSIGNED' }}</span>
                                 </div>
                             </td>
                             <td class="align-middle">
                                 <div class="flex items-center gap-2.5">
                                     <div class="w-1.5 h-1.5 rounded-full" :class="ch.config?.chatwoot?.enabled ? 'bg-amber-400' : 'bg-slate-800'"></div>
-                                    <span class="text-[10px] font-black uppercase tracking-widest" :class="ch.config?.chatwoot?.enabled ? 'text-slate-400' : 'text-slate-700'">{{ ch.config?.chatwoot?.enabled ? 'BRIDGED' : 'STRAY' }}</span>
+                                    <span class="text-xs font-black uppercase tracking-widest" :class="ch.config?.chatwoot?.enabled ? 'text-slate-400' : 'text-slate-700'">{{ ch.config?.chatwoot?.enabled ? 'BRIDGED' : 'STRAY' }}</span>
                                 </div>
                             </td>
                             <td class="pr-10 text-right align-middle">
                                 <div class="flex justify-end gap-3 items-center">
-                                    <button v-if="ch.type === 'whatsapp'" class="btn-premium btn-premium-primary px-8 h-11 text-[10px]" @click="openWhatsAppControl(ch)">
+                                    <button v-if="ch.type === 'whatsapp'" class="btn-premium btn-premium-primary px-8 h-11 text-xs" @click="openWhatsAppControl(ch)">
                                         Open Protocol
                                     </button>
                                     <button class="btn-premium btn-premium-square btn-premium-sm btn-premium-ghost border border-white/10" @click="openConfig(ch)" title="Config">
@@ -276,12 +276,12 @@ onMounted(loadData)
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-40 group-hover:opacity-100 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
                                         </button>
                                         <ul tabindex="0" class="dropdown-content z-[10] menu p-3 shadow-2xl bg-[#0b0e14] rounded-2xl border border-white/10 w-64 animate-in fade-in zoom-in duration-200 mt-2">
-                                            <li><button class="flex items-center justify-between py-4 px-5 rounded-xl hover:bg-white/5 text-slate-300 font-black uppercase text-[10px] tracking-widest" @click="toggleChannel(ch)">
+                                            <li><button class="flex items-center justify-between py-4 px-5 rounded-xl hover:bg-white/5 text-slate-300 font-black uppercase text-xs tracking-widest" @click="toggleChannel(ch)">
                                                 <span>{{ ch.enabled ? 'Pause Infrastructure' : 'Resume Protocol' }}</span>
                                                 <div class="w-2.5 h-2.5 rounded-full" :class="ch.enabled ? 'bg-warning' : 'bg-success shadow-[0_0_10px_rgba(var(--su),0.5)]'"></div>
                                             </button></li>
                                             <div class="divider opacity-30 my-1"></div>
-                                            <li><button class="text-error flex items-center justify-between py-4 px-5 rounded-xl hover:bg-red-500/10 font-black uppercase text-[10px] tracking-widest" @click="deleteChannel(ch.id)">
+                                            <li><button class="text-error flex items-center justify-between py-4 px-5 rounded-xl hover:bg-red-500/10 font-black uppercase text-xs tracking-widest" @click="deleteChannel(ch.id)">
                                                 <span>Terminate instance</span>
                                                 <Trash2 class="w-4 h-4" />
                                             </button></li>
@@ -294,7 +294,7 @@ onMounted(loadData)
                             <td colspan="5" class="py-32 text-center bg-black/5">
                                 <div class="flex flex-col items-center gap-4 opacity-20">
                                     <Cpu class="w-12 h-12 text-slate-500" />
-                                    <div class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-300">Central Cluster: No instances deployed.</div>
+                                    <div class="text-xs font-black uppercase tracking-widest text-slate-300">Central Cluster: No instances deployed.</div>
                                 </div>
                             </td>
                         </tr>
@@ -319,7 +319,7 @@ onMounted(loadData)
                 </div>
                 <div class="flex-1">
                     <h3 class="text-xl sm:text-2xl font-black text-white uppercase tracking-tighter mb-1 leading-none">WhatsApp Web Gateway</h3>
-                    <p class="text-[9px] sm:text-[10px] text-slate-600 font-bold uppercase tracking-[0.2em]">Connect your account using QR Code</p>
+                    <p class="text-xs sm:text-xs text-slate-600 font-bold uppercase tracking-widest">Connect your account using QR Code</p>
                 </div>
             </div>
 
@@ -328,7 +328,7 @@ onMounted(loadData)
                 <div class="form-control w-full">
                     <label class="label-premium">Channel Name</label>
                     <input v-model="newChannel.name" type="text" placeholder="e.g. Sales WhatsApp" class="input-premium h-14 sm:h-16 w-full text-base sm:text-lg font-black" />
-                    <p class="mt-3 text-[10px] text-slate-700 font-bold uppercase tracking-wider">Give this connection a name to identify it later</p>
+                    <p class="mt-3 text-xs text-slate-700 font-bold uppercase tracking-wider">Give this connection a name to identify it later</p>
                 </div>
 
                 <div class="form-control w-full">
@@ -348,7 +348,7 @@ onMounted(loadData)
             <!-- Warning Box -->
             <div class="p-6 sm:p-8 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex flex-col sm:flex-row gap-4 sm:gap-6">
                 <ShieldAlert class="w-6 h-6 text-amber-500 shrink-0 mx-auto sm:mx-0" />
-                <div class="text-[10px] sm:text-[11px] text-amber-500/80 leading-relaxed font-bold uppercase tracking-wide text-center sm:text-left">
+                <div class="text-xs sm:text-xs text-amber-500/80 leading-relaxed font-bold uppercase tracking-wide text-center sm:text-left">
                     Linking requires scanning a QR Code. This uses the native WhatsApp Web protocol and doesn't need an official API account.
                 </div>
             </div>
@@ -413,9 +413,9 @@ onMounted(loadData)
                 <div class="p-6 bg-red-500/5 rounded-2xl border border-red-500/10 space-y-4">
                     <div class="flex items-center gap-3 text-red-500">
                         <ShieldAlert class="w-5 h-5" />
-                        <span class="font-black uppercase tracking-widest text-[10px]">Danger Zone</span>
+                        <span class="font-black uppercase tracking-widest text-xs">Danger Zone</span>
                     </div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wide">
+                    <p class="text-xs text-slate-500 font-bold uppercase tracking-wide">
                         Terminating this workspace will unlink all associated telemetry data. This action is irreversible.
                     </p>
                     <button class="btn-premium w-full border border-red-500/20 text-red-500/80 hover:bg-red-500 hover:text-white h-12" @click="deleteWorkspace">
