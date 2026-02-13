@@ -7,7 +7,7 @@ import (
 
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 )
 
@@ -58,6 +58,7 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 			text, _ := args["text"].(string)
 			dateStr, _ := args["date"].(string)
 			timeStr, _ := args["time"].(string)
+			recurrenceDays, _ := args["recurrence_days"].(string)
 
 			fullStr := fmt.Sprintf("%s %s", dateStr, timeStr)
 
@@ -75,8 +76,8 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 			if locName == "UTC" {
 				if tz, ok := ctxData["bot_timezone"].(string); ok && tz != "" {
 					locName = tz
-				} else if globalConfig.AITimezone != "" {
-					locName = globalConfig.AITimezone
+				} else if coreconfig.Global.AI.Timezone != "" {
+					locName = coreconfig.Global.AI.Timezone
 				}
 			}
 
@@ -112,11 +113,12 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 			}
 
 			req := domainNewsletter.SchedulePostRequest{
-				ChannelID:   instanceID,
-				TargetID:    senderID,
-				SenderID:    senderID,
-				Text:        text,
-				ScheduledAt: scheduledAt,
+				ChannelID:      instanceID,
+				TargetID:       senderID,
+				SenderID:       senderID,
+				Text:           text,
+				ScheduledAt:    scheduledAt,
+				RecurrenceDays: recurrenceDays,
 			}
 
 			post, err := t.service.SchedulePost(ctx, req)
@@ -125,11 +127,12 @@ func (t *ReminderTools) ScheduleReminderTool() *domain.NativeTool {
 			}
 
 			return map[string]interface{}{
-				"status":       "scheduled",
-				"post_id":      post.ID,
-				"target_id":    post.TargetID,
-				"scheduled_at": post.ScheduledAt.String(),
-				"message":      "Reminder scheduled successfully",
+				"status":          "scheduled",
+				"post_id":         post.ID,
+				"target_id":       post.TargetID,
+				"scheduled_at":    post.ScheduledAt.String(),
+				"recurrence_days": post.RecurrenceDays,
+				"message":         "Reminder scheduled successfully",
 			}, nil
 		},
 	}
@@ -162,14 +165,38 @@ func (t *ReminderTools) ListRemindersTool() *domain.NativeTool {
 				return nil, err
 			}
 
+			// Resolve timezone
+			locName := "UTC"
+			// Try to get metadata map first
+			if meta, ok := ctxData["metadata"].(map[string]interface{}); ok {
+				if tz, ok := meta["bot_timezone"].(string); ok && tz != "" {
+					locName = tz
+				}
+			}
+			// If not found in metadata, check root (backwards compatibility) or config
+			if locName == "UTC" {
+				if tz, ok := ctxData["bot_timezone"].(string); ok && tz != "" {
+					locName = tz
+				} else if coreconfig.Global.AI.Timezone != "" {
+					locName = coreconfig.Global.AI.Timezone
+				}
+			}
+
+			loc, err := time.LoadLocation(locName)
+			if err != nil {
+				loc = time.UTC
+			}
+
 			var result []map[string]interface{}
 			for _, p := range posts {
 				result = append(result, map[string]interface{}{
-					"id":           p.ID,
-					"target_id":    p.TargetID,
-					"text":         p.Text,
-					"scheduled_at": p.ScheduledAt.String(),
-					"status":       p.Status,
+					"id":              p.ID,
+					"target_id":       p.TargetID,
+					"text":            p.Text,
+					"scheduled_at":    p.ScheduledAt.In(loc).Format("2006-01-02 15:04:05 MST"),
+					"status":          p.Status,
+					"recurrence_days": p.RecurrenceDays,
+					"execution_count": p.ExecutionCount,
 				})
 			}
 
