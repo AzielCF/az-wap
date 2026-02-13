@@ -12,12 +12,5 @@ services:
     command: valkey-server --appendonly yes
     restart: unless-stopped
 
-  insight:
-    image: redis/redisinsight:latest
-    container_name: azwap-valkey-insight
-    ports:
-      - "8001:5540"
-    restart: unless-stopped
-
 volumes:
   valkey_data:
