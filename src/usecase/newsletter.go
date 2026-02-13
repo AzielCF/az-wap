@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	domainClients "github.com/AzielCF/az-wap/clients/domain"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
+	"github.com/AzielCF/az-wap/pkg/timeutils"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
@@ -21,14 +23,16 @@ import (
 type serviceNewsletter struct {
 	workspaceMgr *workspace.Manager
 	repo         wsRepo.IWorkspaceRepository
+	subRepo      domainClients.SubscriptionRepository
 	monitor      monitoring.MonitoringStore
 	vk           *valkey.Client
 }
 
-func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository, monitor monitoring.MonitoringStore, vk *valkey.Client) domainNewsletter.INewsletterUsecase {
+func NewNewsletterService(workspaceMgr *workspace.Manager, repo wsRepo.IWorkspaceRepository, subRepo domainClients.SubscriptionRepository, monitor monitoring.MonitoringStore, vk *valkey.Client) domainNewsletter.INewsletterUsecase {
 	return &serviceNewsletter{
 		workspaceMgr: workspaceMgr,
 		repo:         repo,
+		subRepo:      subRepo,
 		monitor:      monitor,
 		vk:           vk,
 	}
@@ -73,17 +77,83 @@ func (service serviceNewsletter) SchedulePost(ctx context.Context, request domai
 		return wsCommonDomain.ScheduledPost{}, fmt.Errorf("channel_id and target_id are required")
 	}
 
+	// 0. Recurrence & Past Date logic
+	scheduledAt := request.ScheduledAt.UTC()
+	originalTime := "" // Store HH:MM for recurrence
+	recurrenceDays := request.RecurrenceDays
+
+	// If recurring, calculate original_time and validate days
+	if recurrenceDays != "" {
+		// e.g. "0,1,2"
+		originalTime = scheduledAt.Format("15:04")
+	}
+
+	// Strict Past Date Validation
+	if scheduledAt.Before(time.Now().UTC()) {
+		if recurrenceDays != "" {
+			// Smart Logic: If it's recurring and in the past, bump to tomorrow (or next valid day)
+			// But careful: we want the *first* execution to be right.
+			// Ideally we use our timeutils to find next valid slot from NOW.
+			// If user said "every day at 8am" and it's 10am, next is tomorrow 8am.
+			next, err := timeutils.CalculateNextOccurrence(recurrenceDays, originalTime, time.Now().UTC().Add(-1*time.Minute)) // Start from now
+			if err == nil {
+				scheduledAt = next
+				logrus.Warnf("Scheduled time was in past, bumped to next recurrence: %v", scheduledAt)
+			} else {
+				return wsCommonDomain.ScheduledPost{}, fmt.Errorf("scheduled time is in the past and could not calculate next recurrence: %v", err)
+			}
+		} else {
+			return wsCommonDomain.ScheduledPost{}, fmt.Errorf("cannot schedule in the past. Current UTC time is %v", time.Now().UTC())
+		}
+	}
+
+	// 0.1 Limiting (Only for ID-based user senders, not system)
+	if request.SenderID != "" && recurrenceDays != "" { // Only Limit Recurring
+		// Get Subscription
+		sub, err := service.subRepo.GetActiveSubscription(ctx, request.SenderID, request.ChannelID)
+		limit := 5 // Default
+		if err == nil && sub != nil && sub.MaxRecurringReminders != nil {
+			limit = *sub.MaxRecurringReminders
+		}
+
+		// Count existing recurring posts for this sender in this channel
+		// Note: We need a specialized Count method or filter list.
+		// For now, let's list and count (MVP).
+		posts, _ := service.repo.ListScheduledPosts(ctx, request.ChannelID)
+		count := 0
+		for _, p := range posts {
+			if p.SenderID == request.SenderID && p.RecurrenceDays != "" && p.Status != wsCommonDomain.ScheduledPostStatusCancelled && p.Status != wsCommonDomain.ScheduledPostStatusFailed {
+				// Check for collision here too
+				if p.OriginalTime == originalTime {
+					// Check days collision (intersection)
+					// Simple exact match for MVP or partial?
+					// Let's go strict: if ANY day overlaps at SAME time -> collision?
+					// Or just simpler: Same Original Time = Collision (simplest for user to understand)
+					return wsCommonDomain.ScheduledPost{}, fmt.Errorf("collision detected: you already have a recurring reminder at %s", originalTime)
+				}
+				count++
+			}
+		}
+
+		if count >= limit {
+			return wsCommonDomain.ScheduledPost{}, fmt.Errorf("limit reached: you can only have %d recurring reminders", limit)
+		}
+	}
+
 	post := wsCommonDomain.ScheduledPost{
-		ID:          uuid.NewString(),
-		ChannelID:   request.ChannelID,
-		TargetID:    request.TargetID,
-		SenderID:    request.SenderID,
-		Text:        request.Text,
-		MediaPath:   request.MediaPath,
-		ScheduledAt: request.ScheduledAt.UTC(), // Always UTC
-		Status:      wsCommonDomain.ScheduledPostStatusPending,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		ID:             uuid.NewString(),
+		ChannelID:      request.ChannelID,
+		TargetID:       request.TargetID,
+		SenderID:       request.SenderID,
+		Text:           request.Text,
+		MediaPath:      request.MediaPath,
+		ScheduledAt:    scheduledAt, // UTC
+		Status:         wsCommonDomain.ScheduledPostStatusPending,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		RecurrenceDays: recurrenceDays,
+		OriginalTime:   originalTime,
+		ExecutionCount: 0,
 	}
 
 	// 1. Persist to DB
@@ -213,9 +283,46 @@ func (service serviceNewsletter) ProcessScheduledTasks(ctx context.Context) erro
 			// Don't delete on failure, so user can see what happened
 		} else {
 			// 4. CLEANUP: Delete from both DB and Valkey on success
-			logrus.Infof("[SCHEDULER] Task %s sent successfully. Cleaning up record.", post.ID)
-			_ = service.repo.DeleteScheduledPost(ctx, post.ID)
+			// 4. CLEANUP OR RECURRENCE
+			logrus.Infof("[SCHEDULER] Task %s sent successfully. Checking recurrence.", post.ID)
+
+			isRecurring := post.RecurrenceDays != "" && post.OriginalTime != ""
+			// Remove from Valkey as *this specific execution* is done.
+			// Re-enqueueing happens via ProcessScheduledPosts/Promoter or if we updated the Time now?
+			// Logic: We must update 'ScheduledAt' in DB to next occurrence.
+			// Then the Promoter will pick it up later.
+			// OR we just leave it in DB with new time.
+			// Clean up OLD entry from Valkey (for this specific timestamp execution)
 			_ = service.vk.Inner().Do(ctx, service.vk.Inner().B().Zrem().Key(key).Member(post.ID).Build())
+
+			if isRecurring {
+				// Calculate NEXT occurrence from NOW (or from last scheduled? From NOW safer to avoid backlog avalanche)
+				next, errRec := timeutils.CalculateNextOccurrence(post.RecurrenceDays, post.OriginalTime, time.Now().UTC())
+				if errRec == nil {
+					// Check max execution limit? Currently unlimited or max 5 active reminders.
+					// We only check creation limit. Execution limit not specified, assumes infinite until cancelled.
+
+					// Update Post
+					post.ScheduledAt = next
+					post.Status = wsCommonDomain.ScheduledPostStatusPending // Reset to pending
+					post.ExecutionCount++
+					post.UpdatedAt = time.Now().UTC()
+					// Reset Error?
+					post.Error = ""
+
+					logrus.Infof("[SCHEDULER] Rescheduling recurring task %s to %v", post.ID, next)
+					if errUpd := service.repo.UpdateScheduledPost(ctx, post); errUpd != nil {
+						logrus.Errorf("Failed to reschedule recurring task %s: %v", post.ID, errUpd)
+					}
+				} else {
+					logrus.Errorf("Failed to calculate next occurrence for recurring task %s, deleting: %v", post.ID, errRec)
+					_ = service.repo.DeleteScheduledPost(ctx, post.ID)
+				}
+			} else {
+				// Not recurring, delete
+				logrus.Infof("[SCHEDULER] Task %s done, deleting.", post.ID)
+				_ = service.repo.DeleteScheduledPost(ctx, post.ID)
+			}
 		}
 	}
 

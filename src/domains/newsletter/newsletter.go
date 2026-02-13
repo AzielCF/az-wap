@@ -24,10 +24,11 @@ type UnfollowRequest struct {
 }
 
 type SchedulePostRequest struct {
-	ChannelID   string    `json:"channel_id"`
-	TargetID    string    `json:"target_id"`
-	SenderID    string    `json:"sender_id"` // Optional: who is scheduling
-	Text        string    `json:"text"`
-	MediaPath   string    `json:"media_path,omitempty"`
-	ScheduledAt time.Time `json:"scheduled_at"`
+	ChannelID      string    `json:"channel_id"`
+	TargetID       string    `json:"target_id"`
+	SenderID       string    `json:"sender_id"` // Optional: who is scheduling
+	Text           string    `json:"text"`
+	MediaPath      string    `json:"media_path,omitempty"`
+	ScheduledAt    time.Time `json:"scheduled_at"`
+	RecurrenceDays string    `json:"recurrence_days"` // "0,1,2" (Sun, Mon, Tue)
 }
