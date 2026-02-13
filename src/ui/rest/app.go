@@ -1,7 +1,7 @@
 package rest
 
 import (
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
@@ -28,8 +28,8 @@ func InitRestApp(app fiber.Router, service domainApp.IAppUsecase) App {
 
 func (handler *App) GetVersion(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"version": config.AppVersion,
-		"os":      config.AppOs,
+		"version": coreconfig.Global.App.Version,
+		"os":      coreconfig.Global.App.OS,
 	})
 }
 

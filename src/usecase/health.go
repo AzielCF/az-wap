@@ -11,7 +11,6 @@ import (
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	globalConfig "github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/domains/health"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
@@ -39,22 +38,12 @@ type healthService struct {
 	}
 }
 
-func cleanupLegacyStorage() {
-	db, err := globalConfig.GetAppDB()
-	if err != nil {
-		return
-	}
-	// Drop the legacy table if it exists as we moved to memory/Valkey
-	_, _ = db.Exec("DROP TABLE IF EXISTS health_checks")
-}
-
 func NewHealthService(mcp domainMCP.IMCPUsecase, cred domainCredential.ICredentialUsecase, bot domainBot.IBotUsecase, wm *workspace.Manager, wu interface {
 	ListWorkspaces(ctx context.Context) ([]wsDomain.Workspace, error)
 	GetWorkspace(ctx context.Context, id string) (wsDomain.Workspace, error)
 	ListChannels(ctx context.Context, workspaceID string) ([]wsChannelDomain.Channel, error)
 	GetChannel(ctx context.Context, id string) (wsChannelDomain.Channel, error)
 }, vk *valkey.Client) health.IHealthUsecase {
-	cleanupLegacyStorage()
 	return &healthService{
 		memoryRecords:     make(map[string]health.HealthRecord),
 		vkClient:          vk,

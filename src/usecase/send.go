@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/domains/app"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
@@ -187,7 +187,7 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 			imageData = pngBuffer.Bytes()
 		}
 
-		oriImagePath = fmt.Sprintf("%s/%s", globalConfig.PathSendItems, fileName)
+		oriImagePath = fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, fileName)
 		imageName = fileName
 		err = os.WriteFile(oriImagePath, imageData, 0644)
 		if err != nil {
@@ -195,7 +195,7 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 		}
 	} else if request.Image != nil {
 		// Save image to server
-		oriImagePath = fmt.Sprintf("%s/%s", globalConfig.PathSendItems, request.Image.Filename)
+		oriImagePath = fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, request.Image.Filename)
 		err = fasthttp.SaveMultipartFile(request.Image, oriImagePath)
 		if err != nil {
 			return response, err
@@ -212,7 +212,7 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 
 	// Resize Thumbnail
 	resizedImage := imaging.Resize(srcImage, 100, 0, imaging.Lanczos)
-	imageThumbnail = fmt.Sprintf("%s/thumbnails-%s", globalConfig.PathSendItems, imageName)
+	imageThumbnail = fmt.Sprintf("%s/thumbnails-%s", coreconfig.Global.Paths.SendItems, imageName)
 	if err = imaging.Save(resizedImage, imageThumbnail); err != nil {
 		return response, pkgError.InternalServerError(fmt.Sprintf("failed to save thumbnail %v", err))
 	}
@@ -225,7 +225,7 @@ func (service serviceSend) SendImage(ctx context.Context, request domainSend.Ima
 			return response, pkgError.InternalServerError(fmt.Sprintf("Failed to open image file '%s' for compression: %v. Possible causes: file not found, unsupported format, or permission denied.", oriImagePath, err))
 		}
 		newImage := imaging.Resize(openImageBuffer, 600, 0, imaging.Lanczos)
-		newImagePath := fmt.Sprintf("%s/new-%s", globalConfig.PathSendItems, imageName)
+		newImagePath := fmt.Sprintf("%s/new-%s", coreconfig.Global.Paths.SendItems, imageName)
 		if err = imaging.Save(newImage, newImagePath); err != nil {
 			return response, pkgError.InternalServerError(fmt.Sprintf("failed to save image %v", err))
 		}
@@ -366,13 +366,13 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 			return response, pkgError.InternalServerError(fmt.Sprintf("failed to download video from URL %v", errDownload))
 		}
 		// Build file path to save the downloaded video temporarily
-		oriVideoPath = fmt.Sprintf("%s/%s", globalConfig.PathSendItems, generateUUID+fileName)
+		oriVideoPath = fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, generateUUID+fileName)
 		if errWrite := os.WriteFile(oriVideoPath, videoBytes, 0644); errWrite != nil {
 			return response, pkgError.InternalServerError(fmt.Sprintf("failed to store downloaded video in server %v", errWrite))
 		}
 	} else if request.Video != nil {
 		// Save uploaded video to server
-		oriVideoPath = fmt.Sprintf("%s/%s", globalConfig.PathSendItems, generateUUID+request.Video.Filename)
+		oriVideoPath = fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, generateUUID+request.Video.Filename)
 		err = fasthttp.SaveMultipartFile(request.Video, oriVideoPath)
 		if err != nil {
 			return response, pkgError.InternalServerError(fmt.Sprintf("failed to store video in server %v", err))
@@ -389,7 +389,7 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 	}
 
 	// Generate thumbnail using ffmpeg
-	thumbnailVideoPath := fmt.Sprintf("%s/%s", globalConfig.PathSendItems, generateUUID+".png")
+	thumbnailVideoPath := fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, generateUUID+".png")
 	cmdThumbnail := exec.Command("ffmpeg", "-i", oriVideoPath, "-ss", "00:00:01.000", "-vframes", "1", thumbnailVideoPath)
 	err = cmdThumbnail.Run()
 	if err != nil {
@@ -402,7 +402,7 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 		return response, pkgError.InternalServerError(fmt.Sprintf("Failed to open generated video thumbnail image '%s': %v. Possible causes: file not found, unsupported format, or permission denied.", thumbnailVideoPath, err))
 	}
 	resizedImage := imaging.Resize(srcImage, 100, 0, imaging.Lanczos)
-	thumbnailResizeVideoPath := fmt.Sprintf("%s/thumbnails-%s", globalConfig.PathSendItems, generateUUID+".png")
+	thumbnailResizeVideoPath := fmt.Sprintf("%s/thumbnails-%s", coreconfig.Global.Paths.SendItems, generateUUID+".png")
 	if err = imaging.Save(resizedImage, thumbnailResizeVideoPath); err != nil {
 		return response, pkgError.InternalServerError(fmt.Sprintf("failed to save thumbnail %v", err))
 	}
@@ -412,7 +412,7 @@ func (service serviceSend) SendVideo(ctx context.Context, request domainSend.Vid
 
 	// Compress if requested
 	if request.Compress {
-		compresVideoPath := fmt.Sprintf("%s/%s", globalConfig.PathSendItems, generateUUID+".mp4")
+		compresVideoPath := fmt.Sprintf("%s/%s", coreconfig.Global.Paths.SendItems, generateUUID+".mp4")
 
 		// Use proper compression settings to reduce file size
 		cmdCompress := exec.Command("ffmpeg", "-i", oriVideoPath,
@@ -591,8 +591,8 @@ func (service serviceSend) SendAudio(ctx context.Context, request domainSend.Aud
 	if !strings.HasPrefix(strings.ToLower(audioMimeType), "audio/ogg") {
 		if _, errFF := exec.LookPath("ffmpeg"); errFF == nil {
 			id := fiberUtils.UUIDv4()
-			inputPath := fmt.Sprintf("%s/%s-audio-input", globalConfig.PathSendItems, id)
-			outputPath := fmt.Sprintf("%s/%s-audio-output.ogg", globalConfig.PathSendItems, id)
+			inputPath := fmt.Sprintf("%s/%s-audio-input", coreconfig.Global.Paths.SendItems, id)
+			outputPath := fmt.Sprintf("%s/%s-audio-output.ogg", coreconfig.Global.Paths.SendItems, id)
 			if errWrite := os.WriteFile(inputPath, audioBytes, 0644); errWrite == nil {
 				cmd := exec.Command("ffmpeg", "-y", "-i", inputPath, "-acodec", "libopus", "-b:a", "32k", outputPath)
 				if out, errRun := cmd.CombinedOutput(); errRun != nil {
@@ -762,7 +762,7 @@ func (service serviceSend) SendSticker(ctx context.Context, request domainSend.S
 	)
 
 	// Resolve absolute base directory for send items
-	absBaseDir, err := filepath.Abs(globalConfig.PathSendItems)
+	absBaseDir, err := filepath.Abs(coreconfig.Global.Paths.SendItems)
 	if err != nil {
 		return response, pkgError.InternalServerError(fmt.Sprintf("failed to resolve base directory: %v", err))
 	}

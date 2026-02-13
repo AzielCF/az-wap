@@ -2,94 +2,94 @@ package usecase
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	globalConfig "github.com/AzielCF/az-wap/config"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/genai"
+	"gorm.io/gorm"
 )
 
+// --- Persistence Model ---
+
+type credentialModel struct {
+	ID                   string    `gorm:"primaryKey;column:id"`
+	Name                 string    `gorm:"column:name;not null"`
+	Kind                 string    `gorm:"column:kind;not null"`
+	AIAPIKey             string    `gorm:"column:ai_api_key"`
+	ChatwootBaseURL      string    `gorm:"column:chatwoot_base_url"`
+	ChatwootAccountToken string    `gorm:"column:chatwoot_account_token"`
+	ChatwootBotToken     string    `gorm:"column:chatwoot_bot_token"`
+	CreatedAt            time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt            time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (credentialModel) TableName() string {
+	return "credentials"
+}
+
 type credentialService struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-func initCredentialStorageDB() (*sql.DB, error) {
-	db, err := globalConfig.GetAppDB()
-	if err != nil {
-		return nil, err
-	}
-
-	createTable := `
-		CREATE TABLE IF NOT EXISTS credentials (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			kind TEXT NOT NULL,
-			ai_api_key TEXT,
-			chatwoot_base_url TEXT,
-			chatwoot_account_token TEXT,
-			chatwoot_bot_token TEXT,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-	`
-
-	if _, err := db.Exec(createTable); err != nil {
-		return nil, err
-	}
-
-	// Migration: Rename gemini_api_key to ai_api_key if exists
-	rows, err := db.Query(`PRAGMA table_info(credentials)`)
+func (s *credentialService) initSchema(ctx context.Context) error {
+	// 1. Manual Migration for column rename if needed (SQLite doesn't support RENAME COLUMN easily in old versions)
+	sqlDB, err := s.db.DB()
 	if err == nil {
-		defer rows.Close()
-		hasGemini := false
-		hasAI := false
-		for rows.Next() {
-			var (
-				cid        int
-				name       string
-				typeName   string
-				notNull    int
-				defaultVal sql.NullString
-				pk         int
-			)
-			if err := rows.Scan(&cid, &name, &typeName, &notNull, &defaultVal, &pk); err == nil {
-				if name == "gemini_api_key" {
-					hasGemini = true
-				}
-				if name == "ai_api_key" {
-					hasAI = true
+		rows, err := sqlDB.Query(`PRAGMA table_info(credentials)`)
+		if err == nil {
+			defer rows.Close()
+			hasGemini := false
+			hasAI := false
+			for rows.Next() {
+				var (
+					cid        int
+					name       string
+					typeName   string
+					notNull    int
+					defaultVal interface{}
+					pk         int
+				)
+				if err := rows.Scan(&cid, &name, &typeName, &notNull, &defaultVal, &pk); err == nil {
+					if name == "gemini_api_key" {
+						hasGemini = true
+					}
+					if name == "ai_api_key" {
+						hasAI = true
+					}
 				}
 			}
-		}
-		if hasGemini && !hasAI {
-			if _, err := db.Exec(`ALTER TABLE credentials RENAME COLUMN gemini_api_key TO ai_api_key`); err != nil {
-				logrus.WithError(err).Warn("[CREDENTIAL] failed to rename gemini_api_key to ai_api_key")
+			if hasGemini && !hasAI {
+				if err := s.db.Exec(`ALTER TABLE credentials RENAME COLUMN gemini_api_key TO ai_api_key`).Error; err != nil {
+					logrus.WithError(err).Warn("[CREDENTIAL] failed to rename gemini_api_key to ai_api_key")
+				}
 			}
 		}
 	}
 
-	return db, nil
+	// 2. GORM AutoMigrate
+	return s.db.AutoMigrate(&credentialModel{})
 }
 
-func NewCredentialService() domainCredential.ICredentialUsecase {
-	db, err := initCredentialStorageDB()
-	if err != nil {
-		logrus.WithError(err).Error("[CREDENTIAL] failed to initialize credential storage, operations will be disabled")
-		return &credentialService{db: nil}
+func NewCredentialService(db *gorm.DB) domainCredential.ICredentialUsecase {
+	s := &credentialService{db: db}
+	if db != nil {
+		if err := s.initSchema(context.Background()); err != nil {
+			logrus.WithError(err).Error("[CREDENTIAL] failed to init schema")
+		}
+	} else {
+		logrus.Error("[CREDENTIAL] GORM DB is nil, service will be disabled")
 	}
-	return &credentialService{db: db}
+	return s
 }
 
 func (s *credentialService) ensureDB() error {
 	if s.db == nil {
-		return fmt.Errorf("credential storage is not initialized")
+		return pkgError.InternalServerError("credential storage is not initialized")
 	}
 	return nil
 }
@@ -118,52 +118,23 @@ func (s *credentialService) Create(ctx context.Context, req domainCredential.Cre
 		return domainCredential.Credential{}, pkgError.ValidationError("kind: unsupported kind.")
 	}
 
-	aiAPIKey := strings.TrimSpace(req.AIAPIKey)
-	chatwootBaseURL := strings.TrimSpace(req.ChatwootBaseURL)
-	chatwootAccountToken := strings.TrimSpace(req.ChatwootAccountToken)
-	chatwootBotToken := strings.TrimSpace(req.ChatwootBotToken)
-
-	if kind == domainCredential.KindAI {
-		if aiAPIKey == "" {
-			return domainCredential.Credential{}, pkgError.ValidationError("ai_api_key: cannot be blank for AI credentials.")
-		}
-	}
-
-	if kind == domainCredential.KindChatwoot {
-		if chatwootBaseURL == "" {
-			return domainCredential.Credential{}, pkgError.ValidationError("chatwoot_base_url: cannot be blank for chatwoot credentials.")
-		}
-		if chatwootAccountToken == "" {
-			return domainCredential.Credential{}, pkgError.ValidationError("chatwoot_account_token: cannot be blank for chatwoot credentials.")
-		}
-	}
-
 	id := uuid.NewString()
 
-	cred := domainCredential.Credential{
+	model := credentialModel{
 		ID:                   id,
 		Name:                 name,
-		Kind:                 kind,
-		AIAPIKey:             aiAPIKey,
-		ChatwootBaseURL:      chatwootBaseURL,
-		ChatwootAccountToken: chatwootAccountToken,
-		ChatwootBotToken:     chatwootBotToken,
+		Kind:                 string(kind),
+		AIAPIKey:             strings.TrimSpace(req.AIAPIKey),
+		ChatwootBaseURL:      strings.TrimSpace(req.ChatwootBaseURL),
+		ChatwootAccountToken: strings.TrimSpace(req.ChatwootAccountToken),
+		ChatwootBotToken:     strings.TrimSpace(req.ChatwootBotToken),
 	}
 
-	query := `
-		INSERT INTO credentials (
-			id, name, kind, ai_api_key, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token
-		) VALUES (?, ?, ?, ?, ?, ?, ?);
-	`
-
-	if _, err := s.db.ExecContext(ctx, query,
-		cred.ID, cred.Name, string(cred.Kind),
-		cred.AIAPIKey, cred.ChatwootBaseURL, cred.ChatwootAccountToken, cred.ChatwootBotToken,
-	); err != nil {
+	if err := s.db.WithContext(ctx).Create(&model).Error; err != nil {
 		return domainCredential.Credential{}, err
 	}
 
-	return cred, nil
+	return fromModel(model), nil
 }
 
 func (s *credentialService) List(ctx context.Context, kind *domainCredential.Kind) ([]domainCredential.Credential, error) {
@@ -171,42 +142,23 @@ func (s *credentialService) List(ctx context.Context, kind *domainCredential.Kin
 		return nil, err
 	}
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	var models []credentialModel
+	query := s.db.WithContext(ctx).Order("name ASC")
 
 	if kind != nil && *kind != "" {
-		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, name, kind, ai_api_key, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token
-			FROM credentials
-			WHERE kind = ?
-			ORDER BY name ASC;
-		`, string(*kind))
-	} else {
-		rows, err = s.db.QueryContext(ctx, `
-			SELECT id, name, kind, ai_api_key, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token
-			FROM credentials
-			ORDER BY name ASC;
-		`)
+		query = query.Where("kind = ?", string(*kind))
 	}
-	if err != nil {
+
+	if err := query.Find(&models).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var result []domainCredential.Credential
-	for rows.Next() {
-		var cred domainCredential.Credential
-		var kindStr string
-		if err := rows.Scan(&cred.ID, &cred.Name, &kindStr, &cred.AIAPIKey, &cred.ChatwootBaseURL, &cred.ChatwootAccountToken, &cred.ChatwootBotToken); err != nil {
-			return nil, err
-		}
-		cred.Kind = domainCredential.Kind(kindStr)
-		result = append(result, cred)
+	result := make([]domainCredential.Credential, len(models))
+	for i, m := range models {
+		result[i] = fromModel(m)
 	}
 
-	return result, rows.Err()
+	return result, nil
 }
 
 func (s *credentialService) GetByID(ctx context.Context, id string) (domainCredential.Credential, error) {
@@ -219,27 +171,15 @@ func (s *credentialService) GetByID(ctx context.Context, id string) (domainCrede
 		return domainCredential.Credential{}, pkgError.ValidationError("id: cannot be blank.")
 	}
 
-	var cred domainCredential.Credential
-	var kindStr string
-
-	query := `
-		SELECT id, name, kind, ai_api_key, chatwoot_base_url, chatwoot_account_token, chatwoot_bot_token
-		FROM credentials
-		WHERE id = ?;
-	`
-
-	err := s.db.QueryRowContext(ctx, query, trimmed).Scan(
-		&cred.ID, &cred.Name, &kindStr, &cred.AIAPIKey, &cred.ChatwootBaseURL, &cred.ChatwootAccountToken, &cred.ChatwootBotToken,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
+	var model credentialModel
+	if err := s.db.WithContext(ctx).First(&model, "id = ?", trimmed).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return domainCredential.Credential{}, pkgError.ValidationError("id: credential not found.")
 		}
 		return domainCredential.Credential{}, err
 	}
 
-	cred.Kind = domainCredential.Kind(kindStr)
-	return cred, nil
+	return fromModel(model), nil
 }
 
 func (s *credentialService) Update(ctx context.Context, id string, req domainCredential.UpdateCredentialRequest) (domainCredential.Credential, error) {
@@ -247,42 +187,31 @@ func (s *credentialService) Update(ctx context.Context, id string, req domainCre
 		return domainCredential.Credential{}, err
 	}
 
-	existing, err := s.GetByID(ctx, id)
-	if err != nil {
+	var model credentialModel
+	if err := s.db.WithContext(ctx).First(&model, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domainCredential.Credential{}, pkgError.ValidationError("id: credential not found.")
+		}
 		return domainCredential.Credential{}, err
 	}
 
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = existing.Name
+	if req.Name != "" {
+		model.Name = strings.TrimSpace(req.Name)
 	}
-
-	updated := existing
-	updated.Name = name
-
 	if req.Kind != "" {
-		updated.Kind = req.Kind
+		model.Kind = string(req.Kind)
 	}
 
-	updated.AIAPIKey = strings.TrimSpace(req.AIAPIKey)
-	updated.ChatwootBaseURL = strings.TrimSpace(req.ChatwootBaseURL)
-	updated.ChatwootAccountToken = strings.TrimSpace(req.ChatwootAccountToken)
-	updated.ChatwootBotToken = strings.TrimSpace(req.ChatwootBotToken)
+	model.AIAPIKey = strings.TrimSpace(req.AIAPIKey)
+	model.ChatwootBaseURL = strings.TrimSpace(req.ChatwootBaseURL)
+	model.ChatwootAccountToken = strings.TrimSpace(req.ChatwootAccountToken)
+	model.ChatwootBotToken = strings.TrimSpace(req.ChatwootBotToken)
 
-	query := `
-		UPDATE credentials
-		SET name = ?, kind = ?, ai_api_key = ?, chatwoot_base_url = ?, chatwoot_account_token = ?, chatwoot_bot_token = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?;
-	`
-
-	if _, err := s.db.ExecContext(ctx, query,
-		updated.Name, string(updated.Kind), updated.AIAPIKey, updated.ChatwootBaseURL, updated.ChatwootAccountToken, updated.ChatwootBotToken,
-		updated.ID,
-	); err != nil {
+	if err := s.db.WithContext(ctx).Save(&model).Error; err != nil {
 		return domainCredential.Credential{}, err
 	}
 
-	return updated, nil
+	return fromModel(model), nil
 }
 
 func (s *credentialService) Delete(ctx context.Context, id string) error {
@@ -295,9 +224,10 @@ func (s *credentialService) Delete(ctx context.Context, id string) error {
 		return pkgError.ValidationError("id: cannot be blank.")
 	}
 
-	_, err := s.db.ExecContext(ctx, `DELETE FROM credentials WHERE id = ?;`, trimmed)
-	return err
+	result := s.db.WithContext(ctx).Delete(&credentialModel{}, "id = ?", trimmed)
+	return result.Error
 }
+
 func (s *credentialService) Validate(ctx context.Context, id string) error {
 	cred, err := s.GetByID(ctx, id)
 	if err != nil {
@@ -314,9 +244,7 @@ func (s *credentialService) Validate(ctx context.Context, id string) error {
 			return fmt.Errorf("missing AI API key")
 		}
 
-		// Only validate with Gemini client if it IS a Gemini credential
 		if cred.Kind == domainCredential.KindGemini || cred.Kind == domainCredential.KindAI {
-			// Attempt to list models to verify API Key
 			client, err := genai.NewClient(ctx, &genai.ClientConfig{
 				APIKey:  cred.AIAPIKey,
 				Backend: genai.BackendGeminiAPI,
@@ -325,7 +253,6 @@ func (s *credentialService) Validate(ctx context.Context, id string) error {
 				return fmt.Errorf("failed to create Gemini client: %w", err)
 			}
 
-			// Use a short timeout for health check
 			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
@@ -342,9 +269,22 @@ func (s *credentialService) Validate(ctx context.Context, id string) error {
 		if cred.ChatwootBaseURL == "" || cred.ChatwootAccountToken == "" {
 			return fmt.Errorf("missing Chatwoot configuration")
 		}
-		// Simple HTTP check (placeholder for now, just checking reachable)
 		return nil
 	}
 
 	return fmt.Errorf("unsupported credential kind: %s", cred.Kind)
+}
+
+// --- Helpers ---
+
+func fromModel(m credentialModel) domainCredential.Credential {
+	return domainCredential.Credential{
+		ID:                   m.ID,
+		Name:                 m.Name,
+		Kind:                 domainCredential.Kind(m.Kind),
+		AIAPIKey:             m.AIAPIKey,
+		ChatwootBaseURL:      m.ChatwootBaseURL,
+		ChatwootAccountToken: m.ChatwootAccountToken,
+		ChatwootBotToken:     m.ChatwootBotToken,
+	}
 }

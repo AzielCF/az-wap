@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/dustin/go-humanize"
@@ -190,8 +190,8 @@ func ValidateSendFile(ctx context.Context, request domainSend.FileRequest) error
 		return err
 	}
 
-	if request.File.Size > config.WhatsappSettingMaxFileSize { // 10MB
-		maxSizeString := humanize.Bytes(uint64(config.WhatsappSettingMaxFileSize))
+	if request.File.Size > coreconfig.Global.Whatsapp.MaxFileSize { // 10MB
+		maxSizeString := humanize.Bytes(uint64(coreconfig.Global.Whatsapp.MaxFileSize))
 		return pkgError.ValidationError(fmt.Sprintf("max file upload is %s, please upload in cloud and send via text if your file is higher than %s", maxSizeString, maxSizeString))
 	}
 
@@ -235,8 +235,8 @@ func ValidateSendVideo(ctx context.Context, request domainSend.VideoRequest) err
 			return pkgError.ValidationError("your video type is not allowed. please use mp4/mkv/avi/x-msvideo")
 		}
 
-		if request.Video.Size > config.WhatsappSettingMaxVideoSize { // 30MB
-			maxSizeString := humanize.Bytes(uint64(config.WhatsappSettingMaxVideoSize))
+		if request.Video.Size > coreconfig.Global.Whatsapp.MaxVideoSize { // 30MB
+			maxSizeString := humanize.Bytes(uint64(coreconfig.Global.Whatsapp.MaxVideoSize))
 			return pkgError.ValidationError(fmt.Sprintf("max video upload is %s, please upload in cloud and send via text if your file is higher than %s", maxSizeString, maxSizeString))
 		}
 	}
