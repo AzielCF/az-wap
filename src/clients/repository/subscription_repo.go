@@ -40,6 +40,7 @@ func (r *SQLiteSubscriptionRepository) InitSchema(ctx context.Context) error {
 		session_timeout INTEGER DEFAULT 0,
 		inactivity_warning_time INTEGER DEFAULT 0,
 		max_history_limit INTEGER,
+		max_recurring_reminders INTEGER DEFAULT 5,
 		FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
 		UNIQUE(client_id, channel_id)
 	);
@@ -57,6 +58,7 @@ func (r *SQLiteSubscriptionRepository) InitSchema(ctx context.Context) error {
 	_ = r.addColumnIfNotExists(ctx, "client_subscriptions", "session_timeout", "INTEGER DEFAULT 0")
 	_ = r.addColumnIfNotExists(ctx, "client_subscriptions", "inactivity_warning_time", "INTEGER DEFAULT 0")
 	_ = r.addColumnIfNotExists(ctx, "client_subscriptions", "max_history_limit", "INTEGER")
+	_ = r.addColumnIfNotExists(ctx, "client_subscriptions", "max_recurring_reminders", "INTEGER DEFAULT 5")
 
 	return nil
 }
@@ -85,8 +87,8 @@ func (r *SQLiteSubscriptionRepository) Create(ctx context.Context, sub *domain.C
 	}
 
 	query := `
-	INSERT INTO client_subscriptions (id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO client_subscriptions (id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -104,6 +106,7 @@ func (r *SQLiteSubscriptionRepository) Create(ctx context.Context, sub *domain.C
 		sub.SessionTimeout,
 		sub.InactivityWarningTime,
 		sub.MaxHistoryLimit,
+		sub.MaxRecurringReminders,
 	)
 
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -115,7 +118,7 @@ func (r *SQLiteSubscriptionRepository) Create(ctx context.Context, sub *domain.C
 
 // GetByID obtiene una suscripción por su ID
 func (r *SQLiteSubscriptionRepository) GetByID(ctx context.Context, id string) (*domain.ClientSubscription, error) {
-	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit FROM client_subscriptions WHERE id = ?`
+	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders FROM client_subscriptions WHERE id = ?`
 
 	row := r.db.QueryRowContext(ctx, query, id)
 	return r.scanSubscription(row)
@@ -143,7 +146,8 @@ func (r *SQLiteSubscriptionRepository) Update(ctx context.Context, sub *domain.C
 		updated_at = ?,
 		session_timeout = ?,
 		inactivity_warning_time = ?,
-		max_history_limit = ?
+		max_history_limit = ?,
+		max_recurring_reminders = ?
 	WHERE id = ?
 	`
 
@@ -160,6 +164,7 @@ func (r *SQLiteSubscriptionRepository) Update(ctx context.Context, sub *domain.C
 		sub.SessionTimeout,
 		sub.InactivityWarningTime,
 		sub.MaxHistoryLimit,
+		sub.MaxRecurringReminders,
 		sub.ID,
 	)
 
@@ -192,7 +197,7 @@ func (r *SQLiteSubscriptionRepository) Delete(ctx context.Context, id string) er
 
 // GetByClientAndChannel obtiene una suscripción por cliente y canal
 func (r *SQLiteSubscriptionRepository) GetByClientAndChannel(ctx context.Context, clientID, channelID string) (*domain.ClientSubscription, error) {
-	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit FROM client_subscriptions WHERE client_id = ? AND channel_id = ?`
+	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders FROM client_subscriptions WHERE client_id = ? AND channel_id = ?`
 
 	row := r.db.QueryRowContext(ctx, query, clientID, channelID)
 	return r.scanSubscription(row)
@@ -200,7 +205,7 @@ func (r *SQLiteSubscriptionRepository) GetByClientAndChannel(ctx context.Context
 
 // ListByClient lista todas las suscripciones de un cliente
 func (r *SQLiteSubscriptionRepository) ListByClient(ctx context.Context, clientID string) ([]*domain.ClientSubscription, error) {
-	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit FROM client_subscriptions WHERE client_id = ? ORDER BY priority DESC`
+	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders FROM client_subscriptions WHERE client_id = ? ORDER BY priority DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, clientID)
 	if err != nil {
@@ -213,7 +218,7 @@ func (r *SQLiteSubscriptionRepository) ListByClient(ctx context.Context, clientI
 
 // ListByChannel lista todas las suscripciones de un canal
 func (r *SQLiteSubscriptionRepository) ListByChannel(ctx context.Context, channelID string) ([]*domain.ClientSubscription, error) {
-	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit FROM client_subscriptions WHERE channel_id = ? ORDER BY priority DESC`
+	query := `SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders FROM client_subscriptions WHERE channel_id = ? ORDER BY priority DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, channelID)
 	if err != nil {
@@ -227,7 +232,7 @@ func (r *SQLiteSubscriptionRepository) ListByChannel(ctx context.Context, channe
 // GetActiveSubscription obtiene la suscripción activa de un cliente en un canal (para resolución en runtime)
 func (r *SQLiteSubscriptionRepository) GetActiveSubscription(ctx context.Context, clientID, channelID string) (*domain.ClientSubscription, error) {
 	query := `
-	SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit
+	SELECT id, client_id, channel_id, custom_bot_id, custom_system_prompt, custom_config, priority, status, expires_at, created_at, updated_at, session_timeout, inactivity_warning_time, max_history_limit, max_recurring_reminders
 	FROM client_subscriptions 
 	WHERE client_id = ? AND channel_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)
 	ORDER BY priority DESC
@@ -276,6 +281,7 @@ func (r *SQLiteSubscriptionRepository) scanSubscription(row *sql.Row) (*domain.C
 	var configJSON, status string
 	var expiresAt sql.NullTime
 	var maxHistoryLimit sql.NullInt64
+	var maxRecurringReminders sql.NullInt64
 
 	err := row.Scan(
 		&sub.ID,
@@ -292,6 +298,7 @@ func (r *SQLiteSubscriptionRepository) scanSubscription(row *sql.Row) (*domain.C
 		&sub.SessionTimeout,
 		&sub.InactivityWarningTime,
 		&maxHistoryLimit,
+		&maxRecurringReminders,
 	)
 
 	if err == sql.ErrNoRows {
@@ -314,6 +321,15 @@ func (r *SQLiteSubscriptionRepository) scanSubscription(row *sql.Row) (*domain.C
 		sub.MaxHistoryLimit = &limit
 	}
 
+	if maxRecurringReminders.Valid {
+		limit := int(maxRecurringReminders.Int64)
+		sub.MaxRecurringReminders = &limit
+	} else {
+		// Default to 5
+		defaultLimit := 5
+		sub.MaxRecurringReminders = &defaultLimit
+	}
+
 	if err := json.Unmarshal([]byte(configJSON), &sub.CustomConfig); err != nil {
 		sub.CustomConfig = make(map[string]any)
 	}
@@ -331,6 +347,7 @@ func (r *SQLiteSubscriptionRepository) scanSubscriptions(rows *sql.Rows) ([]*dom
 		var configJSON, status string
 		var expiresAt sql.NullTime
 		var maxHistoryLimit sql.NullInt64
+		var maxRecurringReminders sql.NullInt64
 
 		err := rows.Scan(
 			&sub.ID,
@@ -347,6 +364,7 @@ func (r *SQLiteSubscriptionRepository) scanSubscriptions(rows *sql.Rows) ([]*dom
 			&sub.SessionTimeout,
 			&sub.InactivityWarningTime,
 			&maxHistoryLimit,
+			&maxRecurringReminders,
 		)
 
 		if err != nil {
@@ -364,6 +382,14 @@ func (r *SQLiteSubscriptionRepository) scanSubscriptions(rows *sql.Rows) ([]*dom
 		if maxHistoryLimit.Valid {
 			limit := int(maxHistoryLimit.Int64)
 			sub.MaxHistoryLimit = &limit
+		}
+
+		if maxRecurringReminders.Valid {
+			limit := int(maxRecurringReminders.Int64)
+			sub.MaxRecurringReminders = &limit
+		} else {
+			defaultLimit := 5
+			sub.MaxRecurringReminders = &defaultLimit
 		}
 
 		if err := json.Unmarshal([]byte(configJSON), &sub.CustomConfig); err != nil {

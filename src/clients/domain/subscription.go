@@ -24,6 +24,7 @@ type ClientSubscription struct {
 	SessionTimeout        int                `json:"session_timeout,omitempty"`         // Minutos (Override per subscription)
 	InactivityWarningTime int                `json:"inactivity_warning_time,omitempty"` // Minutos (Override per subscription)
 	MaxHistoryLimit       *int               `json:"max_history_limit,omitempty"`       // Override limit. Nil = Unlimited, >0 = Limit
+	MaxRecurringReminders *int               `json:"max_recurring_reminders,omitempty"` // Max recurrence. Nil = Default (5)
 	Status                SubscriptionStatus `json:"status"`
 	ExpiresAt             *time.Time         `json:"expires_at,omitempty"`
 	CreatedAt             time.Time          `json:"created_at"`
