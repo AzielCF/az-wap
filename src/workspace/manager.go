@@ -13,7 +13,7 @@ import (
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	clientDomain "github.com/AzielCF/az-wap/clients/domain"
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/application"
@@ -119,7 +119,7 @@ func NewManager(
 
 	m.sessions.OnWaitIdle = func(ctx context.Context, channelID, chatID string) {
 		if adapter, ok := m.channels.GetAdapter(channelID); ok {
-			waitIdle := time.Duration(globalConfig.AIWaitContactIdleMs) * time.Millisecond
+			waitIdle := time.Duration(coreconfig.Global.AI.WaitContactIdleMs) * time.Millisecond
 			if waitIdle > 0 {
 				_ = adapter.WaitIdle(ctx, chatID, waitIdle)
 			}
@@ -179,7 +179,7 @@ func (m *Manager) startHeartbeat() {
 
 func (m *Manager) reportStatus() {
 	ctx := context.Background()
-	_ = m.monitor.ReportHeartbeat(ctx, m.serverID, int64(time.Since(m.startTime).Seconds()), globalConfig.AppVersion)
+	_ = m.monitor.ReportHeartbeat(ctx, m.serverID, int64(time.Since(m.startTime).Seconds()), coreconfig.Global.App.Version)
 
 	// Update Task Counts (Memory vs DB)
 	if m.scheduler != nil {

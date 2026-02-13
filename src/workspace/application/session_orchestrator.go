@@ -11,7 +11,7 @@ import (
 	botengine "github.com/AzielCF/az-wap/botengine"
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	clientDomain "github.com/AzielCF/az-wap/clients/domain"
-	globalConfig "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
@@ -352,7 +352,7 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	// Stop existing timers
 	s.stopAndClearTimers(key)
 
-	debounceBase := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
+	debounceBase := time.Duration(coreconfig.Global.AI.DebounceMs) * time.Millisecond
 	if debounceBase <= 0 {
 		// Save state before processing
 		_ = s.store.Save(storeCtx, key, e, valkeyTTL)
@@ -505,7 +505,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 	typingState, _ := s.typing.Get(storeCtx, ch.ID, e.Msg.ChatID)
 	isComposing := typingState != nil
 	if isComposing {
-		debounce := time.Duration(globalConfig.AIDebounceMs) * time.Millisecond
+		debounce := time.Duration(coreconfig.Global.AI.DebounceMs) * time.Millisecond
 		if debounce <= 0 {
 			debounce = 2 * time.Second
 		}
@@ -579,7 +579,7 @@ func (s *SessionOrchestrator) FlushDebounced(key string, ch channel.Channel, bot
 							readingPause = s.botEngine.Humanizer().CalculateReadingTime(totalContent)
 						}
 						curr.State = StateDebouncing
-						debounce := (time.Duration(globalConfig.AIDebounceMs) * time.Millisecond) + readingPause
+						debounce := (time.Duration(coreconfig.Global.AI.DebounceMs) * time.Millisecond) + readingPause
 						_ = s.store.Save(storeCtx, key, curr, valkeyTTL)
 
 						tb := &timerBundle{

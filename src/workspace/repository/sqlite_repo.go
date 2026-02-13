@@ -88,6 +88,10 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_scheduled_posts_channel_target ON scheduled_posts(channel_id, target_id);`,
 		// Migration for sender_id
 		`ALTER TABLE scheduled_posts ADD COLUMN sender_id TEXT DEFAULT '';`,
+		// Migration for recurrence
+		`ALTER TABLE scheduled_posts ADD COLUMN recurrence_days TEXT DEFAULT '';`,
+		`ALTER TABLE scheduled_posts ADD COLUMN original_time TEXT DEFAULT '';`,
+		`ALTER TABLE scheduled_posts ADD COLUMN execution_count INTEGER DEFAULT 0;`,
 		// Migration: Convert empty external_ref to NULL to fix UNIQUE constraint issue
 		`UPDATE channels SET external_ref = NULL WHERE external_ref = '';`,
 	}
@@ -409,8 +413,8 @@ func (r *SQLiteRepository) AddChannelComplexCost(ctx context.Context, channelID 
 // Scheduled Post CRUD
 
 func (r *SQLiteRepository) CreateScheduledPost(ctx context.Context, post common.ScheduledPost) error {
-	query := `INSERT INTO scheduled_posts (id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, query, post.ID, post.ChannelID, post.TargetID, post.SenderID, post.Text, post.MediaPath, post.MediaType, post.ScheduledAt, post.Status, post.Error, post.CreatedAt, post.UpdatedAt)
+	query := `INSERT INTO scheduled_posts (id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at, recurrence_days, original_time, execution_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, query, post.ID, post.ChannelID, post.TargetID, post.SenderID, post.Text, post.MediaPath, post.MediaType, post.ScheduledAt, post.Status, post.Error, post.CreatedAt, post.UpdatedAt, post.RecurrenceDays, post.OriginalTime, post.ExecutionCount)
 	return err
 }
 
@@ -419,14 +423,14 @@ func (r *SQLiteRepository) GetScheduledPost(ctx context.Context, id string) (com
 	row := r.db.QueryRowContext(ctx, query, id)
 
 	var post common.ScheduledPost
-	if err := row.Scan(&post.ID, &post.ChannelID, &post.TargetID, &post.SenderID, &post.Text, &post.MediaPath, &post.MediaType, &post.ScheduledAt, &post.Status, &post.Error, &post.CreatedAt, &post.UpdatedAt); err != nil {
+	if err := row.Scan(&post.ID, &post.ChannelID, &post.TargetID, &post.SenderID, &post.Text, &post.MediaPath, &post.MediaType, &post.ScheduledAt, &post.Status, &post.Error, &post.CreatedAt, &post.UpdatedAt, &post.RecurrenceDays, &post.OriginalTime, &post.ExecutionCount); err != nil {
 		return common.ScheduledPost{}, err
 	}
 	return post, nil
 }
 
 func (r *SQLiteRepository) ListScheduledPosts(ctx context.Context, channelID string) ([]common.ScheduledPost, error) {
-	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at FROM scheduled_posts WHERE channel_id = ? ORDER BY scheduled_at ASC`
+	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at, recurrence_days, original_time, execution_count FROM scheduled_posts WHERE channel_id = ? ORDER BY scheduled_at ASC`
 	rows, err := r.db.QueryContext(ctx, query, channelID)
 	if err != nil {
 		return nil, err
@@ -445,7 +449,7 @@ func (r *SQLiteRepository) ListScheduledPosts(ctx context.Context, channelID str
 }
 
 func (r *SQLiteRepository) ListPendingScheduledPosts(ctx context.Context) ([]common.ScheduledPost, error) {
-	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at FROM scheduled_posts WHERE status = 'pending' AND scheduled_at <= datetime('now')`
+	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at, recurrence_days, original_time, execution_count FROM scheduled_posts WHERE status = 'pending' AND scheduled_at <= datetime('now')`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -464,7 +468,7 @@ func (r *SQLiteRepository) ListPendingScheduledPosts(ctx context.Context) ([]com
 }
 
 func (r *SQLiteRepository) ListUpcomingScheduledPosts(ctx context.Context, limitTime time.Time) ([]common.ScheduledPost, error) {
-	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at FROM scheduled_posts WHERE status IN ('pending', 'enqueued') AND scheduled_at <= ?`
+	query := `SELECT id, channel_id, target_id, sender_id, text, media_path, media_type, scheduled_at, status, error, created_at, updated_at, recurrence_days, original_time, execution_count FROM scheduled_posts WHERE status IN ('pending', 'enqueued') AND scheduled_at <= ?`
 	rows, err := r.db.QueryContext(ctx, query, limitTime)
 	if err != nil {
 		return nil, err
@@ -490,8 +494,8 @@ func (r *SQLiteRepository) CountPendingScheduledPosts(ctx context.Context) (int6
 }
 
 func (r *SQLiteRepository) UpdateScheduledPost(ctx context.Context, post common.ScheduledPost) error {
-	query := `UPDATE scheduled_posts SET text=?, media_path=?, media_type=?, scheduled_at=?, status=?, error=?, updated_at=? WHERE id=?`
-	res, err := r.db.ExecContext(ctx, query, post.Text, post.MediaPath, post.MediaType, post.ScheduledAt, post.Status, post.Error, post.UpdatedAt, post.ID)
+	query := `UPDATE scheduled_posts SET text=?, media_path=?, media_type=?, scheduled_at=?, status=?, error=?, updated_at=?, recurrence_days=?, original_time=?, execution_count=? WHERE id=?`
+	res, err := r.db.ExecContext(ctx, query, post.Text, post.MediaPath, post.MediaType, post.ScheduledAt, post.Status, post.Error, post.UpdatedAt, post.RecurrenceDays, post.OriginalTime, post.ExecutionCount, post.ID)
 	if err != nil {
 		return err
 	}
