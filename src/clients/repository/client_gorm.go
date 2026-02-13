@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -15,26 +16,26 @@ import (
 // --- Persistence Model ---
 
 type clientModel struct {
-	ID                    string `gorm:"primaryKey"`
-	PlatformID            string `gorm:"index:idx_clients_platform,priority:1;not null"`
-	PlatformType          string `gorm:"index:idx_clients_platform,priority:2;not null"`
-	DisplayName           string `gorm:"index:idx_clients_display_name"` // Agrego index para search si no existe
-	Email                 string `gorm:"index:idx_clients_email"`
-	Phone                 string `gorm:"index:idx_clients_phone"`
-	Tier                  string `gorm:"index:idx_clients_tier;default:'standard'"`
-	Tags                  string `gorm:"type:text;default:'[]'"` // JSON
-	Metadata              string `gorm:"type:text;default:'{}'"` // JSON
-	Notes                 string
+	ID                    string         `gorm:"primaryKey"`
+	PlatformID            string         `gorm:"index:idx_clients_platform,priority:1;not null"`
+	PlatformType          string         `gorm:"index:idx_clients_platform,priority:2;not null"`
+	DisplayName           sql.NullString `gorm:"index:idx_clients_display_name"` // Agrego index para search si no existe
+	Email                 sql.NullString `gorm:"index:idx_clients_email"`
+	Phone                 sql.NullString `gorm:"index:idx_clients_phone"`
+	Tier                  string         `gorm:"index:idx_clients_tier;default:'standard'"`
+	Tags                  sql.NullString `gorm:"type:text;default:'[]'"` // JSON
+	Metadata              sql.NullString `gorm:"type:text;default:'{}'"` // JSON
+	Notes                 sql.NullString
 	Language              string `gorm:"default:'en'"`
-	Timezone              string
-	Country               string
-	AllowedBots           string     `gorm:"type:text;default:'[]'"` // JSON
-	SessionTimeout        int        `gorm:"default:0"`
-	InactivityWarningTime int        `gorm:"default:0"`
-	Enabled               bool       `gorm:"default:true"`
-	LastInteraction       *time.Time `gorm:"column:last_interaction"`
-	CreatedAt             time.Time  `gorm:"not null"`
-	UpdatedAt             time.Time  `gorm:"not null"`
+	Timezone              sql.NullString
+	Country               sql.NullString
+	AllowedBots           sql.NullString `gorm:"type:text;default:'[]'"` // JSON
+	SessionTimeout        int            `gorm:"default:0"`
+	InactivityWarningTime int            `gorm:"default:0"`
+	Enabled               bool           `gorm:"default:true"`
+	LastInteraction       *time.Time     `gorm:"column:last_interaction"`
+	CreatedAt             time.Time      `gorm:"not null"`
+	UpdatedAt             time.Time      `gorm:"not null"`
 }
 
 func (clientModel) TableName() string {
@@ -334,17 +335,17 @@ func toClientModel(c *domain.Client) (clientModel, error) {
 		ID:                    c.ID,
 		PlatformID:            c.PlatformID,
 		PlatformType:          string(c.PlatformType),
-		DisplayName:           c.DisplayName,
-		Email:                 c.Email,
-		Phone:                 c.Phone,
+		DisplayName:           sql.NullString{String: c.DisplayName, Valid: c.DisplayName != ""},
+		Email:                 sql.NullString{String: c.Email, Valid: c.Email != ""},
+		Phone:                 sql.NullString{String: c.Phone, Valid: c.Phone != ""},
 		Tier:                  string(c.Tier),
-		Tags:                  string(tagsJSON),
-		Metadata:              string(metadataJSON),
-		Notes:                 c.Notes,
+		Tags:                  sql.NullString{String: string(tagsJSON), Valid: true},
+		Metadata:              sql.NullString{String: string(metadataJSON), Valid: true},
+		Notes:                 sql.NullString{String: c.Notes, Valid: c.Notes != ""},
 		Language:              c.Language,
-		Timezone:              c.Timezone,
-		Country:               c.Country,
-		AllowedBots:           string(allowedBotsJSON),
+		Timezone:              sql.NullString{String: c.Timezone, Valid: c.Timezone != ""},
+		Country:               sql.NullString{String: c.Country, Valid: c.Country != ""},
+		AllowedBots:           sql.NullString{String: string(allowedBotsJSON), Valid: true},
 		SessionTimeout:        c.SessionTimeout,
 		InactivityWarningTime: c.InactivityWarningTime,
 		Enabled:               c.Enabled,
@@ -359,14 +360,14 @@ func fromClientModel(m clientModel) (*domain.Client, error) {
 		ID:                    m.ID,
 		PlatformID:            m.PlatformID,
 		PlatformType:          domain.PlatformType(m.PlatformType),
-		DisplayName:           m.DisplayName,
-		Email:                 m.Email,
-		Phone:                 m.Phone,
+		DisplayName:           nullStringValue(m.DisplayName),
+		Email:                 nullStringValue(m.Email),
+		Phone:                 nullStringValue(m.Phone),
 		Tier:                  domain.ClientTier(m.Tier),
-		Notes:                 m.Notes,
+		Notes:                 nullStringValue(m.Notes),
 		Language:              m.Language,
-		Timezone:              m.Timezone,
-		Country:               m.Country,
+		Timezone:              nullStringValue(m.Timezone),
+		Country:               nullStringValue(m.Country),
 		SessionTimeout:        m.SessionTimeout,
 		InactivityWarningTime: m.InactivityWarningTime,
 		Enabled:               m.Enabled,
@@ -375,22 +376,22 @@ func fromClientModel(m clientModel) (*domain.Client, error) {
 		UpdatedAt:             m.UpdatedAt,
 	}
 
-	if m.Tags != "" {
-		_ = json.Unmarshal([]byte(m.Tags), &c.Tags)
+	if m.Tags.Valid && m.Tags.String != "" {
+		_ = json.Unmarshal([]byte(m.Tags.String), &c.Tags)
 	}
 	if c.Tags == nil {
 		c.Tags = []string{}
 	}
 
-	if m.Metadata != "" {
-		_ = json.Unmarshal([]byte(m.Metadata), &c.Metadata)
+	if m.Metadata.Valid && m.Metadata.String != "" {
+		_ = json.Unmarshal([]byte(m.Metadata.String), &c.Metadata)
 	}
 	if c.Metadata == nil {
 		c.Metadata = make(map[string]any)
 	}
 
-	if m.AllowedBots != "" {
-		_ = json.Unmarshal([]byte(m.AllowedBots), &c.AllowedBots)
+	if m.AllowedBots.Valid && m.AllowedBots.String != "" {
+		_ = json.Unmarshal([]byte(m.AllowedBots.String), &c.AllowedBots)
 	}
 	if c.AllowedBots == nil {
 		c.AllowedBots = []string{}

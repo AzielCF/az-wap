@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,16 +19,16 @@ type subscriptionModel struct {
 	ID                    string `gorm:"primaryKey"`
 	ClientID              string `gorm:"index:idx_subscriptions_client;index:idx_unique_sub,unique;not null"`
 	ChannelID             string `gorm:"index:idx_subscriptions_channel;index:idx_unique_sub,unique;not null"` // FK logic handled by DB constraints ideally
-	CustomBotID           string
-	CustomSystemPrompt    string
-	CustomConfig          string     `gorm:"type:text;default:'{}'"` // JSON
-	Priority              int        `gorm:"default:0"`
-	Status                string     `gorm:"index:idx_subscriptions_status;default:'active'"`
-	ExpiresAt             *time.Time `gorm:"index"` // Index useful for expiration checks
-	CreatedAt             time.Time  `gorm:"not null"`
-	UpdatedAt             time.Time  `gorm:"not null"`
-	SessionTimeout        int        `gorm:"default:0"`
-	InactivityWarningTime int        `gorm:"default:0"`
+	CustomBotID           sql.NullString
+	CustomSystemPrompt    sql.NullString
+	CustomConfig          sql.NullString `gorm:"type:text;default:'{}'"` // JSON
+	Priority              int            `gorm:"default:0"`
+	Status                string         `gorm:"index:idx_subscriptions_status;default:'active'"`
+	ExpiresAt             *time.Time     `gorm:"index"` // Index useful for expiration checks
+	CreatedAt             time.Time      `gorm:"not null"`
+	UpdatedAt             time.Time      `gorm:"not null"`
+	SessionTimeout        int            `gorm:"default:0"`
+	InactivityWarningTime int            `gorm:"default:0"`
 	MaxHistoryLimit       *int
 	MaxRecurringReminders *int `gorm:"default:5"`
 }
@@ -221,9 +222,9 @@ func toSubscriptionModel(s *domain.ClientSubscription) (subscriptionModel, error
 		ID:                    s.ID,
 		ClientID:              s.ClientID,
 		ChannelID:             s.ChannelID,
-		CustomBotID:           s.CustomBotID,
-		CustomSystemPrompt:    s.CustomSystemPrompt,
-		CustomConfig:          string(configJSON),
+		CustomBotID:           sql.NullString{String: s.CustomBotID, Valid: s.CustomBotID != ""},
+		CustomSystemPrompt:    sql.NullString{String: s.CustomSystemPrompt, Valid: s.CustomSystemPrompt != ""},
+		CustomConfig:          sql.NullString{String: string(configJSON), Valid: true},
 		Priority:              s.Priority,
 		Status:                string(s.Status),
 		ExpiresAt:             s.ExpiresAt,
@@ -241,8 +242,8 @@ func fromSubscriptionModel(m subscriptionModel) (*domain.ClientSubscription, err
 		ID:                    m.ID,
 		ClientID:              m.ClientID,
 		ChannelID:             m.ChannelID,
-		CustomBotID:           m.CustomBotID,
-		CustomSystemPrompt:    m.CustomSystemPrompt,
+		CustomBotID:           nullStringValue(m.CustomBotID),
+		CustomSystemPrompt:    nullStringValue(m.CustomSystemPrompt),
 		Priority:              m.Priority,
 		Status:                domain.SubscriptionStatus(m.Status),
 		ExpiresAt:             m.ExpiresAt,
@@ -262,14 +263,23 @@ func fromSubscriptionModel(m subscriptionModel) (*domain.ClientSubscription, err
 		s.MaxRecurringReminders = &defaultVal
 	}
 
-	if m.CustomConfig != "" {
-		_ = json.Unmarshal([]byte(m.CustomConfig), &s.CustomConfig)
+	configJSON := nullStringValue(m.CustomConfig)
+	if configJSON != "" && configJSON != "{}" {
+		_ = json.Unmarshal([]byte(configJSON), &s.CustomConfig)
 	}
 	if s.CustomConfig == nil {
 		s.CustomConfig = make(map[string]any)
 	}
 
 	return s, nil
+}
+
+// nullStringValue returns a trimmed string or empty if null to prevent legacy data panics.
+func nullStringValue(ns sql.NullString) string {
+	if !ns.Valid {
+		return ""
+	}
+	return strings.TrimSpace(ns.String)
 }
 
 func fromSubscriptionModels(models []subscriptionModel) ([]*domain.ClientSubscription, error) {
