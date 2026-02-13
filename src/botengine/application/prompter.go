@@ -7,7 +7,7 @@ import (
 
 	domain "github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
-	configGlobal "github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 )
 
 // Prompter se encarga de ensamblar las instrucciones del sistema (System Prompt)
@@ -31,8 +31,8 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	// --- BLOQUE ESTABLE (Cacheable) ---
 
 	// 1. Global Prompt
-	if configGlobal.AIGlobalSystemPrompt != "" {
-		stable.WriteString(configGlobal.AIGlobalSystemPrompt)
+	if coreconfig.Global.AI.GlobalSystemPrompt != "" {
+		stable.WriteString(coreconfig.Global.AI.GlobalSystemPrompt)
 		stable.WriteString("\n\n")
 	}
 

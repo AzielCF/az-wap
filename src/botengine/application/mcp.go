@@ -10,11 +10,12 @@ import (
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/botengine/infrastructure"
 	"github.com/AzielCF/az-wap/botengine/repository"
-	"github.com/AzielCF/az-wap/config"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	"github.com/AzielCF/az-wap/pkg/crypto"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type mcpService struct {
@@ -23,11 +24,11 @@ type mcpService struct {
 	health   domainHealth.IHealthUsecase
 }
 
-func NewMCPService() domainMCP.IMCPUsecase {
-	if err := crypto.SetEncryptionKey(config.AppSecretKey); err != nil {
+func NewMCPService(db *gorm.DB) domainMCP.IMCPUsecase {
+	if err := crypto.SetEncryptionKey(coreconfig.Global.Security.SecretKey); err != nil {
 		logrus.WithError(err).Error("[MCP] failed key set")
 	}
-	repo, _ := repository.NewMCPSQLiteRepository()
+	repo := repository.NewMCPGormRepository(db)
 	provider := infrastructure.NewMCPProviderAdapter() // Adaptador de infraestructura
 
 	return &mcpService{
