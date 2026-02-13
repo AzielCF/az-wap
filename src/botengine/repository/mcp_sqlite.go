@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
 	"github.com/AzielCF/az-wap/pkg/crypto"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -19,7 +19,7 @@ type MCPSQLiteRepository struct {
 
 // NewMCPSQLiteRepository crea una nueva instancia del repositorio.
 func NewMCPSQLiteRepository() (*MCPSQLiteRepository, error) {
-	db, err := config.GetAppDB()
+	db, err := coreDB.GetLegacyDB()
 	if err != nil {
 		return nil, err
 	}

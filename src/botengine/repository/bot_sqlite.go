@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
-	"github.com/AzielCF/az-wap/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -19,7 +19,7 @@ type BotSQLiteRepository struct {
 
 // NewBotSQLiteRepository crea una nueva instancia del repositorio SQLite.
 func NewBotSQLiteRepository() (*BotSQLiteRepository, error) {
-	db, err := config.GetAppDB()
+	db, err := coreDB.GetLegacyDB()
 	if err != nil {
 		return nil, err
 	}

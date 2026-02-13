@@ -6,7 +6,9 @@ import (
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	"github.com/AzielCF/az-wap/botengine/repository"
-	globalConfig "github.com/AzielCF/az-wap/config"
+
+	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	pkgError "github.com/AzielCF/az-wap/pkg/error"
@@ -20,13 +22,28 @@ type botService struct {
 	health      domainHealth.IHealthUsecase
 }
 
-// NewBotService inicializa el servicio con el repositorio SQLite por defecto.
+// NewBotService inicializa el servicio con el repositorio GORM por defecto.
 func NewBotService(credService domainCredential.ICredentialUsecase) domainBot.IBotUsecase {
-	repo, err := repository.NewBotSQLiteRepository()
+	// 1. Cargar Configuración (Clean Architecture)
+	cfg, err := coreconfig.LoadConfig()
 	if err != nil {
-		logrus.WithError(err).Error("[BOT] failed to initialize bot storage, bot operations will be disabled")
+		logrus.WithError(err).Error("[BOT] failed to load core configuration, using defaults")
+		cfg = &coreconfig.Config{}
+	}
+
+	// 2. Crear Conexión de Base de Datos usando la Fábrica (Factory Pattern)
+	db, err := coreDB.NewDatabase(cfg)
+	if err != nil {
+		logrus.WithError(err).Error("[BOT] failed to connect to GORM database, bot operations will be disabled")
 		return &botService{repo: nil, credService: credService}
 	}
+
+	// 3. Inicializar Repositorio con Inyección de Dependencia (DI)
+	repo := repository.NewBotGormRepository(db)
+	if err := repo.Init(context.Background()); err != nil {
+		logrus.WithError(err).Error("[BOT] failed to init bot repository schema")
+	}
+
 	return &botService{repo: repo, credService: credService}
 }
 
@@ -269,20 +286,20 @@ func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
 
 		switch b.Provider {
 		case domainBot.ProviderGemini, domainBot.ProviderAI:
-			if globalConfig.GeminiAPIKey != "" {
-				b.APIKey = globalConfig.GeminiAPIKey
+			if coreconfig.Global.APIKeys.Gemini != "" {
+				b.APIKey = coreconfig.Global.APIKeys.Gemini
 				logrus.Infof("[BOT] Using Gemini API Key from config for bot %s", b.ID)
 				hasLoggedFallback = true
 			}
 		case domainBot.ProviderOpenAI:
-			if globalConfig.OpenAIAPIKey != "" {
-				b.APIKey = globalConfig.OpenAIAPIKey
+			if coreconfig.Global.APIKeys.OpenAI != "" {
+				b.APIKey = coreconfig.Global.APIKeys.OpenAI
 				logrus.Infof("[BOT] Using OpenAI API Key from config for bot %s", b.ID)
 				hasLoggedFallback = true
 			}
 		case domainBot.ProviderClaude:
-			if globalConfig.ClaudeAPIKey != "" {
-				b.APIKey = globalConfig.ClaudeAPIKey
+			if coreconfig.Global.APIKeys.Claude != "" {
+				b.APIKey = coreconfig.Global.APIKeys.Claude
 				logrus.Infof("[BOT] Using Claude API Key from config for bot %s", b.ID)
 				hasLoggedFallback = true
 			}
@@ -290,8 +307,8 @@ func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
 
 		// Final fallback for generic AI key
 		if b.APIKey == "" {
-			if globalConfig.AIApiKey != "" {
-				b.APIKey = globalConfig.AIApiKey
+			if coreconfig.Global.APIKeys.AI != "" {
+				b.APIKey = coreconfig.Global.APIKeys.AI
 				logrus.Infof("[BOT] Using General AI API Key from config for bot %s", b.ID)
 				hasLoggedFallback = true
 			}
