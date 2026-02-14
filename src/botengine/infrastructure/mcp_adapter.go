@@ -97,7 +97,7 @@ func (a *MCPProviderAdapter) Validate(ctx context.Context, server domainMCP.MCPS
 	// Full connection and tools listing
 	mcpClient, err := a.createClient(ctx, server)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 	defer mcpClient.Close()
 
@@ -170,12 +170,14 @@ func (a *MCPProviderAdapter) createClient(ctx context.Context, server domainMCP.
 	case domainMCP.ConnTypeHTTP:
 		var opts []transport.StreamableHTTPCOption
 		if len(server.Headers) > 0 {
+			logrus.Debugf("[MCPAdapter] Applying %d custom headers to HTTP client", len(server.Headers))
 			opts = append(opts, transport.WithHTTPHeaders(server.Headers))
 		}
 		mcpClient, err = client.NewStreamableHttpClient(server.URL, opts...)
 	default: // SSE
 		var opts []transport.ClientOption
 		if len(server.Headers) > 0 {
+			logrus.Debugf("[MCPAdapter] Applying %d custom headers to SSE client", len(server.Headers))
 			opts = append(opts, client.WithHeaders(server.Headers))
 		}
 		mcpClient, err = client.NewSSEMCPClient(server.URL, opts...)
@@ -224,12 +226,14 @@ func (a *MCPProviderAdapter) checkAvailability(ctx context.Context, server domai
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 404 {
-		return fmt.Errorf("server returned 404")
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("server returned status code %d", resp.StatusCode)
 	}
+
 	return nil
 }
 

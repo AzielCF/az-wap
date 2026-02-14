@@ -2,6 +2,7 @@ package rest
 
 import (
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
@@ -49,7 +50,7 @@ func (handler *MCP) AddServer(c *fiber.Ctx) error {
 	}
 	server, err := handler.Service.AddServer(c.UserContext(), req)
 	if err != nil {
-		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+		return handleMCPError(c, err)
 	}
 	return c.JSON(utils.ResponseData{
 		Status:  201,
@@ -84,7 +85,7 @@ func (handler *MCP) UpdateServer(c *fiber.Ctx) error {
 	}
 	server, err := handler.Service.UpdateServer(c.UserContext(), id, req)
 	if err != nil {
-		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
+		return handleMCPError(c, err)
 	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
@@ -111,15 +112,27 @@ func (handler *MCP) ListTools(c *fiber.Ctx) error {
 	id := c.Params("id")
 	tools, err := handler.Service.ListTools(c.UserContext(), id)
 	if err != nil {
-		return c.Status(500).JSON(utils.ResponseData{
-			Status:  500,
-			Code:    "INTERNAL_SERVER_ERROR",
-			Message: err.Error(),
-		})
+		return handleMCPError(c, err)
 	}
 	return c.JSON(utils.ResponseData{
 		Status:  200,
 		Code:    "SUCCESS",
 		Results: tools,
+	})
+}
+
+func handleMCPError(c *fiber.Ctx, err error) error {
+	status := 500
+	code := "INTERNAL_SERVER_ERROR"
+
+	if gerr, ok := err.(pkgError.GenericError); ok {
+		status = gerr.StatusCode()
+		code = gerr.ErrCode()
+	}
+
+	return c.Status(status).JSON(utils.ResponseData{
+		Status:  status,
+		Code:    code,
+		Message: err.Error(),
 	})
 }

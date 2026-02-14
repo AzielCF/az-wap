@@ -14,6 +14,7 @@ import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	"github.com/AzielCF/az-wap/pkg/crypto"
+	pkgError "github.com/AzielCF/az-wap/pkg/error"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -72,7 +73,7 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 	tools, err := s.provider.Validate(ctx, server, !server.IsTemplate)
 	s.reportHealth(ctx, server.ID, err)
 	if err != nil {
-		return server, fmt.Errorf("validation failed: %w", err)
+		return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	if len(tools) > 0 {
@@ -104,7 +105,7 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 	tools, err := s.provider.Validate(ctx, server, !server.IsTemplate)
 	s.reportHealth(ctx, id, err)
 	if err != nil {
-		return server, fmt.Errorf("validation failed: %w", err)
+		return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	if len(tools) > 0 {

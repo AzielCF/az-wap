@@ -20,7 +20,8 @@ import {
   PlusCircle,
   Save,
   Trash,
-  Brain
+  Brain,
+  Settings2,
 } from 'lucide-vue-next'
 
 const api = useApi()
@@ -145,8 +146,9 @@ async function saveMCP() {
     }
     showAddMCP.value = false
     await loadData()
-  } catch (err) {
-    alert('Failed to save configuration.')
+  } catch (err: any) {
+    const msg = err.response?.data?.message || err.message || 'Unknown error'
+    alert(`Establishment Failed: ${msg}`)
   }
 }
 
