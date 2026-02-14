@@ -3,6 +3,7 @@ package botengine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -246,6 +247,11 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	// Agregar herramientas nativas (filtered by visibility)
 	tools = append(tools, e.GetNativeTools(input)...)
 
+	// Sort tools by name to ensure stable AI cache fingerprint
+	sort.Slice(tools, func(i, j int) bool {
+		return tools[i].Name < tools[j].Name
+	})
+
 	// 5. INTUITION PHASE: Pre-analyze mindset before presence
 	// Prepare history for intuition
 	var intuitionHistory []domain.ChatTurn
@@ -433,6 +439,10 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	var mcpInstructions strings.Builder
 	if b.ID != "" && e.mcpUsecase != nil {
 		if servers, err := e.mcpUsecase.ListServersForBot(ctx, b.ID); err == nil {
+			// Sort servers by ID for stable prompt generation
+			sort.Slice(servers, func(i, j int) bool {
+				return servers[i].ID < servers[j].ID
+			})
 			for _, srv := range servers {
 				if srv.Enabled {
 					if srv.Instructions != "" || srv.BotInstructions != "" {

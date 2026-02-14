@@ -145,21 +145,18 @@ func initApp() {
 	}
 
 	// --- CORE INITIALIZATION ---
-	// 1. Load Configuration
+	// 1. Load Configuration (Implicitly reads env vars)
 	cfg, err := coreconfig.LoadConfig()
 	if err != nil {
 		logrus.WithError(err).Warn("[CORE] Failed to load core configuration, using defaults")
 		cfg = &coreconfig.Config{}
 	}
 
-	// Generate or Load a persistent unique ID for this server instance
-	serverID = utils.GetPersistentServerID(coreconfig.Global.App.ServerID, coreconfig.Global.Paths.Storages)
-
 	// Priority: Explicit WHATSAPP_LOG_LEVEL > APP_DEBUG logic
-	if coreconfig.Global.App.Debug {
+	if cfg.App.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
-		if coreconfig.Global.Whatsapp.LogLevel == "" || coreconfig.Global.Whatsapp.LogLevel == "ERROR" {
-			coreconfig.Global.Whatsapp.LogLevel = "INFO" // For WhatsApp, INFO is enough for debug without being binary-heavy
+		if cfg.Whatsapp.LogLevel == "" || cfg.Whatsapp.LogLevel == "ERROR" {
+			cfg.Whatsapp.LogLevel = "INFO" // For WhatsApp, INFO is enough for debug without being binary-heavy
 		}
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
@@ -170,8 +167,11 @@ func initApp() {
 		// This will be used when creating adapters
 	}
 
+	// Generate or Load a persistent unique ID for this server instance
+	serverID = utils.GetPersistentServerID(cfg.App.ServerID, cfg.Paths.Storages)
+
 	// preparing folder if not exist
-	err = utils.CreateFolder(coreconfig.Global.Paths.SendItems, coreconfig.Global.Paths.Storages)
+	err = utils.CreateFolder(cfg.Paths.SendItems, cfg.Paths.Storages)
 	if err != nil {
 		logrus.Errorln(err)
 	}
@@ -417,7 +417,11 @@ func initApp() {
 	// Register Reminder Tools
 	rTools := onlyClients.NewReminderTools(newsletterUsecase)
 	botEngine.RegisterNativeTool(rTools.ScheduleReminderTool())
-	botEngine.RegisterNativeTool(rTools.ListRemindersTool())
+	botEngine.RegisterNativeTool(rTools.ListPendingRemindersTool())
+	botEngine.RegisterNativeTool(rTools.SearchRemindersHistoryTool())
+	botEngine.RegisterNativeTool(rTools.CancelReminderTool())
+	botEngine.RegisterNativeTool(rTools.UpdateReminderTool())
+	botEngine.RegisterNativeTool(rTools.CountRemindersTool())
 
 	// Register Client Profile Tools (allow users to manage their personal info via AI)
 	cTools := onlyClients.NewClientTools(clientRepo)

@@ -16,19 +16,21 @@ const (
 // This is used to store references to provider-side caches (e.g., Gemini's CachedContent).
 type ContextCacheEntry struct {
 	// Name is the provider-assigned identifier for the cached content
-	Name string `json:"n"`
+	Name string `json:"name"`
 	// ExpiresAt is when this cache entry should be considered invalid
-	ExpiresAt time.Time `json:"e"`
+	ExpiresAt time.Time `json:"expires_at"`
 	// Model is the AI model this cache was created for
-	Model string `json:"m,omitempty"`
+	Model string `json:"model,omitempty"`
 	// Type categorizes the cache: "global", "bot", or "chat"
-	Type string `json:"t,omitempty"`
+	Type string `json:"type,omitempty"`
 	// Scope identifies the owner: "" for global, BotID for bot, ChatKey for chat
-	Scope string `json:"s,omitempty"`
+	Scope string `json:"scope,omitempty"`
 	// Fingerprint is the key used to store this entry (for reference)
-	Fingerprint string `json:"f,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// Provider indicates which AI provider owns this cache (e.g., "gemini", "openai")
-	Provider string `json:"p,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	// Content stores a snapshot of the cached text for UI inspection (optional)
+	Content string `json:"content,omitempty"`
 }
 
 // ContextCacheStore defines the contract for storing AI context cache references.

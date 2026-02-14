@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/AzielCF/az-wap/core/config"
@@ -53,8 +54,24 @@ func NewDatabaseWithCustomPath(cfg *config.Config, path string) (*gorm.DB, error
 		return nil, fmt.Errorf("unsupported database driver: %s", cfg.Database.Driver)
 	}
 
+	dbLogLevel := logger.Info
+	level := os.Getenv("DB_LOG_LEVEL")
+	fmt.Printf("[DEBUG] DB_LOG_LEVEL detected: '%s'\n", level)
+	if level == "" {
+		level = "info"
+	}
+
+	switch level {
+	case "silent":
+		dbLogLevel = logger.Silent
+	case "error":
+		dbLogLevel = logger.Error
+	case "warn":
+		dbLogLevel = logger.Warn
+	}
+
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(dbLogLevel),
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
 		},
