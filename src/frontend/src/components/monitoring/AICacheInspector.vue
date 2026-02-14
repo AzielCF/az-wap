@@ -115,21 +115,21 @@ onUnmounted(() => {
           <Lightbulb class="w-4 h-4 text-amber-400" />
         </div>
         <div>
-          <h3 class="text-sm font-bold text-white uppercase tracking-wide">AI Cache Inspector</h3>
-          <p class="text-[10px] text-slate-500">Active provider-side caches (Gemini, OpenAI)</p>
+          <h3 class="text-base font-bold text-white uppercase tracking-wide">AI Cache Inspector</h3>
+          <p class="text-xs text-slate-500">Active provider-side caches (Gemini, OpenAI)</p>
         </div>
       </div>
       <div class="flex items-center gap-2">
         <button 
-          class="btn-premium btn-premium-ghost px-3 h-8 text-[10px]" 
+          class="btn-premium btn-premium-ghost px-3 h-8 text-xs" 
           @click="loadCaches"
           :disabled="loading"
         >
-          <RefreshCw class="w-3 h-3 mr-1.5" :class="{ 'animate-spin': loading }" />
+          <RefreshCw class="w-3.5 h-3.5 mr-1.5" :class="{ 'animate-spin': loading }" />
           Refresh
         </button>
         <button 
-          class="btn-premium px-3 h-8 text-[10px]" 
+          class="btn-premium px-3 h-8 text-xs" 
           :class="autoRefresh ? 'btn-premium-primary' : 'btn-premium-ghost'"
           @click="toggleSync"
         >
@@ -143,12 +143,12 @@ onUnmounted(() => {
       <table class="w-full text-left">
         <thead class="bg-white/[0.02] border-b border-white/5">
           <tr>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Type</th>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Description</th>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Model</th>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Provider</th>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">TTL</th>
-            <th class="py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fingerprint</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Type</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Model</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Provider</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">TTL</th>
+            <th class="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Fingerprint</th>
           </tr>
         </thead>
         <tbody>
@@ -159,27 +159,27 @@ onUnmounted(() => {
           >
             <td class="py-3 px-4">
               <div class="inline-flex items-center px-2 py-1 rounded border" :class="getTypeBadgeClass(cache.type)">
-                <component :is="getTypeIcon(cache.type)" class="w-3 h-3 mr-1.5" />
-                <span class="text-[10px] font-bold uppercase">{{ cache.type || 'unknown' }}</span>
+                <component :is="getTypeIcon(cache.type)" class="w-3 h-3 mr-2" />
+                <span class="text-[11px] font-bold uppercase tracking-tight">{{ cache.type || 'unknown' }}</span>
               </div>
             </td>
             <td class="py-3 px-4">
-              <span class="text-xs font-medium text-white">{{ cache.description || cache.name }}</span>
+              <span class="text-sm font-medium text-white">{{ cache.description || cache.name }}</span>
             </td>
             <td class="py-3 px-4">
-              <span class="text-[10px] font-mono text-primary/80">{{ cache.model || '-' }}</span>
+              <span class="text-xs font-mono text-primary/80">{{ cache.model || '-' }}</span>
             </td>
             <td class="py-3 px-4">
-              <span class="text-[10px] font-bold text-slate-400 uppercase">{{ cache.provider || '-' }}</span>
+              <span class="text-xs font-bold text-slate-400 uppercase">{{ cache.provider || '-' }}</span>
             </td>
             <td class="py-3 px-4">
-              <div class="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <Clock class="w-3 h-3 text-amber-500" />
+              <div class="flex items-center gap-2 text-xs text-slate-400">
+                <Clock class="w-3.5 h-3.5 text-amber-500" />
                 {{ getTimeRemaining(cache.expires_at) }}
               </div>
             </td>
             <td class="py-3 px-4">
-              <span class="text-[9px] font-mono text-slate-600 truncate block max-w-[150px]" :title="cache.fingerprint">
+              <span class="text-xs font-mono text-slate-600 truncate block max-w-[150px]" :title="cache.fingerprint">
                 {{ cache.fingerprint || '-' }}
               </span>
             </td>
@@ -192,7 +192,7 @@ onUnmounted(() => {
     <div v-else class="bg-black/20 border border-white/5 rounded-xl p-8 text-center">
       <Database class="w-8 h-8 text-slate-600 mx-auto mb-3" />
       <p class="text-sm font-medium text-slate-500">No active AI caches</p>
-      <p class="text-[10px] text-slate-600 mt-1">Caches will appear here when system prompts are cached by providers.</p>
+      <p class="text-xs text-slate-600 mt-1">Caches will appear here when system prompts are cached by providers.</p>
     </div>
   </div>
 </template>

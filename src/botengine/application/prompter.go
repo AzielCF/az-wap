@@ -161,6 +161,7 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	dynamic.WriteString("2. CURRENCY: To check exchange rates, you MUST use the 'get_exchange_rate' tool. Do not guess values. If the tool is unavailable, apologize and state you cannot verify the rate.\n")
 	dynamic.WriteString("3. EXECUTION SILENCE: When you decide to call a tool, do NOT write any conversational text (like 'Let me check...' or 'Un momento'). Output ONLY the mindset tag and the tool call.\n")
 	dynamic.WriteString("4. REGIONAL CONTEXT: If Client_Country is set, infer their default currency (e.g. PE=PEN, US=USD) and preferred time format (12h/24h) based on that country's conventions.\n")
+	dynamic.WriteString("5. REMINDER PRIVACY (SPOILER PREVENTION): When listing/searching reminders, NEVER repeat the exact creative text or emojis saved in the database. You MUST summarize the activity in a neutral, boring tone (e.g., 'Cita con el dentista' instead of '¡A lucir esa sonrisa! 🦷'). The creative flair and emojis are ONLY for the final delivery.\n")
 
 	return stable.String(), dynamic.String()
 }
