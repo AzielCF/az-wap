@@ -20,10 +20,32 @@ func InitRestMCP(app fiber.Router, service domainMCP.IMCPUsecase) MCP {
 	group.Get("/servers/:id", rest.GetServer)
 	group.Put("/servers/:id", rest.UpdateServer)
 	group.Delete("/servers/:id", rest.DeleteServer)
+	group.Post("/servers/:id/validate", rest.ValidateServerConfig)
 
 	group.Get("/servers/:id/tools", rest.ListTools)
 
 	return rest
+}
+
+func (handler *MCP) ValidateServerConfig(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var req domainMCP.BotMCPConfig
+	// We allow partial config (just headers/vars)
+	if err := c.BodyParser(&req); err != nil {
+		// Log the error but proceed with empty config if parsing fails? No, bad request.
+		// Actually, if body is empty, req is empty, which is valid for non-template servers.
+	}
+
+	err := handler.Service.ValidateWithConfig(c.UserContext(), id, req)
+	if err != nil {
+		return handleMCPError(c, err)
+	}
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: "Configuration validated successfully",
+	})
 }
 
 func (handler *MCP) ListServers(c *fiber.Ctx) error {

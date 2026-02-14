@@ -427,6 +427,7 @@ func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
 		DisabledTools []string          `json:"disabled_tools"`
 		CustomHeaders map[string]string `json:"custom_headers"`
 		Instructions  string            `json:"instructions"`
+		URLVariables  map[string]string `json:"url_variables"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
@@ -438,6 +439,7 @@ func (h *Bot) UpdateBotMCPConfig(c *fiber.Ctx) error {
 		DisabledTools: req.DisabledTools,
 		CustomHeaders: req.CustomHeaders,
 		Instructions:  req.Instructions,
+		URLVariables:  req.URLVariables,
 	})
 	if err != nil {
 		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})

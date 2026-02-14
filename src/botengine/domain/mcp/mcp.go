@@ -32,6 +32,7 @@ type MCPServer struct {
 	TemplateConfig  map[string]string `json:"template_config,omitempty"`  // Required headers for template (Key: HeaderName, Value: HelperText)
 	Instructions    string            `json:"instructions,omitempty"`     // Global instructions for this MCP server
 	BotInstructions string            `json:"bot_instructions,omitempty"` // Bot-specific instructions for this MCP server
+	URLVariables    map[string]string `json:"url_variables,omitempty"`    // Per-bot URL variable values
 }
 
 type Tool struct {
@@ -63,6 +64,7 @@ type BotMCPConfig struct {
 	DisabledTools []string          `json:"disabled_tools"` // List of tool names to hide from this bot
 	CustomHeaders map[string]string `json:"custom_headers"` // Bot-specific headers (auth, etc)
 	Instructions  string            `json:"instructions"`   // Bot-specific instructions for this MCP server
+	URLVariables  map[string]string `json:"url_variables"`  // Values for dynamic URL placeholders
 }
 
 // BotMCPConfigJSON define el esquema exacto de config_json en la BD.
@@ -70,6 +72,7 @@ type BotMCPConfigJSON struct {
 	DisabledTools []string          `json:"disabled_tools"`
 	CustomHeaders map[string]string `json:"custom_headers"`
 	Instructions  string            `json:"instructions"`
+	URLVariables  map[string]string `json:"url_variables"`
 }
 
 type IMCPUsecase interface {
@@ -90,6 +93,7 @@ type IMCPUsecase interface {
 	ToggleServerForBot(ctx context.Context, botID string, serverID string, enabled bool) error
 	UpdateBotMCPConfig(ctx context.Context, config BotMCPConfig) error
 	Validate(ctx context.Context, id string) error
+	ValidateWithConfig(ctx context.Context, id string, config BotMCPConfig) error
 	ListBotsUsingServer(ctx context.Context, serverID string) ([]string, error)
 	SetHealthUsecase(health domainHealth.IHealthUsecase)
 	Shutdown()

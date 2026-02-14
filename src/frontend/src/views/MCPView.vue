@@ -58,6 +58,7 @@ const showTools = ref(false)
 const selectedServerTools = ref<any[]>([])
 const selectedServerName = ref('')
 const loadingTools = ref(false)
+const isUrlFocused = ref(false)
 
 async function loadData() {
   if (!refreshInterval.value) loading.value = true
@@ -91,11 +92,13 @@ async function checkHealth(srv: any) {
   try {
     const res = await api.post(`/api/health/mcp/${srv.id}/check`, {})
     await loadData()
-    if (res.results?.status === 'ERROR') {
+    if (res.results?.status === 'ERROR' && !srv.is_template && !(srv.url||'').includes('{')) {
       alert(`Health check failed: ${res.results.last_message}`)
     }
   } catch (err) {
-    alert('Failed to trigger health check')
+    if (!srv.is_template && !(srv.url||'').includes('{')) {
+        alert('Failed to trigger health check')
+    }
   } finally {
     checkingHealth.value[srv.id] = false
   }
@@ -219,6 +222,33 @@ function getHealth(id: string) {
   return healthStatus.value[`mcp_server:${id}`] || { status: 'UNKNOWN', last_message: 'Waiting for heartbeat...' }
 }
 
+function getComputedStatus(mcp: any) {
+    const health = getHealth(mcp.id)
+    const isDynamic = mcp.is_template || (mcp.url || '').includes('{')
+    
+    if (isDynamic) {
+        return {
+            label: 'Blueprint',
+            color: 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)]',
+            textColor: 'text-amber-500'
+        }
+    }
+    
+    if (health.status === 'OK') {
+        return {
+            label: 'Operational',
+            color: 'bg-success shadow-[0_0_10px_rgba(34,197,94,0.4)]',
+            textColor: 'text-success'
+        }
+    }
+    
+    return {
+        label: 'Offline',
+        color: 'bg-error shadow-[0_0_10px_rgba(239,68,68,0.4)]',
+        textColor: 'text-error'
+    }
+}
+
 onMounted(() => {
   loadData()
   refreshInterval.value = setInterval(loadData, 5000)
@@ -241,13 +271,13 @@ onUnmounted(() => {
           <Terminal class="w-4 h-4 text-primary shrink-0" />
           <span class="text-sm font-bold uppercase tracking-widest text-primary">MCP Network</span>
           <span class="opacity-30 text-xs font-black text-slate-500">/</span>
-          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Node Management</span>
+          <span class="text-xs font-black uppercase tracking-widest text-slate-500">Server Management</span>
       </template>
 
       <template #actions>
         <button class="btn-premium btn-premium-primary px-12 h-14" @click="openAdd">
            <PlusCircle class="w-4 h-4 mr-2" />
-           Connect New Node
+           Connect New Server
         </button>
       </template>
     </AppPageHeader>
@@ -297,8 +327,12 @@ onUnmounted(() => {
                                 <span class="text-xs font-black uppercase text-slate-500 tracking-widest">Health Record</span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <div class="w-2 h-2 rounded-full animate-pulse" :class="getHealth(mcp.id).status === 'OK' ? 'bg-success shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-error'"></div>
-                                <span class="text-xs font-black uppercase" :class="getHealth(mcp.id).status === 'OK' ? 'text-success' : 'text-error'">{{ getHealth(mcp.id).status }}</span>
+                                <div class="w-2 h-2 rounded-full animate-pulse" 
+                                     :class="getComputedStatus(mcp).color"></div>
+                                <span class="text-xs font-black uppercase" 
+                                      :class="getComputedStatus(mcp).textColor">
+                                    {{ getComputedStatus(mcp).label }}
+                                </span>
                             </div>
                         </div>
                         <p class="text-xs text-slate-400 font-medium leading-relaxed italic line-clamp-2 h-10">{{ getHealth(mcp.id).last_message }}</p>
@@ -330,7 +364,7 @@ onUnmounted(() => {
                 <div class="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center text-slate-700 mb-6">
                     <Zap class="w-10 h-10" />
                 </div>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight mb-2">No Capability Nodes</h3>
+                <h3 class="text-xl font-black text-white uppercase tracking-tight mb-2">No Active Servers</h3>
                 <p class="text-xs text-slate-500 max-w-sm uppercase font-bold tracking-tight">Expand the bot intelligence by connecting specialized external micro-servers.</p>
             </div>
         </div>
@@ -381,7 +415,7 @@ onUnmounted(() => {
     </AppModal>
 
     <!-- MCP Editor Modal -->
-    <AppModal v-model="showAddMCP" :title="editingMCP ? 'Configure Node' : 'Bridge New Connector'" maxWidth="max-w-6xl" noPadding noScroll>
+    <AppModal v-model="showAddMCP" :title="editingMCP ? 'Configure Server' : 'Bridge New Connector'" maxWidth="max-w-6xl" noPadding noScroll>
         <div class="flex flex-col lg:flex-row bg-[#0b0e14] h-[85vh] overflow-hidden">
             <div class="lg:w-80 bg-[#161a23] border-r border-white/5 p-12 flex flex-col items-center text-center flex-none">
                 <div class="w-24 h-24 rounded-[2rem] bg-primary/10 flex items-center justify-center text-primary mb-8 border border-primary/20 shadow-2xl relative">
@@ -429,9 +463,31 @@ onUnmounted(() => {
                     <div class="form-control">
                         <label class="label-premium">Endpoint access URL</label>
                         <div class="relative">
-                            <Globe class="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                            <input v-model="newMCP.url" type="text" class="input-premium h-16 w-full font-mono text-sm pl-14" placeholder="https://api.yournodes.com/sse/mcp" />
+                            <Globe class="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 z-20" />
+                            
+                            <!-- Highlight Layer (Visible only when NOT focused) -->
+                            <div class="absolute inset-0 pl-14 pr-4 flex items-center pointer-events-none z-0 overflow-hidden transition-opacity duration-200" 
+                                 :class="isUrlFocused ? 'opacity-0' : 'opacity-100'"
+                                 aria-hidden="true">
+                                <div class="font-mono text-sm whitespace-pre w-full overflow-hidden text-ellipsis">
+                                    <template v-for="(segment, i) in (newMCP.url || '').split(/(\{[^}]+\})/g)" :key="i">
+                                        <span v-if="segment.match(/^\{[^}]+\}$/)" class="text-primary font-bold bg-primary/20 rounded px-1 mx-0.5">{{ segment }}</span>
+                                        <span v-else class="text-white opacity-40">{{ segment }}</span>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Input Layer (Normal text when focused, Transparent when blurred) -->
+                            <input v-model="newMCP.url" type="text" 
+                                   @focus="isUrlFocused = true"
+                                   @blur="isUrlFocused = false"
+                                   class="input-premium h-16 w-full font-mono text-sm pl-14 relative z-10 bg-transparent transition-colors caret-white"
+                                   :class="isUrlFocused ? 'text-white' : 'text-transparent'"
+                                   placeholder="https://api.yourmcps.com/sse/mcp" />
                         </div>
+                        <p class="mt-2 text-xs text-slate-500 font-bold uppercase tracking-wider">
+                            Use <span class="text-primary font-mono bg-primary/10 px-1 rounded">{variable}</span> syntax for dynamic values per bot.
+                        </p>
                     </div>
 
                     <div class="form-control">
@@ -494,7 +550,7 @@ onUnmounted(() => {
                             <label class="label-premium mb-0">Universal AI System Instructions</label>
                         </div>
                         <textarea v-model="newMCP.instructions" rows="5" class="input-premium w-full p-8 leading-relaxed text-sm" placeholder="Define boundaries and usage patterns for the AI..."></textarea>
-                        <p class="mt-3 text-xs text-slate-600 font-bold uppercase tracking-wider">These guidelines are injected into the bot's system prompt whenever this node is active.</p>
+                        <p class="mt-3 text-xs text-slate-600 font-bold uppercase tracking-wider">These guidelines are injected into the bot's system prompt whenever this server is active.</p>
                     </div>
                 </div>
 
@@ -506,7 +562,7 @@ onUnmounted(() => {
                     </button>
                     <button class="btn-premium btn-premium-success px-20 h-14" @click="saveMCP">
                         <Save class="w-4 h-4 mr-2" />
-                        Authorize node
+                        Authorize MCP
                     </button>
                 </div>
             </div>

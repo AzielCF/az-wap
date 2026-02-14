@@ -216,6 +216,15 @@ func (a *MCPProviderAdapter) checkAvailability(ctx context.Context, server domai
 	if server.URL == "" {
 		return fmt.Errorf("URL missing")
 	}
+
+	// HTTP Transport endpoints usually expect POST (JSON-RPC).
+	// A GET request will likely fail with 405 Method Not Allowed.
+	// For HTTP transport, we rely on the actual Initialize handshake (POST) to verify connectivity.
+	if server.Type == domainMCP.ConnTypeHTTP {
+		return nil
+	}
+
+	// For SSE, we expect a GET request to establish the stream.
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
 	if err != nil {

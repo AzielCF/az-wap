@@ -70,13 +70,27 @@ func (s *mcpService) AddServer(ctx context.Context, server domainMCP.MCPServer) 
 		}
 	}
 
-	tools, err := s.provider.Validate(ctx, server, !server.IsTemplate)
-	s.reportHealth(ctx, server.ID, err)
-	if err != nil {
-		return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
+	// Validation Logic:
+	// If it's a template or has dynamic variables, we SKIP connection validation.
+	// We trust the user is defining a blueprint.
+	isDynamic := server.IsTemplate || strings.Contains(server.URL, "{")
+
+	var tools []domainMCP.Tool
+	if !isDynamic {
+		var err error
+		tools, err = s.provider.Validate(ctx, server, true) // Force check for normal servers
+		s.reportHealth(ctx, server.ID, err)
+		if err != nil {
+			return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
+		}
+	} else {
+		// For dynamic servers, we assume healthy state initially or pending
+		// We actively DO NOT fetch tools here because it would fail.
+		tools = []domainMCP.Tool{}
 	}
 
 	if len(tools) > 0 {
+		// Only try to update if we actually got tools
 		server.Tools = tools
 	}
 
@@ -102,10 +116,20 @@ func (s *mcpService) UpdateServer(ctx context.Context, id string, server domainM
 		return server, err
 	}
 
-	tools, err := s.provider.Validate(ctx, server, !server.IsTemplate)
-	s.reportHealth(ctx, id, err)
-	if err != nil {
-		return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
+	// Validation Logic (Same as AddServer)
+	isDynamic := server.IsTemplate || strings.Contains(server.URL, "{")
+
+	var tools []domainMCP.Tool
+	if !isDynamic {
+		var err error
+		tools, err = s.provider.Validate(ctx, server, true)
+		s.reportHealth(ctx, id, err)
+		if err != nil {
+			return server, pkgError.ValidationError(fmt.Sprintf("validation failed: %v", err))
+		}
+		if len(tools) > 0 {
+			server.Tools = tools
+		}
 	}
 
 	if len(tools) > 0 {
@@ -161,6 +185,14 @@ func (s *mcpService) CallTool(ctx context.Context, botID string, req domainMCP.C
 					srv.Headers[k] = v
 				}
 			}
+			// Apply URL Variables
+			for k, v := range bc.URLVariables {
+				val := v
+				if dec, err := crypto.Decrypt(v); err == nil {
+					val = dec
+				}
+				srv.URL = strings.ReplaceAll(srv.URL, "{"+k+"}", val)
+			}
 		}
 	}
 
@@ -196,6 +228,14 @@ func (s *mcpService) GetBotTools(ctx context.Context, botID string) ([]domainMCP
 				for _, t := range bc.DisabledTools {
 					disabled[t] = true
 				}
+				// Apply URL Variables for tool discovery
+				for k, v := range bc.URLVariables {
+					val := v
+					if dec, err := crypto.Decrypt(v); err == nil {
+						val = dec
+					}
+					srv.URL = strings.ReplaceAll(srv.URL, "{"+k+"}", val)
+				}
 			}
 		}
 
@@ -222,6 +262,7 @@ func (s *mcpService) ListServersForBot(ctx context.Context, botID string) ([]dom
 				servers[i].DisabledTools = bc.DisabledTools
 				servers[i].BotInstructions = bc.Instructions
 				servers[i].CustomHeaders = s.decryptMap(bc.CustomHeaders)
+				servers[i].URLVariables = s.decryptMap(bc.URLVariables)
 			}
 		}
 	}
@@ -257,17 +298,31 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, cfg domainMCP.BotMC
 	if doValidate {
 		srv, err := s.GetServer(ctx, cfg.ServerID)
 		if err == nil {
+			// Apply Custom Headers
 			if srv.Headers == nil {
 				srv.Headers = make(map[string]string)
 			}
 			for k, v := range cfg.CustomHeaders {
 				srv.Headers[k] = v
 			}
+
+			// Apply URL Variables
+			for k, v := range cfg.URLVariables {
+				srv.URL = strings.ReplaceAll(srv.URL, "{"+k+"}", v)
+			}
+
+			// Validate if there are remaining variables
+			if strings.Contains(srv.URL, "{") {
+				return fmt.Errorf("bot validation failed: URL still contains unresolved variables: %s", srv.URL)
+			}
+
 			if _, err := s.provider.Validate(ctx, srv, true); err != nil {
-				s.reportHealth(ctx, cfg.ServerID, err)
+				// Don't report global health failure for a bot-specific config error
+				// s.reportHealth(ctx, cfg.ServerID, err)
 				return fmt.Errorf("bot validation failed: %w", err)
 			}
-			s.health.ReportSuccess(ctx, domainHealth.EntityMCP, cfg.ServerID)
+			// Only report success if we are sure? No, let's not touch global health from here.
+			// s.health.ReportSuccess(ctx, domainHealth.EntityMCP, cfg.ServerID)
 		}
 	}
 
@@ -277,10 +332,17 @@ func (s *mcpService) UpdateBotMCPConfig(ctx context.Context, cfg domainMCP.BotMC
 		encHeaders[k] = enc
 	}
 
+	encVars := make(map[string]string)
+	for k, v := range cfg.URLVariables {
+		enc, _ := crypto.Encrypt(v)
+		encVars[k] = enc
+	}
+
 	confJSON, _ := json.Marshal(domainMCP.BotMCPConfigJSON{
 		DisabledTools: cfg.DisabledTools,
 		CustomHeaders: encHeaders,
 		Instructions:  cfg.Instructions,
+		URLVariables:  encVars,
 	})
 
 	return s.repo.SaveBotMCPConfig(ctx, cfg.BotID, cfg.ServerID, cfg.Enabled, string(confJSON))
@@ -291,12 +353,60 @@ func (s *mcpService) Validate(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	tools, err := s.provider.Validate(ctx, srv, !srv.IsTemplate)
+
+	if srv.IsTemplate || strings.Contains(srv.URL, "{") {
+		// return fmt.Errorf("server is a template; requires bot-specific configuration")
+		// CHANGED: We return nil here so the health check loop doesn't flag it as ERROR.
+		// The UI will handle the "BluePrint" status based on IsTemplate flag.
+		return nil
+	}
+
+	tools, err := s.provider.Validate(ctx, srv, true)
 	s.reportHealth(ctx, id, err)
 	if err == nil && len(tools) > 0 {
 		_ = s.repo.UpdateServerTools(ctx, id, tools)
 	}
 	return err
+}
+
+func (s *mcpService) ValidateWithConfig(ctx context.Context, id string, config domainMCP.BotMCPConfig) error {
+	srv, err := s.GetServer(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Apply URL Variables
+	for k, v := range config.URLVariables {
+		srv.URL = strings.ReplaceAll(srv.URL, "{"+k+"}", v)
+	}
+
+	// Merge Custom Headers
+	if srv.Headers == nil {
+		srv.Headers = make(map[string]string)
+	}
+	for k, v := range config.CustomHeaders {
+		srv.Headers[k] = v
+	}
+
+	// Check if we still have unresolved variables
+	if strings.Contains(srv.URL, "{") {
+		return fmt.Errorf("URL still contains unresolved variables: %s", srv.URL)
+	}
+
+	// Validate using the provider (transient check)
+	tools, err := s.provider.Validate(ctx, srv, true)
+
+	// We intentionally do NOT report health to the global state for config-specific checks
+	// to avoid flickering status for other users/bots.
+
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	if len(tools) == 0 {
+		return fmt.Errorf("connected but validated 0 tools")
+	}
+
+	return nil
 }
 
 func (s *mcpService) ListBotsUsingServer(ctx context.Context, sid string) ([]string, error) {
