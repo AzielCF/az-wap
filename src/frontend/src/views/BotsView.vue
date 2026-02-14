@@ -176,9 +176,23 @@ async function loadBotMCPs(botId: string | null) {
         })
       }
 
-      // Logic: Auto-expand if it's a template and missing required headers
-      const needsConfig = srv.is_template && srv.template_config && 
-                         Object.keys(srv.template_config).some(k => !headersMap[k] || headersMap[k].trim() === '');
+      let urlVariables: Record<string, string> = {}
+      if (srv.url_variables) {
+        urlVariables = { ...srv.url_variables }
+      }
+      
+      // Extract variables from URL pattern: {varName}
+      const urlMatches = (srv.url || '').match(/\{([^}]+)\}/g)?.map((m: string) => m.slice(1, -1)) || []
+      urlMatches.forEach((key: string) => {
+          if (!urlVariables[key]) urlVariables[key] = ''
+      })
+
+      // Logic: Auto-expand if it's a template and missing required headers OR variables
+      const missingHeaders = srv.is_template && srv.template_config && 
+                           Object.keys(srv.template_config).some(k => !headersMap[k] || headersMap[k].trim() === '');
+      const missingVars = urlMatches.some((k: string) => !urlVariables[k] || urlVariables[k].trim() === '');
+
+      const needsConfig = missingHeaders || missingVars;
       
       if (needsConfig && !expandedServers.value.includes(srv.id)) {
         expandedServers.value.push(srv.id)
@@ -187,6 +201,8 @@ async function loadBotMCPs(botId: string | null) {
       const mapped = { 
         ...srv, 
         headersMap,
+        urlVariables, // New state
+        urlVarKeys: urlMatches, // For UI iteration
         botInstructions: srv.bot_instructions || '',
         disabled_tools: srv.disabled_tools || []
       }
@@ -209,6 +225,7 @@ async function saveMCPPreference(server: any) {
     enabled: server.enabled,
     disabled_tools: server.disabled_tools || [],
     custom_headers: server.headersMap,
+    url_variables: server.urlVariables,
     instructions: server.botInstructions || ''
   }
   await api.put(`/bots/${editingBot.value.id}/mcp/${server.id}`, payload)
@@ -218,10 +235,14 @@ function getMCPCompareState(srv: any) {
   return JSON.stringify({
     enabled: !!srv.enabled,
     disabled_tools: [...(srv.disabled_tools || [])].sort(),
-    custom_headers: Object.keys(srv.headersMap || {}).sort().reduce((obj, key) => {
+    custom_headers: Object.keys(srv.headersMap || {}).sort().reduce((obj: any, key) => {
       obj[key] = srv.headersMap[key]
       return obj
-    }, {} as any),
+    }, {}),
+    url_variables: Object.keys(srv.urlVariables || {}).sort().reduce((obj: any, key) => {
+        obj[key] = srv.urlVariables[key]
+        return obj
+    }, {}),
     instructions: srv.botInstructions || ''
   })
 }
@@ -237,6 +258,7 @@ async function saveAllMCPPreferences(botId: string) {
         enabled: srv.enabled,
         disabled_tools: srv.disabled_tools || [],
         custom_headers: srv.headersMap,
+        url_variables: srv.urlVariables,
         instructions: srv.botInstructions || ''
       }
       return api.put(`/bots/${botId}/mcp/${srv.id}`, payload)
@@ -794,15 +816,23 @@ onMounted(loadData)
                                     </div>
 
                                     <!-- Required Header Configuration for Templates -->
-                                    <div v-if="srv.is_template && srv.template_config && Object.keys(srv.template_config).length" class="space-y-6 p-8 bg-amber-500/5 rounded-[2rem] border border-amber-500/10 shadow-xl">
+                                    <div v-if="(srv.is_template && srv.template_config && Object.keys(srv.template_config).length) || (srv.urlVarKeys && srv.urlVarKeys.length)" class="space-y-6 p-8 bg-amber-500/5 rounded-[2rem] border border-amber-500/10 shadow-xl">
                                         <div class="flex items-center gap-3 mb-2">
                                             <ShieldCheck class="w-4 h-4 text-amber-500" />
                                             <h5 class="text-xs font-black text-amber-500 uppercase tracking-widest">Required Configuration (Bot Specific)</h5>
                                         </div>
                                         
                                         <div class="grid grid-cols-1 gap-5">
+                                            <!-- Dynamic URL Variables -->
+                                            <div v-for="key in srv.urlVarKeys" :key="'var-'+key" class="form-control">
+                                                <label class="text-xs font-bold text-amber-500/50 uppercase ml-1 mb-2">Endpoint Variable: {{ key }}</label>
+                                                <input v-model="srv.urlVariables[key]" type="text" 
+                                                       class="input-premium h-14 w-full bg-black/40 border-amber-500/10 text-xs text-white" 
+                                                       :placeholder="'Value for {' + key + '}'" />
+                                            </div>
+
                                             <div v-for="(help, key) in srv.template_config" :key="key" class="form-control">
-                                                <label class="text-xs font-bold text-amber-500/50 uppercase ml-1 mb-2">{{ key }}</label>
+                                                <label class="text-xs font-bold text-amber-500/50 uppercase ml-1 mb-2">Header: {{ key }}</label>
                                                 <input v-model="srv.headersMap[key]" type="text" 
                                                        class="input-premium h-14 w-full bg-black/40 border-amber-500/10 text-xs text-white" 
                                                        :placeholder="help" />
