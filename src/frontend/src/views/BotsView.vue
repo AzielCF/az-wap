@@ -154,11 +154,12 @@ async function loadData() {
   }
 }
 
-async function loadBotMCPs(botId: string) {
+async function loadBotMCPs(botId: string | null) {
   loadingBotMCPs.value = true
   botMCPServers.value = []
   try {
-    const res = await api.get(`/bots/${botId}/mcp`)
+    const endpoint = botId ? `/bots/${botId}/mcp` : '/mcp/servers'
+    const res = await api.get(endpoint)
     const results = res.results || []
     
     botMCPServers.value = results.map((srv: any) => {
@@ -166,6 +167,9 @@ async function loadBotMCPs(botId: string) {
       if (srv.custom_headers) {
         headersMap = { ...srv.custom_headers }
       }
+      
+      // If it's a global server (not from /bots/:id/mcp), results might have different structure
+      // or missing bot-specific fields. We normalize them here.
       if (srv.is_template && srv.template_config) {
         Object.keys(srv.template_config).forEach(k => {
           if (!headersMap[k]) headersMap[k] = ''
@@ -405,8 +409,9 @@ function openEdit(bot: any) {
 }
 
 function openAdd() {
-  showAddBot.value = true;
   resetForm();
+  showAddBot.value = true;
+  loadBotMCPs(null);
 }
 
 function resetForm() {
@@ -722,7 +727,7 @@ onMounted(loadData)
                             </div>
                             <div v-if="!newBot.credential_id" class="form-control">
                                 <label class="label-premium">Direct API Access Key</label>
-                                <input v-model="newBot.api_key" type="password" class="input-premium h-14 w-full font-mono text-xs" placeholder="Paste manual key..." />
+                                <input v-model="newBot.api_key" type="text" autocomplete="off" class="input-premium h-14 w-full font-mono text-xs" placeholder="Paste manual key..." />
                             </div>
                         </div>
 
@@ -736,7 +741,7 @@ onMounted(loadData)
                             </div>
                             <div class="form-control">
                                 <label class="label-premium">Chatwoot Agent Token</label>
-                                <input v-model="newBot.chatwoot_bot_token" type="password" class="input-premium h-14 w-full font-mono text-xs" placeholder="Paste agent token..." />
+                                <input v-model="newBot.chatwoot_bot_token" type="text" autocomplete="off" class="input-premium h-14 w-full font-mono text-xs" placeholder="Paste agent token..." />
                             </div>
                         </div>
                     </div>
@@ -748,12 +753,7 @@ onMounted(loadData)
                             <span v-if="loadingBotMCPs" class="loading loading-spinner loading-xs"></span>
                         </div>
 
-                        <div v-if="!editingBot" class="p-20 bg-white/[0.02] border border-dashed border-white/5 rounded-[2rem] text-center">
-                            <Wrench class="w-10 h-10 text-slate-700 mx-auto mb-4 opacity-20" />
-                            <p class="text-xs font-bold uppercase tracking-widest text-slate-600">MCP Configuration is available after bot creation.</p>
-                        </div>
-
-                        <div v-else-if="botMCPServers.length === 0" class="p-20 bg-white/[0.02] border border-dashed border-white/5 rounded-[2rem] text-center">
+                        <div v-if="botMCPServers.length === 0" class="p-20 bg-white/[0.02] border border-dashed border-white/5 rounded-[2rem] text-center">
                             <p class="text-xs font-bold uppercase tracking-widest text-slate-600">No MCP Servers detected.</p>
                         </div>
 

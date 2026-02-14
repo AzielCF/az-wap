@@ -335,7 +335,7 @@ onMounted(loadData)
                                         <EyeOff v-else class="w-3 h-3" />
                                      </button>
                                 </div>
-                                <input v-model="newCredential.ai_api_key" :type="showFormKey ? 'text' : 'password'" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste your API key here..." />
+                                <input v-model="newCredential.ai_api_key" :type="showFormKey ? 'text' : 'password'" autocomplete="off" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste your API key here..." />
                             </div>
                         </div>
 
@@ -346,14 +346,14 @@ onMounted(loadData)
                                      <Globe class="w-3 h-3 text-amber-500" />
                                      <label class="label-premium mb-0">Base URL</label>
                                 </div>
-                                <input v-model="newCredential.chatwoot_base_url" type="text" class="input-premium h-14 w-full text-sm font-mono" placeholder="https://app.chatwoot.com" />
+                                <input v-model="newCredential.chatwoot_base_url" type="text" autocomplete="off" class="input-premium h-14 w-full text-sm font-mono" placeholder="https://app.chatwoot.com" />
                             </div>
                             <div class="form-control">
                                 <div class="flex items-center gap-2 mb-2">
                                      <Lock class="w-3 h-3 text-amber-500" />
                                      <label class="label-premium mb-0">Account Token</label>
                                 </div>
-                                <input v-model="newCredential.chatwoot_account_token" type="password" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste account token..." />
+                                <input v-model="newCredential.chatwoot_account_token" type="text" autocomplete="off" class="input-premium h-14 w-full text-sm font-mono" placeholder="Paste account token..." />
                             </div>
                         </div>
                     </TransitionGroup>
