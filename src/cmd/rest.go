@@ -8,7 +8,12 @@ import (
 	"syscall"
 	"time"
 
+	clientsRepo "github.com/AzielCF/az-wap/clients/repository"
+	portalAuthApp "github.com/AzielCF/az-wap/clients_portal/auth/application"
+	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
+	portalAuthRepo "github.com/AzielCF/az-wap/clients_portal/auth/repository"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
 	"github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/ui/rest/middleware"
 	"github.com/AzielCF/az-wap/ui/websocket"
@@ -33,9 +38,15 @@ var restCmd = &cobra.Command{
 }
 
 func init() {
+	restCmd.Flags().String("basic-auth", "", "Basic auth for API (format: user:pass,user2:pass2)")
 	rootCmd.AddCommand(restCmd)
 }
-func restServer(_ *cobra.Command, _ []string) {
+func restServer(cmd *cobra.Command, _ []string) {
+	// Override basic auth if flag is provided
+	if baFlag, _ := cmd.Flags().GetString("basic-auth"); baFlag != "" {
+		coreconfig.Global.App.BasicAuth = strings.Split(baFlag, ",")
+	}
+
 	fiberConfig := fiber.Config{
 		EnableTrustedProxyCheck: true,
 		BodyLimit:               int(coreconfig.Global.Whatsapp.MaxVideoSize),
@@ -151,6 +162,33 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
 	rest.InitRestHealth(apiGroup, healthUsecase)
+
+	// --- CLIENTS PORTAL (NEW) ---
+	// 1. Initialize Portal Auth Components
+	portalAuthRepository := portalAuthRepo.NewGormAuthRepository(coreDB.GlobalDB)
+	// Inject existing CRM Client Repository
+	crmClientRepo := clientsRepo.NewClientGormRepository(coreDB.GlobalDB)
+	// Auto-migrate portal users table
+	if err := portalAuthRepository.AutoMigrate(); err != nil {
+		logrus.Errorf("Failed to migrate portal tables: %v", err)
+	}
+
+	portalAuthService := portalAuthApp.NewAuthService(portalAuthRepository, crmClientRepo)
+	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
+	portalAuthMiddleware := portalAuthInfra.NewAuthMiddleware(portalAuthRepository)
+
+	// 2. Create API Group for Portal (Isolated from Admin)
+	portalGroup := app.Group(coreconfig.Global.App.BasePath + "/api/portal")
+
+	// Public Portal Routes (Login)
+	portalGroup.Post("/login", portalAuthHandler.Login)
+	// TODO: Register should be protected or invitation-only, currently open for initial testing or move to admin
+	// portalGroup.Post("/register", portalAuthHandler.Register)
+
+	// Protected Portal Routes
+	portalProtected := portalGroup.Group("/")
+	portalProtected.Use(portalAuthMiddleware)
+	portalProtected.Get("/me", portalAuthHandler.Me) // Logged-in user profile
 
 	// Unified Monitoring System (Multi-server aware)
 	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
