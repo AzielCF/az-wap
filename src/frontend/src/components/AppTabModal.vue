@@ -33,6 +33,10 @@ function copyId(id: string) {
 
 <template>
   <AppModal :modelValue="modelValue" @update:modelValue="emit('update:modelValue', $event)" @close="emit('cancel')" :title="title" :maxWidth="maxWidth || 'max-w-6xl'" noPadding noScroll>
+    <template #header-actions>
+       <slot name="header-actions"></slot>
+    </template>
+    
     <div class="flex flex-col h-[calc(100dvh-4rem)] sm:h-[92vh] lg:h-[750px] w-full overflow-hidden bg-[#0b0e14]">
       <div class="flex flex-col lg:flex-row flex-1 overflow-hidden">
         <!-- Sidebar Navigation -->

@@ -19,9 +19,12 @@ function close() {
   <div v-if="modelValue" class="modal modal-open backdrop-blur-md" role="dialog">
     <div class="modal-box p-0 bg-[#0f1219] border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex flex-col w-[calc(100%-2rem)] sm:w-full max-h-[calc(100dvh-4rem)] sm:max-h-[85vh] transition-all duration-300 pointer-events-auto" :class="maxWidth || 'max-w-md'">
       <!-- Professional Header -->
-      <header v-if="title" class="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-none">
-        <h3 class="font-bold text-xl uppercase tracking-tight text-white">{{ title }}</h3>
-        <button class="btn btn-ghost btn-sm btn-square text-slate-500 hover:text-white hover:bg-white/5 transition-all" @click="close">
+      <header v-if="title || $slots['header-actions']" class="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02] flex-none">
+        <div class="flex items-center gap-6 flex-wrap">
+            <h3 v-if="title" class="font-bold text-xl uppercase tracking-tight text-white m-0">{{ title }}</h3>
+            <slot name="header-actions"></slot>
+        </div>
+        <button class="btn btn-ghost btn-sm btn-square text-slate-500 hover:text-white hover:bg-white/5 transition-all ml-4 shrink-0" @click="close">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </header>
