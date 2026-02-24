@@ -80,6 +80,18 @@ func (u *WorkspaceUsecase) DeleteWorkspace(ctx context.Context, id string) error
 	return nil
 }
 
+func (u *WorkspaceUsecase) DeleteClientWorkspace(ctx context.Context, id string) error {
+	// 1. Get guests to revoke their access from linked channels
+	guests, err := u.repo.ListGuestsInClientWorkspace(ctx, id)
+	if err == nil {
+		for _, g := range guests {
+			u.revokeGuestAccess(ctx, g)
+		}
+	}
+
+	return u.repo.DeleteClientWorkspace(ctx, id)
+}
+
 func (u *WorkspaceUsecase) CreateChannel(ctx context.Context, workspaceID string, chType channel.ChannelType, name string) (channel.Channel, error) {
 	// Verify workspace exists
 	if _, err := u.repo.GetByID(ctx, workspaceID); err != nil {
@@ -330,4 +342,55 @@ func (u *WorkspaceUsecase) GetChannelProfilePhoto(ctx context.Context, channelID
 		return "", nil
 	}
 	return url, nil
+}
+
+// --- Client Workspace Usecases ---
+
+func (u *WorkspaceUsecase) CreateClientWorkspace(ctx context.Context, ownerID, name, description string) (wsDomain.ClientWorkspace, error) {
+	ws := wsDomain.ClientWorkspace{
+		ID:          uuid.NewString(),
+		OwnerID:     ownerID,
+		Name:        name,
+		Description: description,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	err := u.repo.CreateClientWorkspace(ctx, ws)
+	return ws, err
+}
+
+func (u *WorkspaceUsecase) ListClientWorkspaces(ctx context.Context, ownerID string) ([]wsDomain.ClientWorkspace, error) {
+	return u.repo.ListClientWorkspaces(ctx, ownerID)
+}
+
+func (u *WorkspaceUsecase) LinkChannelToClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	// 1. Link channel
+	if err := u.repo.LinkChannelToClientWorkspace(ctx, workspaceID, channelID); err != nil {
+		return err
+	}
+	// 2. Propagate all guests from this workspace to this channel
+	return u.propagateWorkspaceToChannel(ctx, workspaceID, channelID)
+}
+
+func (u *WorkspaceUsecase) UnlinkChannelFromClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	// 1. Get guests to know which keys to delete
+	guests, err := u.repo.ListGuestsInClientWorkspace(ctx, workspaceID)
+	if err == nil {
+		ch, err := u.repo.GetChannel(ctx, channelID)
+		if err == nil && ch.Config.GuestAccess != nil {
+			changed := false
+			for _, g := range guests {
+				for _, ident := range g.PlatformIdentifiers {
+					if _, ok := ch.Config.GuestAccess[ident]; ok {
+						delete(ch.Config.GuestAccess, ident)
+						changed = true
+					}
+				}
+			}
+			if changed {
+				_ = u.UpdateChannel(ctx, ch)
+			}
+		}
+	}
+	return u.repo.UnlinkChannelFromClientWorkspace(ctx, workspaceID, channelID)
 }
