@@ -1,16 +1,20 @@
 package security
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"time"
 
 	"github.com/AzielCF/az-wap/clients_portal/auth/domain"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TODO: Move key to .env
-var JwtSecretKey = []byte("super-secret-portal-key-change-me")
+func getSecretKey() []byte {
+	return []byte(coreconfig.Global.Security.PortalJWTSecret)
+}
 
 type PortalClaims struct {
 	UserID   string            `json:"uid"`
@@ -21,7 +25,7 @@ type PortalClaims struct {
 
 // GenerateToken creates a new JWT for the portal user
 func GenerateToken(userID, clientID string, role domain.PortalRole) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour) // Token valid for 1 day
+	expirationTime := time.Now().Add(30 * time.Minute) // Short session for security
 
 	claims := &PortalClaims{
 		UserID:   userID,
@@ -35,14 +39,42 @@ func GenerateToken(userID, clientID string, role domain.PortalRole) (string, err
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JwtSecretKey)
+	return token.SignedString(getSecretKey())
+}
+
+// GenerateMagicToken creates a short-lived (15m) token for passwordless login
+func GenerateMagicToken(userID, clientID string) (string, error) {
+	expirationTime := time.Now().Add(15 * time.Minute)
+
+	claims := &PortalClaims{
+		UserID:   userID,
+		ClientID: clientID,
+		Role:     domain.RoleMember, // Magic link users have minimal role initially
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(getSecretKey())
+}
+
+// GenerateOpaqueToken creates a short, random opaque string for magic links
+func GenerateOpaqueToken() (string, error) {
+	b := make([]byte, 16) // 32 chars in hex, much shorter than JWT
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // ValidateToken parses and validates a JWT token
 func ValidateToken(tokenString string) (*PortalClaims, error) {
+	// 2. Validate token (With 1m leeway for clock skew)
 	token, err := jwt.ParseWithClaims(tokenString, &PortalClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return JwtSecretKey, nil
-	})
+		return getSecretKey(), nil
+	}, jwt.WithLeeway(time.Minute))
 
 	if err != nil {
 		return nil, err

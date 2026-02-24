@@ -36,18 +36,21 @@ func NewAuthMiddleware(userRepo domain.IAuthRepository) fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid or expired token"})
 		}
 
-		// 3. (Optional) Check user existence in our local DB
-		// If using BetterAuth, maybe "sync" the user or trust claims.
-		// For now, check DB.
-		// user, err := userRepo.GetByID(c.Context(), claims.UserID)
-		// if err != nil {
-		// 	 return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "user not found"})
-		// }
+		// 3. Validate user existence and get fresh data
+		user, err := userRepo.GetByID(c.Context(), claims.UserID)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "user not found or inactive"})
+		}
+
+		if !user.Active {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "account is deactivated"})
+		}
 
 		// 4. Inject context for next handlers
-		c.Locals("portal_user_id", claims.UserID)
-		c.Locals("portal_client_id", claims.ClientID)
-		c.Locals("portal_role", claims.Role)
+		c.Locals("user", user) // Crucial for feature handlers
+		c.Locals("portal_user_id", user.ID)
+		c.Locals("portal_client_id", user.ClientID)
+		c.Locals("portal_role", user.Role)
 
 		return c.Next()
 	}

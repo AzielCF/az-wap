@@ -35,6 +35,15 @@ func (r *GormAuthRepository) GetByUsername(ctx context.Context, username string)
 	return &user, err
 }
 
+func (r *GormAuthRepository) GetByPhone(ctx context.Context, phone string) (*domain.PortalUser, error) {
+	var user domain.PortalUser
+	err := r.db.WithContext(ctx).Where("phone = ?", phone).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("user not found")
+	}
+	return &user, err
+}
+
 func (r *GormAuthRepository) GetByID(ctx context.Context, id string) (*domain.PortalUser, error) {
 	var user domain.PortalUser
 	err := r.db.WithContext(ctx).Where("id = ?", id).First(&user).Error
@@ -55,6 +64,10 @@ func (r *GormAuthRepository) UpdateLastLogin(ctx context.Context, id string) err
 		}).Error
 }
 
+func (r *GormAuthRepository) Update(ctx context.Context, user *domain.PortalUser) error {
+	return r.db.WithContext(ctx).Save(user).Error
+}
+
 func (r *GormAuthRepository) ListByClient(ctx context.Context, clientID string) ([]*domain.PortalUser, error) {
 	var users []*domain.PortalUser
 	err := r.db.WithContext(ctx).
@@ -62,4 +75,12 @@ func (r *GormAuthRepository) ListByClient(ctx context.Context, clientID string) 
 		Order("created_at DESC").
 		Find(&users).Error
 	return users, err
+}
+
+func (r *GormAuthRepository) GetAll(ctx context.Context, dest *[]*domain.PortalUser) error {
+	return r.db.WithContext(ctx).Find(dest).Error
+}
+
+func (r *GormAuthRepository) GetByClientIDs(ctx context.Context, clientIDs []string, dest *[]*domain.PortalUser) error {
+	return r.db.WithContext(ctx).Where("client_id IN ?", clientIDs).Find(dest).Error
 }
