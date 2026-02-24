@@ -14,6 +14,10 @@ const (
 	TierEnterprise ClientTier = "enterprise"
 )
 
+const (
+	TagEnableWorkspaces = "enable_workspaces"
+)
+
 // PlatformType representa el tipo de plataforma de origen del cliente
 type PlatformType string
 
@@ -40,6 +44,7 @@ type Client struct {
 	Timezone              string         `json:"timezone,omitempty"`                // IANA timezone (e.g. America/Lima)
 	Country               string         `json:"country,omitempty"`                 // ISO 3166-1 alpha-2 (e.g. PE, US, DO)
 	AllowedBots           []string       `json:"allowed_bots"`                      // IDs de bots permitidos para este cliente
+	OwnedChannels         []string       `json:"owned_channels"`                    // IDs de los canales de los que el cliente es dueño
 	SessionTimeout        int            `json:"session_timeout,omitempty"`         // Minutos (Override)
 	InactivityWarningTime int            `json:"inactivity_warning_time,omitempty"` // Minutos (Override)
 	Enabled               bool           `json:"enabled"`
@@ -63,6 +68,16 @@ func (c *Client) IsPremium() bool {
 func (c *Client) HasTag(tag string) bool {
 	for _, t := range c.Tags {
 		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// HasOwnedChannel verifica si el cliente es dueño de un canal
+func (c *Client) HasOwnedChannel(channelID string) bool {
+	for _, ch := range c.OwnedChannels {
+		if ch == channelID {
 			return true
 		}
 	}

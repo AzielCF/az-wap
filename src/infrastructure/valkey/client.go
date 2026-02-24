@@ -123,3 +123,17 @@ func (c *Client) IsConnected() bool {
 func IsNil(err error) bool {
 	return valkeylib.IsValkeyNil(err)
 }
+
+// Set stores a value with an expiration in Valkey.
+func (c *Client) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
+	return c.inner.Do(ctx, c.inner.B().Set().Key(key).Value(value).Ex(ttl).Build()).Error()
+}
+
+// Get retrieves a string value from Valkey. Returns empty string and nil error if key not found.
+func (c *Client) Get(ctx context.Context, key string) (string, error) {
+	val, err := c.inner.Do(ctx, c.inner.B().Get().Key(key).Build()).ToString()
+	if IsNil(err) {
+		return "", nil
+	}
+	return val, err
+}

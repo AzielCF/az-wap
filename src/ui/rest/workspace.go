@@ -289,6 +289,9 @@ func (h *WorkspaceHandler) UpdateChannel(c *fiber.Ctx) error {
 	if req.Name != "" {
 		ch.Name = req.Name
 	}
+	// Update Owner
+	ch.OwnerID = req.OwnerID
+
 	// We assume if Config is passed, we update it.
 	// To be safer, we could check emptiness, but in Go zero value is empty strict.
 	// Since it's a PUT, full replacement of sent fields is expected.

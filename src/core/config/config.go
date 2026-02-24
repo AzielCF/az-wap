@@ -35,6 +35,7 @@ type AppConfig struct {
 	BaseUrl            string
 	CorsAllowedOrigins []string
 	ServerID           string
+	PortalURL          string
 }
 
 type MCPConfig struct {
@@ -93,7 +94,9 @@ type WorkerPoolConfig struct {
 }
 
 type SecurityConfig struct {
-	SecretKey string
+	SecretKey         string
+	PortalJWTSecret   string
+	PortalInternalKey string
 }
 
 type APIKeysConfig struct {
@@ -147,6 +150,7 @@ func LoadConfig() (*Config, error) {
 		BaseUrl:            getEnv("APP_BASE_URL", "http://localhost:3000"),
 		CorsAllowedOrigins: cors_origins,
 		ServerID:           getEnv("SERVER_ID", ""),
+		PortalURL:          getEnv("PORTAL_URL", ""),
 	}
 	if v := os.Getenv("APP_TRUSTED_PROXIES"); v != "" {
 		appCfg.TrustedProxies = strings.Split(v, ",")
@@ -216,7 +220,11 @@ func LoadConfig() (*Config, error) {
 		Whatsapp:   waCfg,
 		AI:         aiCfg,
 		WorkerPool: WorkerPoolConfig{Size: poolSize, QueueSize: getEnvInt("MESSAGE_WORKER_QUEUE_SIZE", 1000)},
-		Security:   SecurityConfig{SecretKey: getEnv("APP_SECRET_KEY", "changeme_please_change_me_in_prod_12345")},
+		Security: SecurityConfig{
+			SecretKey:         getEnv("APP_SECRET_KEY", "changeme_please_change_me_in_prod_12345"),
+			PortalJWTSecret:   getEnv("PORTAL_JWT_SECRET", getEnv("APP_SECRET_KEY", "changeme_portal_jwt")),
+			PortalInternalKey: getEnv("PORTAL_INTERNAL_KEY", "changeme_internal_key"),
+		},
 		APIKeys: APIKeysConfig{
 			Gemini: getEnv("GEMINI_API_KEY", ""),
 			OpenAI: getEnv("OPENAI_API_KEY", ""),

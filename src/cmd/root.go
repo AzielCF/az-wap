@@ -27,6 +27,7 @@ import (
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreDB "github.com/AzielCF/az-wap/core/database"
+	"github.com/AzielCF/az-wap/core/kvstore"
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 
 	"github.com/AzielCF/az-wap/botengine"
@@ -73,7 +74,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"go.mau.fi/whatsmeow"
-	// "go.mau.fi/whatsmeow/store/sqlstore"
+
+	// Portal Module
+	portalAuthApp "github.com/AzielCF/az-wap/clients_portal/auth/application"
+	portalAuthRepo "github.com/AzielCF/az-wap/clients_portal/auth/repository"
 )
 
 var (
@@ -119,6 +123,9 @@ var (
 
 	// Core Services
 	settingsSvc *coreSettings.SettingsService
+
+	// Portal
+	portalAuthService *portalAuthApp.AuthService
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -282,15 +289,21 @@ func initApp() {
 		logrus.Fatalf("failed to init subscription repo: %v", err)
 	}
 
+	// 2.2 Clients Portal Module Initialization
+	kvstore.Init(vkClient)
+
+	portalAuthRepoInst := portalAuthRepo.NewGormAuthRepository(gormDB)
+	if err := portalAuthRepoInst.AutoMigrate(); err != nil {
+		logrus.Fatalf("[PORTAL] Failed to migrate portal auth table: %v", err)
+	}
+	portalAuthService = portalAuthApp.NewAuthService(portalAuthRepoInst, clientRepo, wkRepo, kvstore.Global)
+
 	// Client Services
 	clientService = clientsApp.NewClientService(clientRepo, subRepo)
 	subService = clientsApp.NewSubscriptionService(subRepo, clientRepo)
 
 	// Client Resolver (for runtime context resolution)
 	clientResolver = clientsApp.NewClientResolver(clientRepo, subRepo, wkRepo)
-
-	// Client REST Handler
-	clientHandler = clientsRest.NewClientHandler(clientService, subService)
 
 	logrus.Info("[CLIENTS] Client module initialized successfully")
 
@@ -323,6 +336,9 @@ func initApp() {
 	sendUsecase = usecase.NewSendService(appUsecase, workspaceManager)
 	messageUsecase = usecase.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)
+
+	// Client REST Handler (Admin)
+	clientHandler = clientsRest.NewClientHandler(clientService, subService, wkRepo, wkUsecase)
 
 	// 5. WhatsApp Adapter Factory
 	workspaceManager.RegisterFactory(channel.ChannelTypeWhatsApp, func(conf channel.ChannelConfig) (channel.ChannelAdapter, error) {
@@ -424,10 +440,11 @@ func initApp() {
 	botEngine.RegisterNativeTool(rTools.CountRemindersTool())
 
 	// Register Client Profile Tools (allow users to manage their personal info via AI)
-	cTools := onlyClients.NewClientTools(clientRepo)
+	cTools := onlyClients.NewClientTools(clientRepo, portalAuthService)
 	botEngine.RegisterNativeTool(cTools.UpdateMyInfoTool())
 	botEngine.RegisterNativeTool(cTools.GetMyInfoTool())
 	botEngine.RegisterNativeTool(cTools.DeleteMyFieldTool())
+	botEngine.RegisterNativeTool(cTools.GetPortalLinkTool())
 
 	// Register Currency Tools
 	cxTools := onlyClients.NewExchangeRateTools()

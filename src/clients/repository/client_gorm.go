@@ -30,6 +30,7 @@ type clientModel struct {
 	Timezone              sql.NullString
 	Country               sql.NullString
 	AllowedBots           sql.NullString `gorm:"type:text;default:'[]'"` // JSON
+	OwnedChannels         sql.NullString `gorm:"type:text;default:'[]'"` // JSON
 	SessionTimeout        int            `gorm:"default:0"`
 	InactivityWarningTime int            `gorm:"default:0"`
 	Enabled               bool           `gorm:"default:true"`
@@ -332,6 +333,15 @@ func toClientModel(c *domain.Client) (clientModel, error) {
 		return clientModel{}, fmt.Errorf("marshal allowed_bots: %w", err)
 	}
 
+	ownedChans := c.OwnedChannels
+	if ownedChans == nil {
+		ownedChans = []string{}
+	}
+	ownedChannelsJSON, err := json.Marshal(ownedChans)
+	if err != nil {
+		return clientModel{}, fmt.Errorf("marshal owned_channels: %w", err)
+	}
+
 	return clientModel{
 		ID:                    c.ID,
 		PlatformID:            c.PlatformID,
@@ -347,6 +357,7 @@ func toClientModel(c *domain.Client) (clientModel, error) {
 		Timezone:              sql.NullString{String: c.Timezone, Valid: c.Timezone != ""},
 		Country:               sql.NullString{String: c.Country, Valid: c.Country != ""},
 		AllowedBots:           sql.NullString{String: string(allowedBotsJSON), Valid: true},
+		OwnedChannels:         sql.NullString{String: string(ownedChannelsJSON), Valid: true},
 		SessionTimeout:        c.SessionTimeout,
 		InactivityWarningTime: c.InactivityWarningTime,
 		Enabled:               c.Enabled,
@@ -398,6 +409,13 @@ func fromClientModel(m clientModel) (*domain.Client, error) {
 	}
 	if c.AllowedBots == nil {
 		c.AllowedBots = []string{}
+	}
+
+	if m.OwnedChannels.Valid && m.OwnedChannels.String != "" {
+		_ = json.Unmarshal([]byte(m.OwnedChannels.String), &c.OwnedChannels)
+	}
+	if c.OwnedChannels == nil {
+		c.OwnedChannels = []string{}
 	}
 
 	return c, nil

@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	clientsRepo "github.com/AzielCF/az-wap/clients/repository"
-	portalAuthApp "github.com/AzielCF/az-wap/clients_portal/auth/application"
 	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
 	portalAuthRepo "github.com/AzielCF/az-wap/clients_portal/auth/repository"
+	portalFeatures "github.com/AzielCF/az-wap/clients_portal/features/infrastructure"
+	clientPortalHTTP "github.com/AzielCF/az-wap/clients_portal/http"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreDB "github.com/AzielCF/az-wap/core/database"
 	"github.com/AzielCF/az-wap/ui/rest"
@@ -129,6 +129,10 @@ func restServer(cmd *cobra.Command, _ []string) {
 			if c.Method() == fiber.MethodOptions {
 				return true
 			}
+			// SKIP Basic Auth for Portal routes (they handle their own auth)
+			if strings.HasPrefix(c.Path(), coreconfig.Global.App.BasePath+"/api/portal") {
+				return true
+			}
 			return false
 		},
 	}))
@@ -162,39 +166,20 @@ func restServer(cmd *cobra.Command, _ []string) {
 	rest.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
 	rest.InitRestHealth(apiGroup, healthUsecase)
-
-	// --- CLIENTS PORTAL (NEW) ---
-	// 1. Initialize Portal Auth Components
-	portalAuthRepository := portalAuthRepo.NewGormAuthRepository(coreDB.GlobalDB)
-	// Inject existing CRM Client Repository
-	crmClientRepo := clientsRepo.NewClientGormRepository(coreDB.GlobalDB)
-	// Auto-migrate portal users table
-	if err := portalAuthRepository.AutoMigrate(); err != nil {
-		logrus.Errorf("Failed to migrate portal tables: %v", err)
-	}
-
-	portalAuthService := portalAuthApp.NewAuthService(portalAuthRepository, crmClientRepo)
-	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
-	portalAuthMiddleware := portalAuthInfra.NewAuthMiddleware(portalAuthRepository)
-
-	// 2. Create API Group for Portal (Isolated from Admin)
-	portalGroup := app.Group(coreconfig.Global.App.BasePath + "/api/portal")
-
-	// Public Portal Routes (Login)
-	portalGroup.Post("/login", portalAuthHandler.Login)
-	// TODO: Register should be protected or invitation-only, currently open for initial testing or move to admin
-	// portalGroup.Post("/register", portalAuthHandler.Register)
-
-	// Protected Portal Routes
-	portalProtected := portalGroup.Group("/")
-	portalProtected.Use(portalAuthMiddleware)
-	portalProtected.Get("/me", portalAuthHandler.Me) // Logged-in user profile
-
-	// Unified Monitoring System (Multi-server aware)
+	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
 	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
 
-	// Register Workspace Handlers
-	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	// --- CLIENTS PORTAL (ALREADY INITIALIZED IN ROOT) ---
+	// Register Portal Handlers
+	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
+	portalFeaturesHandler := portalFeatures.NewFeaturesHandler(subService, clientService, newsletterUsecase, wkRepo, botUsecase, wkUsecase, workspaceManager)
+	// Re-instantiate middleware here or reuse if global, but for clarity using local repo instance as before
+	portalAuthMiddleware := portalAuthInfra.NewAuthMiddleware(portalAuthRepo.NewGormAuthRepository(coreDB.GlobalDB))
+
+	// Register ALL Portal Routes via Global Portal Router
+	clientPortalHTTP.RegisterPortalRoutes(app, apiGroup, portalAuthHandler, portalFeaturesHandler, portalAuthMiddleware)
+
+	// Unified Monitoring System (Multi-server aware)
 
 	// Register Client Handlers
 	clientHandler.RegisterRoutes(apiGroup)
