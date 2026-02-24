@@ -26,6 +26,8 @@ const props = defineProps<{
 const emit = defineEmits(['saved', 'cancel', 'refresh'])
 const api = useApi()
 
+const clients = ref<any[]>([])
+
 const localChannel = ref(JSON.parse(JSON.stringify(props.channel)))
 
 const config = ref<any>({
@@ -76,7 +78,8 @@ const config = ref<any>({
           fr: '',
           ru: ''
       }
-  }
+  },
+  owner_id: props.channel.owner_id || ''
 })
 
 const extensionInput = ref('')
@@ -163,6 +166,21 @@ function loadInitialConfig() {
 
   loadAccessRules()
   refreshChannelData()
+  loadClients()
+}
+
+async function loadClients() {
+    try {
+        const res = await api.get('/clients')
+        // Map display_name to name for ResourceSelector compatibility
+        // Use .data instead of .results as per backend implementation
+        clients.value = (res.data || []).map((c: any) => ({
+            ...c,
+            name: c.display_name
+        }))
+    } catch (err) {
+        console.error('Failed to load clients', err)
+    }
 }
 
 async function refreshChannelData() {
@@ -293,6 +311,26 @@ async function deleteAccessRule(rid: string) {
 }
 
 async function save() {
+    // Verify if owner changed for security confirmation
+    const originalOwner = props.channel.owner_id || ''
+    const newOwner = config.value.owner_id || ''
+
+    if (originalOwner !== newOwner) {
+        confirmModal.value = {
+            show: true,
+            title: 'Change Channel Ownership?',
+            message: 'This operation is delicate. Changing the owner will affect which client can manage and pay for this infrastructure. Are you sure?',
+            type: 'warning',
+            confirmText: 'Yes, Change Owner',
+            onConfirm: () => executeSave()
+        }
+        return
+    }
+
+    await executeSave()
+}
+
+async function executeSave() {
   try {
     const payload = JSON.parse(JSON.stringify(config.value))
     const newName = payload.name
@@ -302,7 +340,8 @@ async function save() {
     // Update Instance Name
     await api.put(`/workspaces/${props.workspaceId}/channels/${props.channel.id}`, {
         name: newName,
-        type: props.channel.type
+        type: props.channel.type,
+        owner_id: config.value.owner_id
     })
 
     // Update Instance Config
@@ -478,10 +517,23 @@ onMounted(loadInitialConfig)
       <div v-if="activeTab === 'general'" class="space-y-10">
         <div class="section-title-premium text-primary/60">General Settings</div>
 
-        <section class="grid grid-cols-1 gap-8">
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div class="form-control w-full">
                 <label class="label-premium">Friendly Name</label>
                 <input v-model="config.name" type="text" placeholder="e.g. Sales WhatsApp" class="input-premium h-14 w-full text-lg font-black" />
+            </div>
+
+            <div class="form-control w-full">
+                <ResourceSelector
+                    v-model="config.owner_id"
+                    :items="clients"
+                    label="Assigned Client Owner"
+                    placeholder="Search/Select channel owner..."
+                    iconType="user"
+                    resourceLabel="Primary Owner"
+                    :nullable="true"
+                    color="amber"
+                />
             </div>
         </section>
 

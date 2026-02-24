@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, h, nextTick } from 'vue'
-import { Search, X, Bot, Globe, Layout, ChevronDown } from 'lucide-vue-next'
+import { Search, X, Bot, Globe, Layout, ChevronDown, User } from 'lucide-vue-next'
 
 const props = defineProps<{
     modelValue: string | number
     items: Array<{ id: string | number; name: string; type?: string; [key: string]: any }>
     placeholder?: string
     label?: string
-    iconType?: 'bot' | 'channel' | 'workspace' | 'default'
+    iconType?: 'bot' | 'channel' | 'workspace' | 'user' | 'default'
     resourceLabel?: string
     nullable?: boolean
     color?: string
@@ -53,24 +53,28 @@ const getIcon = () => {
     if (props.iconType === 'bot') return Bot
     if (props.iconType === 'channel') return Globe
     if (props.iconType === 'workspace') return Layout
+    if (props.iconType === 'user') return User
     return Bot // default
 }
 
 const activeColorClass = computed(() => {
     if (props.color === 'indigo') return 'text-indigo-400 group-hover:text-indigo-300'
     if (props.color === 'primary') return 'text-primary group-hover:text-primary-focus'
+    if (props.color === 'amber') return 'text-amber-400 group-hover:text-amber-300'
     return 'text-primary'
 })
 
 const activeBgClass = computed(() => {
     if (props.color === 'indigo') return 'bg-indigo-500/10'
     if (props.color === 'primary') return 'bg-primary/10'
+    if (props.color === 'amber') return 'bg-amber-500/10'
     return 'bg-primary/10'
 })
 
 const activeBorderClass = computed(() => {
     if (props.color === 'indigo') return 'border-indigo-500/20'
     if (props.color === 'primary') return 'border-primary/20'
+    if (props.color === 'amber') return 'border-amber-500/20'
     return 'border-primary/20'
 })
 
@@ -86,12 +90,20 @@ const activeBorderClass = computed(() => {
              :class="[activeBgClass, activeBorderClass]">
             <div class="flex items-center gap-4">
                 <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-colors"
-                     :class="[props.color === 'indigo' ? 'bg-indigo-600 text-white shadow-indigo-500/20' : 'bg-primary text-white shadow-primary/20']">
+                     :class="[
+                        props.color === 'indigo' ? 'bg-indigo-600 text-white shadow-indigo-500/20' : 
+                        props.color === 'amber' ? 'bg-amber-600 text-white shadow-amber-500/20' : 
+                        'bg-primary text-white shadow-primary/20'
+                     ]">
                     <component :is="getIcon()" class="w-6 h-6" />
                 </div>
                 <div>
                     <div class="font-black text-white uppercase text-sm tracking-tight">{{ selectedItem.name }}</div>
-                    <div class="text-xs font-mono uppercase" :class="[props.color === 'indigo' ? 'text-indigo-400' : 'text-primary/60']">
+                    <div class="text-xs font-mono uppercase" :class="[
+                        props.color === 'indigo' ? 'text-indigo-400' : 
+                        props.color === 'amber' ? 'text-amber-400' : 
+                        'text-primary/60'
+                    ]">
                         {{ resourceLabel || 'Selected' }}
                     </div>
                 </div>
@@ -135,7 +147,11 @@ const activeBorderClass = computed(() => {
                         :class="[props.color === 'indigo' ? 'hover:bg-indigo-500/10 hover:border-indigo-500/20' : 'hover:bg-primary/10 hover:border-primary/20']">
                     
                     <div class="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-slate-600 transition-colors"
-                         :class="[props.color === 'indigo' ? 'group-hover:text-indigo-400' : 'group-hover:text-primary']">
+                         :class="[
+                            props.color === 'indigo' ? 'group-hover:text-indigo-400' : 
+                            props.color === 'amber' ? 'group-hover:text-amber-400' : 
+                            'group-hover:text-primary'
+                         ]">
                         <component :is="getIcon()" class="w-5 h-5" />
                     </div>
                     
