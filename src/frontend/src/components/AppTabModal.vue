@@ -6,7 +6,7 @@ const props = defineProps<{
   modelValue: boolean
   title: string
   activeTab: string
-  tabs: Array<{ id: string; label: string; icon: any }>
+  tabs: Array<{ id: string; label: string; icon: any; alert?: boolean }>
   maxWidth?: string
   identity?: {
     name: string
@@ -33,6 +33,10 @@ function copyId(id: string) {
 
 <template>
   <AppModal :modelValue="modelValue" @update:modelValue="emit('update:modelValue', $event)" @close="emit('cancel')" :title="title" :maxWidth="maxWidth || 'max-w-6xl'" noPadding noScroll>
+    <template #header-actions>
+       <slot name="header-actions"></slot>
+    </template>
+    
     <div class="flex flex-col h-[calc(100dvh-4rem)] sm:h-[92vh] lg:h-[750px] w-full overflow-hidden bg-[#0b0e14]">
       <div class="flex flex-col lg:flex-row flex-1 overflow-hidden">
         <!-- Sidebar Navigation -->
@@ -65,6 +69,9 @@ function copyId(id: string) {
             >
               <component v-if="tab.icon" :is="tab.icon" class="w-4 h-4 flex-none" />
               <span class="text-xs">{{ tab.label }}</span>
+              <div v-if="tab.alert" class="ml-auto">
+                <div class="w-1.5 h-1.5 rounded-full bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)] animate-pulse"></div>
+              </div>
             </button>
           </div>
 

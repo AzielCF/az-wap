@@ -16,6 +16,7 @@ import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/pkg/msgworker"
+	"github.com/AzielCF/az-wap/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/application"
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
@@ -294,28 +295,44 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 		msg.Metadata = make(map[string]any)
 	}
 
+	// --- Guest Access Integration (Employees/Workspaces) ---
+	// Processed before ClientCtx resolution to enforce security rules (AllowedBots).
+	var overrideGuestTemplate string
+	if ch.Config.GuestAccess != nil {
+		pID := utils.CleanWhatsAppID(msg.SenderID)
+
+		if guest, ok := ch.Config.GuestAccess[pID]; ok {
+			logrus.Infof("[WorkspaceManager] Guest verified: %s (ID: %s) -> Base Bot: %s, Template: %s", guest.Name, guest.GuestID, guest.BotID, guest.TemplateID)
+			if guest.BotID != "" {
+				botID = guest.BotID
+			}
+			overrideGuestTemplate = guest.TemplateID
+			msg.Metadata["guest_name"] = guest.Name
+			msg.Metadata["guest_id"] = guest.GuestID
+		} else {
+			// Try with full ID if not found (for other platforms/LID)
+			if guest, ok := ch.Config.GuestAccess[msg.SenderID]; ok {
+				logrus.Infof("[WorkspaceManager] Guest verified (FullID): %s -> Base Bot: %s, Template: %s", guest.Name, guest.BotID, guest.TemplateID)
+				if guest.BotID != "" {
+					botID = guest.BotID
+				}
+				overrideGuestTemplate = guest.TemplateID
+				msg.Metadata["guest_name"] = guest.Name
+				msg.Metadata["guest_id"] = guest.GuestID
+			}
+		}
+	}
+
 	// Resolve Global Client Context
 	if m.clientResolver != nil {
 		pType := string(adapter.Type()) // Use adapter type (e.g., "whatsapp")
 
-		// Use full SenderID for resolution to support LID
 		platformID := msg.SenderID
 
 		// Normalization for WhatsApp (JID and LID)
-		// Remove @s.whatsapp.net if present
-		platformID = strings.TrimSuffix(platformID, "@s.whatsapp.net")
+		platformID = utils.CleanWhatsAppID(platformID)
 
-		// Remove device index suffix if present (e.g. 12345:1@lid -> 12345@lid)
-		if idx := strings.Index(platformID, ":"); idx != -1 {
-			atIdx := strings.Index(platformID, "@")
-			if atIdx != -1 && atIdx > idx {
-				platformID = platformID[:idx] + platformID[atIdx:]
-			} else if atIdx == -1 {
-				platformID = platformID[:idx]
-			}
-		}
-
-		// JID de respaldo (original de la plataforma o número de teléfono)
+		// Backup JID (original from platform or phone number)
 		secondaryID := ""
 		if pn, ok := msg.Metadata["sender_pn"].(string); ok && pn != "" {
 			secondaryID = pn
@@ -324,15 +341,7 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 		}
 
 		// Normalize secondaryID too
-		secondaryID = strings.TrimSuffix(secondaryID, "@s.whatsapp.net")
-		if idx := strings.Index(secondaryID, ":"); idx != -1 {
-			atIdx := strings.Index(secondaryID, "@")
-			if atIdx != -1 && atIdx > idx {
-				secondaryID = secondaryID[:idx] + secondaryID[atIdx:]
-			} else if atIdx == -1 {
-				secondaryID = secondaryID[:idx]
-			}
-		}
+		secondaryID = utils.CleanWhatsAppID(secondaryID)
 
 		logrus.WithFields(logrus.Fields{
 			"platform_id":   platformID,
@@ -354,6 +363,8 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 			if overrideBotID != "" {
 				logrus.Infof("[WorkspaceManager] Overriding BotID from subscription: %s -> %s", botID, overrideBotID)
 				botID = overrideBotID
+				// Si la suscripción fuerza un bot override (ej: suspensión), prevalece sobre el invitado.
+				overrideGuestTemplate = ""
 			}
 
 			// Operational check: Allowed Bots
@@ -368,7 +379,6 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 				if !allowed {
 					logrus.Warnf("[WorkspaceManager] Client %s (%s) is NOT allowed to use bot %s. Operational restriction applied.", clientCtx.DisplayName, clientCtx.ClientID, botID)
 					// If not allowed, we stop processing or return an error message
-					// For now, let's just log and block the bot interaction by returning
 					return
 				}
 			}
@@ -424,6 +434,11 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 		}
 	} else {
 		logrus.Debugf("[WorkspaceManager] Bypassing access control for registered client: %s", clientCtx.ClientID)
+	}
+
+	// Aplicamos el TemplateID del Invitado de manera prioritaria al engine, pero luego de haber verificado permisos.
+	if overrideGuestTemplate != "" {
+		botID = overrideGuestTemplate
 	}
 
 	// Enqueue for debouncing

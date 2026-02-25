@@ -8,7 +8,12 @@ import (
 	"syscall"
 	"time"
 
+	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
+	portalAuthRepo "github.com/AzielCF/az-wap/clients_portal/auth/repository"
+	portalFeatures "github.com/AzielCF/az-wap/clients_portal/features/infrastructure"
+	clientPortalHTTP "github.com/AzielCF/az-wap/clients_portal/http"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
+	coreDB "github.com/AzielCF/az-wap/core/database"
 	"github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/ui/rest/middleware"
 	"github.com/AzielCF/az-wap/ui/websocket"
@@ -33,9 +38,15 @@ var restCmd = &cobra.Command{
 }
 
 func init() {
+	restCmd.Flags().String("basic-auth", "", "Basic auth for API (format: user:pass,user2:pass2)")
 	rootCmd.AddCommand(restCmd)
 }
-func restServer(_ *cobra.Command, _ []string) {
+func restServer(cmd *cobra.Command, _ []string) {
+	// Override basic auth if flag is provided
+	if baFlag, _ := cmd.Flags().GetString("basic-auth"); baFlag != "" {
+		coreconfig.Global.App.BasicAuth = strings.Split(baFlag, ",")
+	}
+
 	fiberConfig := fiber.Config{
 		EnableTrustedProxyCheck: true,
 		BodyLimit:               int(coreconfig.Global.Whatsapp.MaxVideoSize),
@@ -118,6 +129,10 @@ func restServer(_ *cobra.Command, _ []string) {
 			if c.Method() == fiber.MethodOptions {
 				return true
 			}
+			// SKIP Basic Auth for Portal routes (they handle their own auth)
+			if strings.HasPrefix(c.Path(), coreconfig.Global.App.BasePath+"/api/portal") {
+				return true
+			}
 			return false
 		},
 	}))
@@ -151,12 +166,20 @@ func restServer(_ *cobra.Command, _ []string) {
 	rest.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
 	rest.InitRestHealth(apiGroup, healthUsecase)
-
-	// Unified Monitoring System (Multi-server aware)
+	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
 	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
 
-	// Register Workspace Handlers
-	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	// --- CLIENTS PORTAL (ALREADY INITIALIZED IN ROOT) ---
+	// Register Portal Handlers
+	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
+	portalFeaturesHandler := portalFeatures.NewFeaturesHandler(subService, clientService, newsletterUsecase, wkRepo, botUsecase, wkUsecase, workspaceManager)
+	// Re-instantiate middleware here or reuse if global, but for clarity using local repo instance as before
+	portalAuthMiddleware := portalAuthInfra.NewAuthMiddleware(portalAuthRepo.NewGormAuthRepository(coreDB.GlobalDB))
+
+	// Register ALL Portal Routes via Global Portal Router
+	clientPortalHTTP.RegisterPortalRoutes(app, apiGroup, portalAuthHandler, portalFeaturesHandler, portalAuthMiddleware)
+
+	// Unified Monitoring System (Multi-server aware)
 
 	// Register Client Handlers
 	clientHandler.RegisterRoutes(apiGroup)

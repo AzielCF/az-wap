@@ -832,3 +832,35 @@ func BuildForwarded(evt *events.Message) bool {
 	}
 	return false
 }
+
+// CleanWhatsAppID removes the standard @s.whatsapp.net domain and device index suffixes.
+// It preserves other domains like @lid.
+func CleanWhatsAppID(id string) string {
+	id = strings.TrimSuffix(id, "@s.whatsapp.net")
+	if idx := strings.Index(id, ":"); idx != -1 {
+		atIdx := strings.Index(id, "@")
+		if atIdx != -1 && atIdx > idx {
+			id = id[:idx] + id[atIdx:]
+		} else if atIdx == -1 {
+			id = id[:idx]
+		}
+	}
+	return id
+}
+
+// NormalizeWhatsAppIdentity removes all whatsapp platform suffixes (including @lid) for comparison.
+func NormalizeWhatsAppIdentity(id string) string {
+	id = CleanWhatsAppID(id)
+	id = strings.TrimSuffix(id, "@lid")
+	return id
+}
+
+// MatchWhatsAppIdentities compares two WhatsApp identifiers and returns true if they represent the same user,
+// ignoring platform specific suffixes like @s.whatsapp.net or @lid
+func MatchWhatsAppIdentities(id1, id2 string) bool {
+	if id1 == "" || id2 == "" {
+		return false
+	}
+
+	return NormalizeWhatsAppIdentity(id1) == NormalizeWhatsAppIdentity(id2)
+}

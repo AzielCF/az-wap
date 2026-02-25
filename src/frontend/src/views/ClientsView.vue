@@ -2,26 +2,21 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import AppPageHeader from '@/components/AppPageHeader.vue'
-import AppTabModal from '@/components/AppTabModal.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import TierBadge from '@/components/clients/TierBadge.vue'
+import ClientEditorModal from '@/components/clients/ClientEditorModal.vue'
 import { 
   Plus, 
   Trash2, 
   Edit3, 
-  CheckCircle2, 
   Users,
   RefreshCw,
   Search,
-  Tag,
   Link2,
   Eye,
   MessageSquare,
-  Globe,
-  Layout,
-  Contact,
-  ShieldCheck,
-  Bot
+  Key,
+  ShieldCheck
 } from 'lucide-vue-next'
 
 interface Client {
@@ -39,6 +34,7 @@ interface Client {
   timezone: string
   country: string
   allowed_bots: string[]
+  owned_channels: string[]
   is_tester: boolean
   enabled: boolean
   created_at: string
@@ -49,7 +45,7 @@ const loading = ref(true)
 const clients = ref<Client[]>([])
 const search = ref('')
 const stats = ref<Record<string, number>>({})
-const bots = ref<any[]>([])
+const portalAccounts = ref<Record<string, any>>({})
 
 const filteredClients = computed(() => {
   if (!search.value) return clients.value
@@ -65,148 +61,6 @@ const filteredClients = computed(() => {
 
 const showAddModal = ref(false)
 const editingClient = ref<Client | null>(null)
-const newClient = ref({
-  platform_id: '',
-  platform_type: 'whatsapp',
-  display_name: '',
-  email: '',
-  phone: '',
-  tier: 'standard',
-  tags: [] as string[],
-  notes: '',
-  language: 'en',
-  timezone: '',
-  country: '',
-  allowed_bots: [] as string[],
-  is_tester: false
-})
-const newTag = ref('')
-const workspaces = ref<any[]>([])
-const validatingLid = ref(false)
-const lidVerified = ref(false)
-const botSearch = ref('')
-const showBotResults = ref(false)
-const activeClientTab = ref('identity')
-const lastValidatedPhone = ref('')
-const originalClientState = ref('') // Para comparar cambios
-const isLoadingClient = ref(false) // Flag to prevent watchers during load
-
-const unselectedBots = computed(() => {
-  return bots.value.filter(b => !newClient.value.allowed_bots.includes(b.id))
-})
-
-const filteredBots = computed(() => {
-  if (!botSearch.value) return unselectedBots.value.slice(0, 3)
-  const s = botSearch.value.toLowerCase()
-  return unselectedBots.value.filter(b => 
-    b.name.toLowerCase().includes(s) || 
-    b.id.toLowerCase().includes(s)
-  ).slice(0, 3)
-})
-
-function addAllowedBot(botId: string) {
-  if (!newClient.value.allowed_bots.includes(botId)) {
-    newClient.value.allowed_bots.push(botId)
-  }
-  botSearch.value = ''
-  showBotResults.value = false
-}
-
-function removeAllowedBot(botId: string) {
-  newClient.value.allowed_bots = newClient.value.allowed_bots.filter(id => id !== botId)
-}
-
-function getBotById(id: string) {
-  return bots.value.find(b => b.id === id) || { name: 'Unknown Bot', id }
-}
-
-async function loadWorkspaces() {
-  try {
-    const res = await api.get('/workspaces') as any
-    const wsList = res || []
-    
-    // Fetch channels for each workspace to populate the list for validation
-    const channelsPromises = wsList.map((ws: any) => api.get(`/workspaces/${ws.id}/channels`))
-    const channelsResults = await Promise.allSettled(channelsPromises)
-    
-    workspaces.value = wsList.map((ws: any, idx: number) => {
-      const res = channelsResults[idx]
-      let channels: any[] = []
-      if (res && res.status === 'fulfilled') {
-        channels = (res as PromiseFulfilledResult<any>).value || []
-      }
-      return {
-        ...ws,
-        channels: channels
-      }
-    })
-  } catch (err) {
-    console.error('Failed to load workspaces or channels:', err)
-  }
-}
-
-async function extractLid() {
-  // Get the input value - prefer platform_id field, fallback to phone
-  const rawInput = newClient.value.platform_id || newClient.value.phone
-  if (!rawInput) {
-    alert('Please enter a phone number first')
-    return
-  }
-
-  // If the input already contains @, it's a LID/JID - we need the actual phone number
-  if (rawInput.includes('@')) {
-    alert('Please enter the actual phone number (without @lid or @s.whatsapp.net). The system will resolve the LID for you.')
-    return
-  }
-
-  // Clean the input to only digits
-  const phoneNumber = rawInput.replace(/[^\d]/g, '')
-  if (!phoneNumber || phoneNumber.length < 8) {
-    alert('Please enter a valid phone number')
-    return
-  }
-
-  // Find the first available whatsapp channel (enabled or connected)
-  let targetWorkspace = null
-  let targetChannel = null
-
-  for (const ws of workspaces.value) {
-    const ch = ws.channels?.find((c: any) => (c.type === 'whatsapp' || c.platform_type === 'whatsapp') && (c.enabled || c.status === 'connected'))
-    if (ch) {
-      targetWorkspace = ws
-      targetChannel = ch
-      break
-    }
-  }
-
-  if (!targetChannel) {
-    alert('No active WhatsApp channel found (Enabled or Connected) to perform validation.')
-    return
-  }
-
-  validatingLid.value = true
-  try {
-    const res = await api.get(`/workspaces/${targetWorkspace.id}/channels/${targetChannel.id}/resolve-identity?identity=${phoneNumber}`) as any
-    if (res.resolved_identity) {
-      // Save the LID to platform_id
-      newClient.value.platform_id = res.resolved_identity
-      lidVerified.value = res.status === 'verified'
-      
-      // Save the original phone number that was used for validation
-      newClient.value.phone = phoneNumber
-      lastValidatedPhone.value = phoneNumber
-
-      // Only fill display name if WhatsApp actually returned a name signal
-      if (!newClient.value.display_name && res.name) {
-        newClient.value.display_name = res.name
-      }
-    }
-  } catch (err) {
-    alert('Could not resolve LID. Make sure the channel is connected and the number is registered on WhatsApp.')
-  } finally {
-    validatingLid.value = false
-  }
-}
 
 const confirmModal = ref({
     show: false,
@@ -223,13 +77,21 @@ async function loadData() {
     const res = await api.get('/clients') as any
     clients.value = res.data || []
     
-    // Load bots for selector
-    const botsRes = await api.get('/bots') as any
-    bots.value = botsRes.results || []
+    // Load bots for selector only on demand, not in grid!
 
     // Load stats
     const statsRes = await api.get('/clients/stats') as any
     stats.value = statsRes.by_tier || {}
+
+    // Load portal account status for current page clients
+    try {
+      if (clients.value.length > 0) {
+        const ids = clients.value.map(c => c.id).join(',')
+        portalAccounts.value = await api.get(`/internal/portal-accounts?ids=${ids}`) as Record<string, any>
+      }
+    } catch (e) {
+      console.warn('Could not load portal account status', e)
+    }
   } catch (err) {
     console.error(err)
   } finally {
@@ -239,97 +101,11 @@ async function loadData() {
 
 function resetForm() {
   editingClient.value = null
-  newClient.value = {
-    platform_id: '',
-    platform_type: 'whatsapp',
-    display_name: '',
-    email: '',
-    phone: '',
-    tier: 'standard',
-    tags: [],
-    notes: '',
-    language: 'en',
-    timezone: '',
-    country: '',
-    allowed_bots: [],
-    is_tester: false
-  }
-  newTag.value = ''
-  lidVerified.value = false
-  lastValidatedPhone.value = ''
 }
 
 function openEdit(client: Client) {
-  isLoadingClient.value = true
   editingClient.value = client
-  newClient.value = {
-    platform_id: client.platform_id,
-    platform_type: client.platform_type,
-    display_name: client.display_name,
-    email: client.email || '',
-    phone: client.phone || '',
-    tier: client.tier,
-    tags: client.tags || [],
-    notes: client.notes || '',
-    language: client.language || 'en',
-    timezone: client.timezone || '',
-    country: client.country || '',
-    allowed_bots: client.allowed_bots || [],
-    is_tester: client.is_tester || false
-  }
-  
-  // Auto-verify ONLY if the loaded ID is a LID (NEVER JID)
-  if (client.platform_type === 'whatsapp' && client.platform_id.includes('@lid')) {
-    lidVerified.value = true
-    lastValidatedPhone.value = client.phone || ''
-  } else {
-    lidVerified.value = false
-    lastValidatedPhone.value = ''
-  }
-
-  // Save original state for dirty checking
-  originalClientState.value = JSON.stringify(newClient.value)
-  isLoadingClient.value = false
   showAddModal.value = true
-}
-
-const hasChanges = computed(() => {
-  // For new clients: enable if platform_id is filled
-  if (!editingClient.value) {
-    return newClient.value.platform_id.length > 0
-  }
-  // For editing: compare with original state
-  return JSON.stringify(newClient.value) !== originalClientState.value
-})
-
-function addTag() {
-  if (newTag.value && !newClient.value.tags.includes(newTag.value)) {
-    newClient.value.tags.push(newTag.value)
-    newTag.value = ''
-  }
-}
-
-function removeTag(tag: string) {
-  newClient.value.tags = newClient.value.tags.filter(t => t !== tag)
-}
-
-async function saveClient() {
-  try {
-    if (editingClient.value) {
-      await api.put(`/clients/${editingClient.value.id}`, newClient.value)
-    } else {
-      await api.post('/clients', newClient.value)
-    }
-    showAddModal.value = false
-    resetForm()
-    await loadData()
-  } catch (err: any) {
-    if (err.status === 409) {
-      alert('CONFLICTO: Este ID ya está siendo usado por otro cliente. Busca el cliente duplicado y elimínalo primero.')
-    } else {
-      alert('Error saving client: ' + (err.message || 'Unknown error'))
-    }
-  }
 }
 
 async function deleteClient(id: string) {
@@ -363,18 +139,33 @@ async function toggleEnabled(client: Client) {
   }
 }
 
-// Only reset lidVerified when the user MANUALLY changes these fields
-
-watch(() => newClient.value.platform_id, (newVal, oldVal) => {
-  // Don't reset if we're loading, or if the new value IS a LID (meaning we just resolved it)
-  if (!isLoadingClient.value && oldVal && !newVal.includes('@lid')) {
-    lidVerified.value = false
+async function provisionPortalAccount(client: Client) {
+  confirmModal.value = {
+    show: true,
+    title: 'Enable Portal Access?',
+    message: `This will enable portal access for ${client.display_name}. ${client.email ? 'It will be linked to ' + client.email : 'The client can register their email later'}.`,
+    type: 'info',
+    confirmText: 'Enable Portal',
+    onConfirm: async () => {
+      try {
+        await api.post(`/internal/clients/${client.id}/portal-account`, {
+          email: client.email,
+          full_name: client.display_name
+        })
+        alert('Portal account enabled successfully.')
+      } catch (err: any) {
+        const msg = err.response?.data?.error || err.message || 'Unknown error'
+        alert('Error: ' + msg)
+      }
+    }
   }
-})
+}
+
+
 
 onMounted(() => {
   loadData()
-  loadWorkspaces()
+  // Workspaces y canales NO se cargan en la vista principal
 })
 </script>
 
@@ -388,9 +179,9 @@ onMounted(() => {
     <AppPageHeader title="Clients">
       <template #breadcrumb>
           <Users class="w-4 h-4 text-primary shrink-0" />
-          <span class="text-sm font-bold uppercase tracking-widest text-primary">Customer Hub</span>
+          <span class="text-sm font-bold uppercase tracking-widest text-primary">Clients</span>
           <span class="opacity-30 text-xs font-black text-slate-500">/</span>
-          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Global Registry</span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Registry</span>
       </template>
 
       <template #actions>
@@ -462,6 +253,9 @@ onMounted(() => {
                             <span class="text-xl font-black opacity-40">{{ client.display_name?.charAt(0) || 'C' }}</span>
                         </div>
                         <div class="flex gap-2">
+                            <button v-if="!portalAccounts[client.id]" class="btn-card-action" @click="provisionPortalAccount(client)" title="Provision Portal Access">
+                                <Key class="w-4 h-4 text-primary" />
+                            </button>
                             <button class="btn-card-action" @click="openEdit(client)" title="Edit">
                                 <Edit3 class="w-4 h-4" />
                             </button>
@@ -487,6 +281,25 @@ onMounted(() => {
                         </div>
                     </div>
 
+                    <!-- Portal Status Indicator -->
+                    <div class="mb-6 flex items-center gap-2">
+                      <div v-if="!portalAccounts[client.id]" class="px-3 py-1 rounded-full bg-slate-800/50 border border-white/5 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        Portal: Inactive
+                      </div>
+                      <div v-else-if="portalAccounts[client.id].is_shadow" class="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-black text-amber-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                        Portal: Pending
+                      </div>
+                      <div v-else class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-xs font-black text-green-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                        Portal: Active
+                      </div>
+
+                      <span v-if="portalAccounts[client.id]?.email" class="text-xs font-bold text-slate-600 truncate max-w-[120px]">
+                        {{ portalAccounts[client.id].email }}
+                      </span>
+                    </div>
+
                     <div class="space-y-4 mt-auto">
                         <div class="storage-box-premium">
                             <div class="flex items-baseline justify-between mb-1">
@@ -507,7 +320,7 @@ onMounted(() => {
                                 +{{ client.tags.length - 3 }}
                             </span>
                         </div>
-                        
+
                         <div class="flex items-center justify-between pt-4">
                             <div class="flex items-center gap-2">
                                 <div class="w-1.5 h-1.5 rounded-full" :class="client.enabled ? 'bg-primary animate-pulse' : 'bg-slate-700'"></div>
@@ -528,312 +341,12 @@ onMounted(() => {
     </div>
 
     <!-- Add/Edit Client Modal -->
-    <AppTabModal 
-        v-model="showAddModal"
-        :title="editingClient ? 'Control Manifest: Edit Client' : 'Control Manifest: New Entry'"
-        v-model:activeTab="activeClientTab"
-        :saveDisabled="!hasChanges"
-        :tabs="[
-            { id: 'identity', label: 'Identity', icon: ShieldCheck },
-            { id: 'personal', label: 'Contact Details', icon: Contact },
-            { id: 'settings', label: 'Configuration', icon: Layout },
-            { id: 'operational', label: 'Authorization', icon: Bot }
-        ]"
-        :identity="editingClient ? {
-            name: (newClient.display_name || 'Anonymous Object'),
-            id: newClient.platform_id,
-            icon: Users,
-            iconType: 'component'
-        } : undefined"
-        saveText="Save"
-        @save="saveClient"
-        @cancel="showAddModal = false"
-    >
-        <!-- Tab: Identity -->
-        <div v-if="activeClientTab === 'identity'" class="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-            <header>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight">Signal Identification</h3>
-                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Core platform parameters and access tier</p>
-            </header>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="form-control">
-                    <label class="label-premium text-slate-400">Platform ID (LID)</label>
-                    <div class="flex gap-2">
-                        <input v-model="newClient.platform_id" 
-                               type="text" 
-                               class="input-premium h-14 flex-1 text-sm font-mono" 
-                               placeholder="Identification signal..." />
-                        <button v-if="newClient.platform_type === 'whatsapp'" 
-                                type="button"
-                                class="btn-premium px-6 h-14" 
-                                :class="lidVerified ? 'btn-premium-ghost text-green-500 border-green-500/20' : 'btn-premium-ghost'"
-                                @click="extractLid"
-                                :disabled="validatingLid">
-                            <CheckCircle2 v-if="lidVerified && !validatingLid" class="w-4 h-4" />
-                            <RefreshCw v-else class="w-4 h-4" :class="{ 'animate-spin': validatingLid }" />
-                        </button>
-                    </div>
-                    <div class="flex items-center justify-between mt-2">
-                        <p class="text-xs text-slate-600 font-bold uppercase">Unique identifier for the selected platform.</p>
-                        <p v-if="lidVerified" class="text-xs text-green-500 font-black uppercase flex items-center gap-1 animate-in fade-in slide-in-from-right-2">
-                             <CheckCircle2 class="w-2.5 h-2.5" /> 
-                             Number: {{ lastValidatedPhone }} <span class="mx-1 opacity-40">→</span> LID: {{ newClient.platform_id }}
-                        </p>
-                    </div>
-                </div>
-
-                <div class="form-control">
-                    <label class="label-premium text-slate-400">Target Platform</label>
-                    <select v-model="newClient.platform_type" class="input-premium h-14 w-full text-sm" :disabled="!!editingClient">
-                        <option value="whatsapp">WhatsApp Protocol</option>
-                        <option value="telegram">Telegram Bot API</option>
-                        <option value="webchat">Internal WebChat</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-control">
-                <label class="label-premium text-slate-400">Authorization Tier</label>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <button v-for="t in ['standard', 'premium', 'vip', 'enterprise']" :key="t"
-                            @click="newClient.tier = t" 
-                            class="h-16 rounded-2xl border-2 transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02]"
-                            :class="newClient.tier === t ? 'border-primary bg-primary/10 shadow-lg' : 'border-white/5 bg-black/40 text-slate-500'">
-                        <TierBadge :tier="t" :show-icon="true" />
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab: Personal -->
-        <div v-if="activeClientTab === 'personal'" class="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-            <header>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight">Contact Profile</h3>
-                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Naming and communication vectors</p>
-            </header>
-
-            <div class="form-control">
-                <label class="label-premium text-slate-400">Display Name / Alias</label>
-                <input v-model="newClient.display_name" type="text" class="input-premium h-14 w-full text-lg font-black" placeholder="Contact Name" />
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="form-control">
-                    <label class="label-premium text-slate-400">Primary Email</label>
-                    <input v-model="newClient.email" type="email" class="input-premium h-14 w-full text-sm" placeholder="contact@domain.com" />
-                </div>
-                <div class="form-control">
-                    <label class="label-premium text-slate-400">Universal Phone</label>
-                    <input v-model="newClient.phone" 
-                        type="tel" 
-                        class="input-premium h-14 w-full text-sm font-mono" 
-                        :class="{ 'opacity-50 cursor-not-allowed bg-black/20': newClient.platform_type === 'whatsapp' }"
-                        :readonly="newClient.platform_type === 'whatsapp'"
-                        placeholder="+XX XXX XXX XXX" />
-                </div>
-            </div>
-
-            <div class="form-control">
-                <label class="label-premium text-slate-400">Categorization Tags</label>
-                <div class="flex gap-2 mb-4">
-                    <input v-model="newTag" type="text" class="input-premium h-12 flex-1 text-sm bg-black/40" placeholder="Add custom tag..." @keyup.enter="addTag" />
-                    <button @click="addTag" class="btn-premium btn-premium-ghost h-12 px-6">
-                        <Tag class="w-4 h-4" />
-                    </button>
-                </div>
-                <div class="flex flex-wrap gap-2 p-4 bg-black/40 rounded-2xl border border-white/5 min-h-[60px]">
-                    <span v-for="tag in newClient.tags" :key="tag" 
-                          class="px-4 py-2 text-xs font-black uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-xl flex items-center gap-3">
-                        {{ tag }}
-                        <button @click="removeTag(tag)" class="hover:text-white transition-colors">&times;</button>
-                    </span>
-                    <p v-if="newClient.tags.length === 0" class="text-xs text-slate-700 font-bold uppercase items-center flex">No tags assigned / global pool</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab: Settings -->
-        <div v-if="activeClientTab === 'settings'" class="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-            <header>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight">Vibe & Parameters</h3>
-                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Linguistic and internal processing notes</p>
-            </header>
-
-            <div class="form-control max-w-sm">
-                <label class="label-premium text-slate-400">Primary AI Language</label>
-                <div class="relative group">
-                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-primary opacity-40 group-focus-within:opacity-100 transition-opacity">
-                        <Globe class="w-5 h-5" />
-                    </div>
-                    <select v-model="newClient.language" class="input-premium h-14 pl-12 w-full text-sm font-bold">
-                        <option value="es">Español (Castellano)</option>
-                        <option value="en">English (International)</option>
-                        <option value="pt">Português</option>
-                        <option value="fr">Français</option>
-                        <option value="it">Italiano</option>
-                        <option value="de">Deutsch</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-control max-w-sm">
-                <label class="label-premium text-slate-400">Timezone Override</label>
-                <div class="relative group">
-                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-primary opacity-40 group-focus-within:opacity-100 transition-opacity">
-                        <Globe class="w-5 h-5" />
-                    </div>
-                    <select v-model="newClient.timezone" class="input-premium h-14 pl-12 w-full text-sm font-bold">
-                        <option value="">Use Channel Default</option>
-                        <option value="America/New_York">🇺🇸 (GMT-05:00) America/New_York</option>
-                        <option value="America/Los_Angeles">🇺🇸 (GMT-08:00) America/Los_Angeles</option>
-                        <option value="America/Chicago">🇺🇸 (GMT-06:00) America/Chicago</option>
-                        <option value="America/Lima">🇵🇪 (GMT-05:00) America/Lima</option>
-                        <option value="America/Bogota">🇨🇴 (GMT-05:00) America/Bogota</option>
-                        <option value="America/Mexico_City">🇲🇽 (GMT-06:00) America/Mexico_City</option>
-                        <option value="America/Santo_Domingo">🇩🇴 (GMT-04:00) America/Santo_Domingo</option>
-                        <option value="America/Sao_Paulo">🇧🇷 (GMT-03:00) America/Sao_Paulo</option>
-                        <option value="America/Buenos_Aires">🇦🇷 (GMT-03:00) America/Buenos_Aires</option>
-                        <option value="America/Santiago">🇨🇱 (GMT-04:00) America/Santiago</option>
-                        <option value="Europe/London">🇬🇧 (GMT+00:00) Europe/London</option>
-                        <option value="Europe/Paris">🇫🇷 (GMT+01:00) Europe/Paris</option>
-                        <option value="Europe/Madrid">🇪🇸 (GMT+01:00) Europe/Madrid</option>
-                        <option value="Europe/Berlin">🇩🇪 (GMT+01:00) Europe/Berlin</option>
-                        <option value="Asia/Tokyo">🇯🇵 (GMT+09:00) Asia/Tokyo</option>
-                        <option value="Asia/Shanghai">🇨🇳 (GMT+08:00) Asia/Shanghai</option>
-                        <option value="Asia/Dubai">🇦🇪 (GMT+04:00) Asia/Dubai</option>
-                        <option value="Australia/Sydney">🇦🇺 (GMT+10:00) Australia/Sydney</option>
-                    </select>
-                </div>
-                <p class="text-xs text-slate-600 font-bold uppercase mt-2">Individual timezone for this client. Overrides channel defaults.</p>
-            </div>
-
-            <div class="form-control max-w-sm">
-                <label class="label-premium text-slate-400">Country</label>
-                <div class="relative group">
-                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-primary opacity-40 group-focus-within:opacity-100 transition-opacity">
-                        <Globe class="w-5 h-5" />
-                    </div>
-                    <select v-model="newClient.country" class="input-premium h-14 pl-12 w-full text-sm font-bold">
-                        <option value="">Not specified</option>
-                        <option value="PE">🇵🇪 PE - Perú</option>
-                        <option value="DO">🇩🇴 DO - República Dominicana</option>
-                        <option value="US">🇺🇸 US - United States</option>
-                        <option value="MX">🇲🇽 MX - México</option>
-                        <option value="CO">🇨🇴 CO - Colombia</option>
-                        <option value="AR">🇦🇷 AR - Argentina</option>
-                        <option value="CL">🇨🇱 CL - Chile</option>
-                        <option value="BR">🇧🇷 BR - Brasil</option>
-                        <option value="ES">🇪🇸 ES - España</option>
-                        <option value="GB">🇬🇧 GB - United Kingdom</option>
-                        <option value="FR">🇫🇷 FR - France</option>
-                        <option value="DE">🇩🇪 DE - Deutschland</option>
-                        <option value="IT">🇮🇹 IT - Italia</option>
-                        <option value="JP">🇯🇵 JP - Japan</option>
-                        <option value="CN">🇨🇳 CN - China</option>
-                        <option value="AE">🇦🇪 AE - United Arab Emirates</option>
-                        <option value="AU">🇦🇺 AU - Australia</option>
-                    </select>
-                </div>
-                <p class="text-xs text-slate-600 font-bold uppercase mt-2">Helps AI determine default currency and regional context.</p>
-            </div>
-
-            <div class="form-control">
-                <label class="label-premium text-slate-400">Internal Context Manifest</label>
-                <textarea v-model="newClient.notes" class="input-premium w-full text-sm min-h-[220px] p-6 resize-none leading-relaxed" placeholder="Detailed profile context, specific rules or historical patterns for this client..."></textarea>
-            </div>
-        </div>
-
-        <!-- Tab: Operational -->
-        <div v-if="activeClientTab === 'operational'" class="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col">
-            <header>
-                <h3 class="text-xl font-black text-white uppercase tracking-tight">System & Authorization</h3>
-                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Advanced access control and debug modes</p>
-            </header>
-
-            <div class="p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-start gap-4">
-                <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
-                    <ShieldCheck class="w-5 h-5" />
-                </div>
-                <div class="flex-1">
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="text-sm font-black text-white uppercase tracking-tight">Tester Mode</label>
-                        <input type="checkbox" v-model="newClient.is_tester" class="toggle toggle-warning toggle-sm" />
-                    </div>
-                    <p class="text-xs text-slate-400 font-medium leading-relaxed">
-                        When enabled, all interactions from this client (messages, tool inputs, files) will be logged 
-                        <span class="text-amber-500 font-bold">UNFILTERED (FULL DATA)</span> for debugging purposes. 
-                        Use with caution and only for development accounts.
-                    </p>
-                </div>
-            </div>
-
-            <div class="divider border-white/5 my-4"></div>
-
-            <header>
-                <h4 class="text-sm font-black text-slate-400 uppercase tracking-widest">Authorized Agents</h4>
-            </header>
-
-            <div class="form-control">
-                <div class="relative">
-                    <div class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600">
-                        <Search class="w-4 h-4" />
-                    </div>
-                    <input 
-                        v-model="botSearch" 
-                        @focus="showBotResults = true"
-                        type="text" 
-                        class="input-premium h-14 pl-12 w-full text-base font-medium placeholder:text-slate-700 bg-black/40" 
-                        placeholder="Search for authorized agents..." 
-                    />
-                    
-                    <!-- Search Results Dropdown -->
-                    <div v-if="showBotResults && (botSearch || filteredBots.length > 0)" 
-                            class="absolute z-20 top-full left-0 right-0 mt-2 bg-[#12161f] border border-white/10 rounded-2xl shadow-2xl max-h-64 overflow-y-auto p-2">
-                        <div v-if="filteredBots.length === 0" class="py-4 text-center text-xs text-slate-600 font-black uppercase">Zero matching agents</div>
-                        <button v-for="bot in filteredBots" :key="bot.id"
-                                @click="addAllowedBot(bot.id)"
-                                class="w-full flex items-center gap-4 p-3 hover:bg-primary/10 rounded-xl transition-all group text-left border border-transparent hover:border-primary/20">
-                            <div class="w-10 h-10 rounded-lg bg-black flex items-center justify-center text-slate-500 group-hover:text-primary transition-all shadow-inner">
-                                <Bot class="w-5 h-5" />
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-xs font-black uppercase text-white truncate">{{ bot.name }}</div>
-                                <div class="text-xs font-mono text-slate-600 truncate uppercase">{{ bot.id.substring(0,25) }}...</div>
-                            </div>
-                            <Plus class="w-4 h-4 text-slate-800 group-hover:text-primary" />
-                        </button>
-                    </div>
-                </div>
-                <div v-if="showBotResults" @click="showBotResults = false" class="fixed inset-0 z-10"></div>
-            </div>
-
-            <div class="flex-1 min-h-0 flex flex-col">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-black text-slate-600 uppercase tracking-widest">Currently Whitelisted</span>
-                    <span v-if="newClient.allowed_bots.length === 0" class="text-xs font-bold text-slate-500 uppercase italic">Unrestricted Global Access</span>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
-                    <div v-for="botId in newClient.allowed_bots" :key="botId" 
-                            class="flex items-center justify-between p-4 bg-primary/5 border border-primary/10 rounded-2xl group border-l-4 border-l-primary/40 hover:bg-primary/[0.08] transition-all">
-                        <div class="flex items-center gap-4 min-w-0">
-                            <div class="w-10 h-10 rounded-xl bg-[#0b0e14] border border-white/5 flex items-center justify-center text-primary shadow-xl">
-                                <Bot class="w-5 h-5" />
-                            </div>
-                            <div class="min-w-0">
-                                <div class="text-xs font-black uppercase text-white truncate">{{ getBotById(botId).name }}</div>
-                                <div class="text-xs font-mono text-slate-500 truncate">{{ botId.substring(0,12) }}...</div>
-                            </div>
-                        </div>
-                        <button @click="removeAllowedBot(botId)" class="p-2 text-slate-700 hover:text-red-500 transition-colors">
-                            <Trash2 class="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </AppTabModal>
+    <ClientEditorModal 
+        v-model:show="showAddModal"
+        :clientToEdit="editingClient"
+        @saved="loadData"
+        @closed="resetForm"
+    />
 
     <ConfirmationDialog 
         v-model="confirmModal.show"

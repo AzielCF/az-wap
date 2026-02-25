@@ -94,12 +94,40 @@ func (r *SQLiteRepository) Init(ctx context.Context) error {
 		`ALTER TABLE scheduled_posts ADD COLUMN execution_count INTEGER DEFAULT 0;`,
 		// Migration: Convert empty external_ref to NULL to fix UNIQUE constraint issue
 		`UPDATE channels SET external_ref = NULL WHERE external_ref = '';`,
+		// Client Workspaces
+		`CREATE TABLE IF NOT EXISTS client_workspaces (
+			id TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS client_workspace_channels (
+			client_workspace_id TEXT NOT NULL,
+			channel_id TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (client_workspace_id, channel_id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS client_workspace_guests (
+			id TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL,
+			client_workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			bot_template_id TEXT NOT NULL,
+			platform_identifiers TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_cw_owner ON client_workspaces(owner_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_cwg_ws ON client_workspace_guests(client_workspace_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_cwg_owner ON client_workspace_guests(owner_id);`,
 	}
 
 	for _, query := range queries {
 		if _, err := r.db.ExecContext(ctx, query); err != nil {
-			// Ignorar errores de "duplicate column" en migraciones ALTER TABLE
-			if strings.Contains(err.Error(), "duplicate column") {
+			// Ignorar errores de "duplicate column" o "already exists" en migraciones manuales
+			if strings.Contains(err.Error(), "duplicate column") || strings.Contains(err.Error(), "already exists") {
 				continue
 			}
 			return fmt.Errorf("failed to init schema: %w", err)
@@ -226,6 +254,35 @@ func (r *SQLiteRepository) GetChannel(ctx context.Context, channelID string) (ch
 func (r *SQLiteRepository) ListChannels(ctx context.Context, workspaceID string) ([]channel.Channel, error) {
 	query := `SELECT id, workspace_id, type, name, enabled, config, status, external_ref, last_seen, accumulated_cost, cost_breakdown, created_at, updated_at FROM channels WHERE workspace_id = ?`
 	rows, err := r.db.QueryContext(ctx, query, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var channels []channel.Channel
+	for rows.Next() {
+		var ch channel.Channel
+		var config string
+		var breakdown sql.NullString
+		var extRef sql.NullString
+		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &extRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(config), &ch.Config)
+		if breakdown.Valid {
+			_ = json.Unmarshal([]byte(breakdown.String), &ch.CostBreakdown)
+		}
+		if extRef.Valid {
+			ch.ExternalRef = extRef.String
+		}
+		channels = append(channels, ch)
+	}
+	return channels, nil
+}
+
+func (r *SQLiteRepository) ListChannelsByOwnerID(ctx context.Context, ownerID string) ([]channel.Channel, error) {
+	query := `SELECT id, workspace_id, type, name, enabled, config, status, external_ref, last_seen, accumulated_cost, cost_breakdown, created_at, updated_at FROM channels WHERE owner_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,4 +567,174 @@ func (r *SQLiteRepository) DeleteScheduledPost(ctx context.Context, id string) e
 	query := `DELETE FROM scheduled_posts WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, id)
 	return err
+}
+
+// Client Workspace CRUD
+
+func (r *SQLiteRepository) CreateClientWorkspace(ctx context.Context, ws workspace.ClientWorkspace) error {
+	query := `INSERT INTO client_workspaces (id, owner_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, query, ws.ID, ws.OwnerID, ws.Name, ws.Description, ws.CreatedAt, ws.UpdatedAt)
+	return err
+}
+
+func (r *SQLiteRepository) GetClientWorkspace(ctx context.Context, id string) (workspace.ClientWorkspace, error) {
+	query := `SELECT id, owner_id, name, description, created_at, updated_at FROM client_workspaces WHERE id = ?`
+	row := r.db.QueryRowContext(ctx, query, id)
+	var ws workspace.ClientWorkspace
+	err := row.Scan(&ws.ID, &ws.OwnerID, &ws.Name, &ws.Description, &ws.CreatedAt, &ws.UpdatedAt)
+	return ws, err
+}
+
+func (r *SQLiteRepository) ListClientWorkspaces(ctx context.Context, ownerID string) ([]workspace.ClientWorkspace, error) {
+	query := `SELECT id, owner_id, name, description, created_at, updated_at FROM client_workspaces WHERE owner_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []workspace.ClientWorkspace
+	for rows.Next() {
+		var ws workspace.ClientWorkspace
+		if err := rows.Scan(&ws.ID, &ws.OwnerID, &ws.Name, &ws.Description, &ws.CreatedAt, &ws.UpdatedAt); err != nil {
+			return nil, err
+		}
+		res = append(res, ws)
+	}
+	return res, nil
+}
+
+func (r *SQLiteRepository) UpdateClientWorkspace(ctx context.Context, ws workspace.ClientWorkspace) error {
+	query := `UPDATE client_workspaces SET name=?, description=?, updated_at=? WHERE id=?`
+	_, err := r.db.ExecContext(ctx, query, ws.Name, ws.Description, ws.UpdatedAt, ws.ID)
+	return err
+}
+
+func (r *SQLiteRepository) DeleteClientWorkspace(ctx context.Context, id string) error {
+	// Manual cleanup for SQLite
+	_, _ = r.db.ExecContext(ctx, "DELETE FROM client_workspace_channels WHERE client_workspace_id = ?", id)
+	_, _ = r.db.ExecContext(ctx, "DELETE FROM client_workspace_guests WHERE client_workspace_id = ?", id)
+	_, err := r.db.ExecContext(ctx, "DELETE FROM client_workspaces WHERE id = ?", id)
+	return err
+}
+
+func (r *SQLiteRepository) LinkChannelToClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	var count int
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM client_workspace_channels WHERE client_workspace_id = ? AND channel_id = ?", workspaceID, channelID).Scan(&count)
+	if err == nil && count > 0 {
+		return nil // Already linked
+	}
+
+	query := `INSERT INTO client_workspace_channels (client_workspace_id, channel_id, created_at) VALUES (?, ?, ?)`
+	_, err = r.db.ExecContext(ctx, query, workspaceID, channelID, time.Now())
+	return err
+}
+
+func (r *SQLiteRepository) UnlinkChannelFromClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	query := `DELETE FROM client_workspace_channels WHERE client_workspace_id = ? AND channel_id = ?`
+	_, err := r.db.ExecContext(ctx, query, workspaceID, channelID)
+	return err
+}
+
+func (r *SQLiteRepository) ListChannelsInClientWorkspace(ctx context.Context, workspaceID string) ([]channel.Channel, error) {
+	query := `SELECT c.id, c.workspace_id, c.type, c.name, c.enabled, c.config, c.status, c.external_ref, c.last_seen, c.accumulated_cost, c.cost_breakdown, c.created_at, c.updated_at 
+	          FROM channels c 
+			  JOIN client_workspace_channels cwc ON cwc.channel_id = c.id 
+			  WHERE cwc.client_workspace_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var channels []channel.Channel
+	for rows.Next() {
+		var ch channel.Channel
+		var config string
+		var breakdown sql.NullString
+		var extRef sql.NullString
+		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Type, &ch.Name, &ch.Enabled, &config, &ch.Status, &extRef, &ch.LastSeen, &ch.AccumulatedCost, &breakdown, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(config), &ch.Config)
+		if breakdown.Valid {
+			_ = json.Unmarshal([]byte(breakdown.String), &ch.CostBreakdown)
+		}
+		if extRef.Valid {
+			ch.ExternalRef = extRef.String
+		}
+		channels = append(channels, ch)
+	}
+	return channels, nil
+}
+
+func (r *SQLiteRepository) CreateGuest(ctx context.Context, guest workspace.ClientWorkspaceGuest) error {
+	idents, _ := json.Marshal(guest.PlatformIdentifiers)
+	query := `INSERT INTO client_workspace_guests (id, owner_id, client_workspace_id, name, bot_template_id, platform_identifiers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.ExecContext(ctx, query, guest.ID, guest.OwnerID, guest.ClientWorkspaceID, guest.Name, guest.BotTemplateID, string(idents), guest.CreatedAt, guest.UpdatedAt)
+	return err
+}
+
+func (r *SQLiteRepository) GetGuest(ctx context.Context, id string) (workspace.ClientWorkspaceGuest, error) {
+	query := `SELECT id, owner_id, client_workspace_id, name, bot_template_id, platform_identifiers, created_at, updated_at FROM client_workspace_guests WHERE id = ?`
+	row := r.db.QueryRowContext(ctx, query, id)
+	var g workspace.ClientWorkspaceGuest
+	var idents string
+	err := row.Scan(&g.ID, &g.OwnerID, &g.ClientWorkspaceID, &g.Name, &g.BotTemplateID, &idents, &g.CreatedAt, &g.UpdatedAt)
+	if err != nil {
+		return workspace.ClientWorkspaceGuest{}, err
+	}
+	_ = json.Unmarshal([]byte(idents), &g.PlatformIdentifiers)
+	return g, nil
+}
+
+func (r *SQLiteRepository) ListGuestsInClientWorkspace(ctx context.Context, workspaceID string) ([]workspace.ClientWorkspaceGuest, error) {
+	query := `SELECT id, owner_id, client_workspace_id, name, bot_template_id, platform_identifiers, created_at, updated_at FROM client_workspace_guests WHERE client_workspace_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []workspace.ClientWorkspaceGuest
+	for rows.Next() {
+		var g workspace.ClientWorkspaceGuest
+		var idents string
+		if err := rows.Scan(&g.ID, &g.OwnerID, &g.ClientWorkspaceID, &g.Name, &g.BotTemplateID, &idents, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(idents), &g.PlatformIdentifiers)
+		res = append(res, g)
+	}
+	return res, nil
+}
+
+func (r *SQLiteRepository) UpdateGuest(ctx context.Context, guest workspace.ClientWorkspaceGuest) error {
+	idents, _ := json.Marshal(guest.PlatformIdentifiers)
+	query := `UPDATE client_workspace_guests SET client_workspace_id=?, name=?, bot_template_id=?, platform_identifiers=?, updated_at=? WHERE id=?`
+	_, err := r.db.ExecContext(ctx, query, guest.ClientWorkspaceID, guest.Name, guest.BotTemplateID, string(idents), guest.UpdatedAt, guest.ID)
+	return err
+}
+
+func (r *SQLiteRepository) DeleteGuest(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM client_workspace_guests WHERE id = ?", id)
+	return err
+}
+
+func (r *SQLiteRepository) ListGuestsByOwnerID(ctx context.Context, ownerID string) ([]workspace.ClientWorkspaceGuest, error) {
+	query := `SELECT id, owner_id, client_workspace_id, name, bot_template_id, platform_identifiers, created_at, updated_at FROM client_workspace_guests WHERE owner_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var res []workspace.ClientWorkspaceGuest
+	for rows.Next() {
+		var g workspace.ClientWorkspaceGuest
+		var idents string
+		if err := rows.Scan(&g.ID, &g.OwnerID, &g.ClientWorkspaceID, &g.Name, &g.BotTemplateID, &idents, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(idents), &g.PlatformIdentifiers)
+		res = append(res, g)
+	}
+	return res, nil
 }

@@ -112,7 +112,10 @@ func (s *botService) Create(ctx context.Context, req domainBot.CreateBotRequest)
 		ChatwootCredentialID: strings.TrimSpace(req.ChatwootCredentialID),
 		ChatwootBotToken:     strings.TrimSpace(req.ChatwootBotToken),
 		Whitelist:            req.Whitelist,
+		Variants:             req.Variants,
 	}
+
+	bot.SanitizeVariants()
 
 	if err := s.repo.Create(ctx, bot); err != nil {
 		return domainBot.Bot{}, err
@@ -209,6 +212,9 @@ func (s *botService) Update(ctx context.Context, id string, req domainBot.Update
 	updated.ChatwootCredentialID = strings.TrimSpace(req.ChatwootCredentialID)
 	updated.ChatwootBotToken = strings.TrimSpace(req.ChatwootBotToken)
 	updated.Whitelist = req.Whitelist
+	updated.Variants = req.Variants
+
+	updated.SanitizeVariants()
 
 	if err := s.repo.Update(ctx, updated); err != nil {
 		return domainBot.Bot{}, err

@@ -8,6 +8,7 @@ import (
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	clientsDomain "github.com/AzielCF/az-wap/clients/domain"
+	portalAuth "github.com/AzielCF/az-wap/clients_portal/auth/application"
 )
 
 const (
@@ -33,12 +34,16 @@ var AllowedClientFields = []string{
 
 // ClientTools provides tools for the client to manage their information
 type ClientTools struct {
-	clientRepo clientsDomain.ClientRepository
+	clientRepo  clientsDomain.ClientRepository
+	authService *portalAuth.AuthService
 }
 
 // NewClientTools creates a new instance of ClientTools
-func NewClientTools(clientRepo clientsDomain.ClientRepository) *ClientTools {
-	return &ClientTools{clientRepo: clientRepo}
+func NewClientTools(clientRepo clientsDomain.ClientRepository, authService *portalAuth.AuthService) *ClientTools {
+	return &ClientTools{
+		clientRepo:  clientRepo,
+		authService: authService,
+	}
 }
 
 // UpdateMyInfoTool allows the client to update their personal information

@@ -3,6 +3,10 @@ package rest
 import (
 	"github.com/AzielCF/az-wap/clients/application"
 	"github.com/AzielCF/az-wap/clients/domain"
+	"github.com/AzielCF/az-wap/pkg/utils"
+	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
+	wsRepo "github.com/AzielCF/az-wap/workspace/repository"
+	wsUcase "github.com/AzielCF/az-wap/workspace/usecase"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -10,13 +14,17 @@ import (
 type ClientHandler struct {
 	clientService *application.ClientService
 	subService    *application.SubscriptionService
+	wsRepo        wsRepo.IWorkspaceRepository
+	wsUc          *wsUcase.WorkspaceUsecase
 }
 
 // NewClientHandler crea una nueva instancia del handler
-func NewClientHandler(clientService *application.ClientService, subService *application.SubscriptionService) *ClientHandler {
+func NewClientHandler(clientService *application.ClientService, subService *application.SubscriptionService, wsRepo wsRepo.IWorkspaceRepository, wsUc *wsUcase.WorkspaceUsecase) *ClientHandler {
 	return &ClientHandler{
 		clientService: clientService,
 		subService:    subService,
+		wsRepo:        wsRepo,
+		wsUc:          wsUc,
 	}
 }
 
@@ -50,6 +58,27 @@ func (h *ClientHandler) RegisterRoutes(router fiber.Router) {
 
 	// Suscripciones por canal
 	router.Get("/channels/:channelId/subscribers", h.ListChannelSubscribers)
+
+	// Canales del cliente
+	clients.Get("/:id/channels", h.ListClientChannels)
+
+	// Workspaces y Guests de cliente (Admin Access)
+	clients.Get("/:id/workspaces", h.ListClientWorkspaces)
+	clients.Post("/:id/workspaces", h.CreateClientWorkspace)
+	clients.Get("/:id/workspaces/:wid", h.GetClientWorkspace)
+	clients.Put("/:id/workspaces/:wid", h.UpdateClientWorkspace)
+	clients.Delete("/:id/workspaces/:wid", h.DeleteClientWorkspace)
+
+	// Canales en Workspace
+	clients.Get("/:id/workspaces/:wid/channels", h.ListWorkspaceChannels)
+	clients.Post("/:id/workspaces/:wid/channels/:cid", h.LinkChannel)
+	clients.Delete("/:id/workspaces/:wid/channels/:cid", h.UnlinkChannel)
+
+	// Guests en Workspace
+	clients.Get("/:id/workspaces/:wid/guests", h.ListWorkspaceGuests)
+	clients.Post("/:id/workspaces/:wid/guests", h.CreateWorkspaceGuest)
+	clients.Put("/:id/workspaces/:wid/guests/:gid", h.UpdateWorkspaceGuest)
+	clients.Delete("/:id/workspaces/:wid/guests/:gid", h.DeleteWorkspaceGuest)
 }
 
 // ListClients lista clientes con filtros
@@ -88,20 +117,21 @@ func (h *ClientHandler) CreateClient(c *fiber.Ctx) error {
 	}
 
 	client := &domain.Client{
-		PlatformID:   req.PlatformID,
-		PlatformType: domain.PlatformType(req.PlatformType),
-		DisplayName:  req.DisplayName,
-		Email:        req.Email,
-		Phone:        req.Phone,
-		Tier:         domain.ClientTier(req.Tier),
-		Tags:         req.Tags,
-		Metadata:     req.Metadata,
-		Notes:        req.Notes,
-		Language:     req.Language,
-		Timezone:     req.Timezone,
-		Country:      req.Country,
-		AllowedBots:  req.AllowedBots,
-		IsTester:     req.IsTester,
+		PlatformID:    req.PlatformID,
+		PlatformType:  domain.PlatformType(req.PlatformType),
+		DisplayName:   req.DisplayName,
+		Email:         req.Email,
+		Phone:         req.Phone,
+		Tier:          domain.ClientTier(req.Tier),
+		Tags:          req.Tags,
+		Metadata:      req.Metadata,
+		Notes:         req.Notes,
+		Language:      req.Language,
+		Timezone:      req.Timezone,
+		Country:       req.Country,
+		AllowedBots:   req.AllowedBots,
+		OwnedChannels: req.OwnedChannels,
+		IsTester:      req.IsTester,
 	}
 
 	if err := h.clientService.Create(c.Context(), client); err != nil {
@@ -182,6 +212,9 @@ func (h *ClientHandler) UpdateClient(c *fiber.Ctx) error {
 	}
 	if req.AllowedBots != nil {
 		client.AllowedBots = req.AllowedBots
+	}
+	if req.OwnedChannels != nil {
+		client.OwnedChannels = req.OwnedChannels
 	}
 	if req.IsTester != nil {
 		client.IsTester = *req.IsTester
@@ -482,4 +515,178 @@ func (h *ClientHandler) UpdateSubscription(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(sub)
+}
+
+// --- Client Workspace Handlers (Admin) ---
+
+func (h *ClientHandler) ListClientWorkspaces(c *fiber.Ctx) error {
+	clientID := c.Params("id")
+	workspaces, err := h.wsUc.ListClientWorkspaces(c.Context(), clientID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(workspaces)
+}
+
+func (h *ClientHandler) CreateClientWorkspace(c *fiber.Ctx) error {
+	clientID := c.Params("id")
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	ws, err := h.wsUc.CreateClientWorkspace(c.Context(), clientID, req.Name, req.Description)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(ws)
+}
+
+func (h *ClientHandler) GetClientWorkspace(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	ws, err := h.wsRepo.GetClientWorkspace(c.Context(), wid)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "workspace not found"})
+	}
+	return c.JSON(ws)
+}
+
+func (h *ClientHandler) UpdateClientWorkspace(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	ws, err := h.wsRepo.GetClientWorkspace(c.Context(), wid)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "workspace not found"})
+	}
+
+	ws.Name = req.Name
+	ws.Description = req.Description
+	if err := h.wsRepo.UpdateClientWorkspace(c.Context(), ws); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(ws)
+}
+
+func (h *ClientHandler) DeleteClientWorkspace(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	if err := h.wsUc.DeleteClientWorkspace(c.Context(), wid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *ClientHandler) ListClientChannels(c *fiber.Ctx) error {
+	clientID := c.Params("id")
+	channels, err := h.wsRepo.ListChannelsByOwnerID(c.Context(), clientID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(channels)
+}
+
+func (h *ClientHandler) ListWorkspaceChannels(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	channels, err := h.wsRepo.ListChannelsInClientWorkspace(c.Context(), wid)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(channels)
+}
+
+func (h *ClientHandler) LinkChannel(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	cid := c.Params("cid")
+	if err := h.wsUc.LinkChannelToClientWorkspace(c.Context(), wid, cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *ClientHandler) UnlinkChannel(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	cid := c.Params("cid")
+	if err := h.wsUc.UnlinkChannelFromClientWorkspace(c.Context(), wid, cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *ClientHandler) ListWorkspaceGuests(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	guests, err := h.wsRepo.ListGuestsInClientWorkspace(c.Context(), wid)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(guests)
+}
+
+func (h *ClientHandler) CreateWorkspaceGuest(c *fiber.Ctx) error {
+	clientID := c.Params("id")
+	wid := c.Params("wid")
+	var guest wsDomain.ClientWorkspaceGuest
+	if err := c.BodyParser(&guest); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	guest.OwnerID = clientID
+	guest.ClientWorkspaceID = wid
+
+	// Validate that the guest does not have the same identifier as the workspace owner
+	client, err := h.clientService.GetByID(c.Context(), clientID)
+	if err == nil && client != nil {
+		guestPhone := guest.PlatformIdentifiers["whatsapp"]
+		if utils.MatchWhatsAppIdentities(guestPhone, client.Phone) || utils.MatchWhatsAppIdentities(guestPhone, client.PlatformID) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "the owner client cannot be added as a guest in their own workspace"})
+		}
+	}
+	newGuest, err := h.wsUc.CreateGuest(c.Context(), guest)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(newGuest)
+}
+
+func (h *ClientHandler) UpdateWorkspaceGuest(c *fiber.Ctx) error {
+	wid := c.Params("wid")
+	gid := c.Params("gid")
+	var req wsDomain.ClientWorkspaceGuest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	req.ID = gid
+	req.ClientWorkspaceID = wid
+
+	// Validar que el invitado no tenga el mismo número que el dueño del workspace
+	client, err := h.clientService.GetByID(c.Context(), c.Params("id"))
+
+	if err == nil && client != nil {
+		guestPhone := req.PlatformIdentifiers["whatsapp"]
+		if utils.MatchWhatsAppIdentities(guestPhone, client.Phone) || utils.MatchWhatsAppIdentities(guestPhone, client.PlatformID) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "the owner client cannot be added as a guest in their own workspace"})
+		}
+	}
+
+	if err := h.wsUc.UpdateGuest(c.Context(), req); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(req)
+}
+
+func (h *ClientHandler) DeleteWorkspaceGuest(c *fiber.Ctx) error {
+	gid := c.Params("gid")
+	if err := h.wsUc.DeleteGuest(c.Context(), gid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

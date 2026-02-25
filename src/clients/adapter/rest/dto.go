@@ -6,37 +6,39 @@ import (
 
 // CreateClientRequest representa la petición para crear un cliente
 type CreateClientRequest struct {
-	PlatformID   string         `json:"platform_id"`
-	PlatformType string         `json:"platform_type"`
-	DisplayName  string         `json:"display_name"`
-	Email        string         `json:"email"`
-	Phone        string         `json:"phone"`
-	Tier         string         `json:"tier"`
-	Tags         []string       `json:"tags"`
-	Metadata     map[string]any `json:"metadata"`
-	Notes        string         `json:"notes"`
-	Language     string         `json:"language"`
-	Timezone     string         `json:"timezone"`
-	Country      string         `json:"country"`
-	AllowedBots  []string       `json:"allowed_bots"`
-	IsTester     bool           `json:"is_tester"`
+	PlatformID    string         `json:"platform_id"`
+	PlatformType  string         `json:"platform_type"`
+	DisplayName   string         `json:"display_name"`
+	Email         string         `json:"email"`
+	Phone         string         `json:"phone"`
+	Tier          string         `json:"tier"`
+	Tags          []string       `json:"tags"`
+	Metadata      map[string]any `json:"metadata"`
+	Notes         string         `json:"notes"`
+	Language      string         `json:"language"`
+	Timezone      string         `json:"timezone"`
+	Country       string         `json:"country"`
+	AllowedBots   []string       `json:"allowed_bots"`
+	OwnedChannels []string       `json:"owned_channels"`
+	IsTester      bool           `json:"is_tester"`
 }
 
 // UpdateClientRequest representa la petición para actualizar un cliente
 type UpdateClientRequest struct {
-	PlatformID  *string        `json:"platform_id"`
-	DisplayName *string        `json:"display_name"`
-	Email       *string        `json:"email"`
-	Phone       *string        `json:"phone"`
-	Tier        *string        `json:"tier"`
-	Tags        []string       `json:"tags"`
-	Metadata    map[string]any `json:"metadata"`
-	Notes       *string        `json:"notes"`
-	Language    *string        `json:"language"`
-	Timezone    *string        `json:"timezone"`
-	Country     *string        `json:"country"`
-	AllowedBots []string       `json:"allowed_bots"`
-	IsTester    *bool          `json:"is_tester"`
+	PlatformID    *string        `json:"platform_id"`
+	DisplayName   *string        `json:"display_name"`
+	Email         *string        `json:"email"`
+	Phone         *string        `json:"phone"`
+	Tier          *string        `json:"tier"`
+	Tags          []string       `json:"tags"`
+	Metadata      map[string]any `json:"metadata"`
+	Notes         *string        `json:"notes"`
+	Language      *string        `json:"language"`
+	Timezone      *string        `json:"timezone"`
+	Country       *string        `json:"country"`
+	AllowedBots   []string       `json:"allowed_bots"`
+	OwnedChannels []string       `json:"owned_channels"`
+	IsTester      *bool          `json:"is_tester"`
 }
 
 // CreateSubscriptionRequest representa la petición para crear una suscripción

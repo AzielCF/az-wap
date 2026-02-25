@@ -37,6 +37,7 @@ func (workspaceModel) TableName() string { return "workspaces" }
 type channelModel struct {
 	ID              string         `gorm:"primaryKey;column:id"`
 	WorkspaceID     string         `gorm:"column:workspace_id;not null;index"`
+	OwnerID         sql.NullString `gorm:"column:owner_id;index"` // Client ID
 	Type            string         `gorm:"column:type;not null"`
 	Name            string         `gorm:"column:name;not null"`
 	Enabled         bool           `gorm:"column:enabled;default:false"`
@@ -84,6 +85,39 @@ type scheduledPostModel struct {
 
 func (scheduledPostModel) TableName() string { return "scheduled_posts" }
 
+type clientWorkspaceModel struct {
+	ID          string         `gorm:"primaryKey;column:id"`
+	OwnerID     string         `gorm:"column:owner_id;not null;index"`
+	Name        string         `gorm:"column:name;not null"`
+	Description sql.NullString `gorm:"column:description"`
+	CreatedAt   time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at;not null"`
+}
+
+func (clientWorkspaceModel) TableName() string { return "client_workspaces" }
+
+type clientWorkspaceChannelModel struct {
+	ClientWorkspaceID string    `gorm:"primaryKey;column:client_workspace_id"`
+	ChannelID         string    `gorm:"primaryKey;column:channel_id"`
+	CreatedAt         time.Time `gorm:"column:created_at;not null"`
+}
+
+func (clientWorkspaceChannelModel) TableName() string { return "client_workspace_channels" }
+
+type clientWorkspaceGuestModel struct {
+	ID                  string    `gorm:"primaryKey;column:id"`
+	OwnerID             string    `gorm:"column:owner_id;not null;index"`
+	ClientWorkspaceID   string    `gorm:"column:client_workspace_id;not null;index"`
+	Name                string    `gorm:"column:name;not null"`
+	BotID               string    `gorm:"column:bot_id;not null"`
+	BotTemplateID       string    `gorm:"column:bot_template_id;not null"`
+	PlatformIdentifiers string    `gorm:"column:platform_identifiers;type:text"` // JSON
+	CreatedAt           time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (clientWorkspaceGuestModel) TableName() string { return "client_workspace_guests" }
+
 // --- Repository Implementation ---
 
 type WorkspaceGormRepository struct {
@@ -100,6 +134,9 @@ func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
 		&channelModel{},
 		&accessRuleModel{},
 		&scheduledPostModel{},
+		&clientWorkspaceModel{},
+		&clientWorkspaceChannelModel{},
+		&clientWorkspaceGuestModel{},
 	)
 }
 
@@ -163,6 +200,18 @@ func (r *WorkspaceGormRepository) GetChannel(ctx context.Context, channelID stri
 func (r *WorkspaceGormRepository) ListChannels(ctx context.Context, workspaceID string) ([]channel.Channel, error) {
 	var models []channelModel
 	if err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	res := make([]channel.Channel, len(models))
+	for i, m := range models {
+		res[i] = fromChannelModel(m)
+	}
+	return res, nil
+}
+
+func (r *WorkspaceGormRepository) ListChannelsByOwnerID(ctx context.Context, ownerID string) ([]channel.Channel, error) {
+	var models []channelModel
+	if err := r.db.WithContext(ctx).Where("owner_id = ?", ownerID).Find(&models).Error; err != nil {
 		return nil, err
 	}
 	res := make([]channel.Channel, len(models))
@@ -315,6 +364,141 @@ func (r *WorkspaceGormRepository) CountPendingScheduledPosts(ctx context.Context
 	return count, err
 }
 
+// Client Workspace CRUD
+
+func (r *WorkspaceGormRepository) CreateClientWorkspace(ctx context.Context, ws workspace.ClientWorkspace) error {
+	m := toClientWorkspaceModel(ws)
+	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+func (r *WorkspaceGormRepository) GetClientWorkspace(ctx context.Context, id string) (workspace.ClientWorkspace, error) {
+	var m clientWorkspaceModel
+	if err := r.db.WithContext(ctx).First(&m, "id = ?", id).Error; err != nil {
+		return workspace.ClientWorkspace{}, err
+	}
+	return fromClientWorkspaceModel(m), nil
+}
+
+func (r *WorkspaceGormRepository) ListClientWorkspaces(ctx context.Context, ownerID string) ([]workspace.ClientWorkspace, error) {
+	var models []clientWorkspaceModel
+	if err := r.db.WithContext(ctx).Where("owner_id = ?", ownerID).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	res := make([]workspace.ClientWorkspace, len(models))
+	for i, m := range models {
+		res[i] = fromClientWorkspaceModel(m)
+	}
+	return res, nil
+}
+
+func (r *WorkspaceGormRepository) UpdateClientWorkspace(ctx context.Context, ws workspace.ClientWorkspace) error {
+	m := toClientWorkspaceModel(ws)
+	return r.db.WithContext(ctx).Save(&m).Error
+}
+
+func (r *WorkspaceGormRepository) DeleteClientWorkspace(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clean up links and guests first? Or let DB cascades handle it if configured.
+		// Manual cleanup to be safe:
+		if err := tx.Where("client_workspace_id = ?", id).Delete(&clientWorkspaceChannelModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("client_workspace_id = ?", id).Delete(&clientWorkspaceGuestModel{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&clientWorkspaceModel{}, "id = ?", id).Error
+	})
+}
+
+// Client Workspace Channels
+
+func (r *WorkspaceGormRepository) LinkChannelToClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	var count int64
+	r.db.WithContext(ctx).Model(&clientWorkspaceChannelModel{}).
+		Where("client_workspace_id = ? AND channel_id = ?", workspaceID, channelID).
+		Count(&count)
+	if count > 0 {
+		return nil // Already linked, no error
+	}
+
+	m := clientWorkspaceChannelModel{
+		ClientWorkspaceID: workspaceID,
+		ChannelID:         channelID,
+		CreatedAt:         time.Now(),
+	}
+	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+func (r *WorkspaceGormRepository) UnlinkChannelFromClientWorkspace(ctx context.Context, workspaceID, channelID string) error {
+	return r.db.WithContext(ctx).Delete(&clientWorkspaceChannelModel{}, "client_workspace_id = ? AND channel_id = ?", workspaceID, channelID).Error
+}
+
+func (r *WorkspaceGormRepository) ListChannelsInClientWorkspace(ctx context.Context, workspaceID string) ([]channel.Channel, error) {
+	var models []channelModel
+	err := r.db.WithContext(ctx).
+		Table("channels").
+		Joins("JOIN client_workspace_channels ON client_workspace_channels.channel_id = channels.id").
+		Where("client_workspace_channels.client_workspace_id = ?", workspaceID).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]channel.Channel, len(models))
+	for i, m := range models {
+		res[i] = fromChannelModel(m)
+	}
+	return res, nil
+}
+
+// Client Workspace Guests
+
+func (r *WorkspaceGormRepository) CreateGuest(ctx context.Context, guest workspace.ClientWorkspaceGuest) error {
+	m := toClientWorkspaceGuestModel(guest)
+	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+func (r *WorkspaceGormRepository) GetGuest(ctx context.Context, id string) (workspace.ClientWorkspaceGuest, error) {
+	var m clientWorkspaceGuestModel
+	if err := r.db.WithContext(ctx).First(&m, "id = ?", id).Error; err != nil {
+		return workspace.ClientWorkspaceGuest{}, err
+	}
+	return fromClientWorkspaceGuestModel(m), nil
+}
+
+func (r *WorkspaceGormRepository) ListGuestsInClientWorkspace(ctx context.Context, workspaceID string) ([]workspace.ClientWorkspaceGuest, error) {
+	var models []clientWorkspaceGuestModel
+	if err := r.db.WithContext(ctx).Where("client_workspace_id = ?", workspaceID).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	res := make([]workspace.ClientWorkspaceGuest, len(models))
+	for i, m := range models {
+		res[i] = fromClientWorkspaceGuestModel(m)
+	}
+	return res, nil
+}
+
+func (r *WorkspaceGormRepository) UpdateGuest(ctx context.Context, guest workspace.ClientWorkspaceGuest) error {
+	m := toClientWorkspaceGuestModel(guest)
+	return r.db.WithContext(ctx).Save(&m).Error
+}
+
+func (r *WorkspaceGormRepository) DeleteGuest(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Delete(&clientWorkspaceGuestModel{}, "id = ?", id).Error
+}
+
+func (r *WorkspaceGormRepository) ListGuestsByOwnerID(ctx context.Context, ownerID string) ([]workspace.ClientWorkspaceGuest, error) {
+	var models []clientWorkspaceGuestModel
+	if err := r.db.WithContext(ctx).Where("owner_id = ?", ownerID).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	res := make([]workspace.ClientWorkspaceGuest, len(models))
+	for i, m := range models {
+		res[i] = fromClientWorkspaceGuestModel(m)
+	}
+	return res, nil
+}
+
 // --- Mappers ---
 
 func toWorkspaceModel(ws workspace.Workspace) workspaceModel {
@@ -374,6 +558,7 @@ func toChannelModel(ch channel.Channel) channelModel {
 	return channelModel{
 		ID:              ch.ID,
 		WorkspaceID:     ch.WorkspaceID,
+		OwnerID:         sql.NullString{String: ch.OwnerID, Valid: ch.OwnerID != ""},
 		Type:            string(ch.Type),
 		Name:            ch.Name,
 		Enabled:         ch.Enabled,
@@ -406,6 +591,7 @@ func fromChannelModel(m channelModel) channel.Channel {
 	return channel.Channel{
 		ID:              m.ID,
 		WorkspaceID:     m.WorkspaceID,
+		OwnerID:         nullStringValue(m.OwnerID),
 		Type:            channel.ChannelType(m.Type),
 		Name:            m.Name,
 		Enabled:         m.Enabled,
@@ -490,4 +676,57 @@ func nullStringValue(ns sql.NullString) string {
 		return ""
 	}
 	return strings.TrimSpace(ns.String)
+}
+
+func toClientWorkspaceModel(ws workspace.ClientWorkspace) clientWorkspaceModel {
+	return clientWorkspaceModel{
+		ID:          ws.ID,
+		OwnerID:     ws.OwnerID,
+		Name:        ws.Name,
+		Description: sql.NullString{String: ws.Description, Valid: ws.Description != ""},
+		CreatedAt:   ws.CreatedAt,
+		UpdatedAt:   ws.UpdatedAt,
+	}
+}
+
+func fromClientWorkspaceModel(m clientWorkspaceModel) workspace.ClientWorkspace {
+	return workspace.ClientWorkspace{
+		ID:          m.ID,
+		OwnerID:     m.OwnerID,
+		Name:        m.Name,
+		Description: nullStringValue(m.Description),
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
+	}
+}
+
+func toClientWorkspaceGuestModel(g workspace.ClientWorkspaceGuest) clientWorkspaceGuestModel {
+	idents, _ := json.Marshal(g.PlatformIdentifiers)
+	return clientWorkspaceGuestModel{
+		ID:                  g.ID,
+		OwnerID:             g.OwnerID,
+		ClientWorkspaceID:   g.ClientWorkspaceID,
+		Name:                g.Name,
+		BotID:               g.BotID,
+		BotTemplateID:       g.BotTemplateID,
+		PlatformIdentifiers: string(idents),
+		CreatedAt:           g.CreatedAt,
+		UpdatedAt:           g.UpdatedAt,
+	}
+}
+
+func fromClientWorkspaceGuestModel(m clientWorkspaceGuestModel) workspace.ClientWorkspaceGuest {
+	var idents workspace.PlatformIdentifiers
+	_ = json.Unmarshal([]byte(m.PlatformIdentifiers), &idents)
+	return workspace.ClientWorkspaceGuest{
+		ID:                  m.ID,
+		OwnerID:             m.OwnerID,
+		ClientWorkspaceID:   m.ClientWorkspaceID,
+		Name:                m.Name,
+		BotID:               m.BotID,
+		BotTemplateID:       m.BotTemplateID,
+		PlatformIdentifiers: idents,
+		CreatedAt:           m.CreatedAt,
+		UpdatedAt:           m.UpdatedAt,
+	}
 }

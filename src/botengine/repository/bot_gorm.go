@@ -23,19 +23,20 @@ type botModel struct {
 	Model                string
 	SystemPrompt         string
 	KnowledgeBase        string
-	AudioEnabled         bool           `gorm:"column:audio_enabled;not null;default:false"`
-	ImageEnabled         bool           `gorm:"column:image_enabled;not null;default:false"`
-	VideoEnabled         bool           `gorm:"column:video_enabled;not null;default:false"`
-	DocumentEnabled      bool           `gorm:"column:document_enabled;not null;default:false"`
-	MemoryEnabled        bool           `gorm:"column:memory_enabled;not null;default:false"`
-	MindsetModel         sql.NullString `gorm:"column:mindset_model"`
-	MultimodalModel      sql.NullString `gorm:"column:multimodal_model"`
-	CredentialID         sql.NullString `gorm:"column:credential_id"`
-	ChatwootCredentialID sql.NullString `gorm:"column:chatwoot_credential_id"`
-	ChatwootBotToken     sql.NullString `gorm:"column:chatwoot_bot_token"`
-	Whitelist            sql.NullString `gorm:"column:whitelist"` // CSV string
-	CreatedAt            time.Time      `gorm:"autoCreateTime"`
-	UpdatedAt            time.Time      `gorm:"autoUpdateTime"`
+	AudioEnabled         bool                            `gorm:"column:audio_enabled;not null;default:false"`
+	ImageEnabled         bool                            `gorm:"column:image_enabled;not null;default:false"`
+	VideoEnabled         bool                            `gorm:"column:video_enabled;not null;default:false"`
+	DocumentEnabled      bool                            `gorm:"column:document_enabled;not null;default:false"`
+	MemoryEnabled        bool                            `gorm:"column:memory_enabled;not null;default:false"`
+	MindsetModel         sql.NullString                  `gorm:"column:mindset_model"`
+	MultimodalModel      sql.NullString                  `gorm:"column:multimodal_model"`
+	CredentialID         sql.NullString                  `gorm:"column:credential_id"`
+	ChatwootCredentialID sql.NullString                  `gorm:"column:chatwoot_credential_id"`
+	ChatwootBotToken     sql.NullString                  `gorm:"column:chatwoot_bot_token"`
+	Whitelist            sql.NullString                  `gorm:"column:whitelist"` // CSV string
+	Variants             map[string]domainBot.BotVariant `gorm:"serializer:json"`
+	CreatedAt            time.Time                       `gorm:"autoCreateTime"`
+	UpdatedAt            time.Time                       `gorm:"autoUpdateTime"`
 }
 
 // TableName especifica el nombre de la tabla para GORM.
@@ -126,6 +127,7 @@ func toBotModel(b domainBot.Bot) botModel {
 		ChatwootCredentialID: sql.NullString{String: b.ChatwootCredentialID, Valid: b.ChatwootCredentialID != ""},
 		ChatwootBotToken:     sql.NullString{String: b.ChatwootBotToken, Valid: b.ChatwootBotToken != ""},
 		Whitelist:            sql.NullString{String: strings.Join(b.Whitelist, ","), Valid: len(b.Whitelist) > 0},
+		Variants:             b.Variants,
 	}
 }
 
@@ -157,6 +159,7 @@ func fromBotModel(m botModel) domainBot.Bot {
 		ChatwootCredentialID: nullStringValue(m.ChatwootCredentialID),
 		ChatwootBotToken:     nullStringValue(m.ChatwootBotToken),
 		Whitelist:            whitelist,
+		Variants:             m.Variants,
 	}
 }
 
