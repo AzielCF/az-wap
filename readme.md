@@ -5,7 +5,7 @@
   <img src="src/frontend/src/assets/azwap.svg" alt="Az-Wap Logo" width="200" height="200">
 
 # AZ-WAP Enterprise v2.0 BETA
-### High-Performance AI-Driven WhatsApp Orchestration Engine
+### High-Performance Multi-Channel AI Orchestration Engine
 
 [![Release](https://img.shields.io/github/v/release/AzielCF/az-wap?style=for-the-badge&color=7C3AED)](https://github.com/AzielCF/az-wap/releases)
 [![Build Status](https://github.com/AzielCF/az-wap/actions/workflows/build-docker-image.yaml/badge.svg?style=for-the-badge)](https://github.com/AzielCF/az-wap/actions)
@@ -16,7 +16,7 @@
 
 
 
-**AZ-WAP** is a next-generation, enterprise-grade WhatsApp Web API gateway engineered for massive scale, multi-tenant orchestration, and sovereign AI integration. Built on a strict **Hexagonal Architecture**, it enables businesses to handle hundreds of concurrent WhatsApp sessions with absolute stability and AI intelligence.
+**AZ-WAP** is a next-generation, enterprise-grade **multi-channel AI orchestration engine**. While currently optimized as a high-performance WhatsApp gateway, it is engineered for massive scale, multi-tenant management, and sovereign AI integration across multiple communication networks. Built on a strict **Hexagonal Architecture**, it enables businesses to handle hundreds of concurrent interaction nodes with absolute stability and AI intelligence.
 
 </div>
 
@@ -28,7 +28,7 @@
 > **AZ-WAP** is under constant development. Our mission is to build the most advanced AI agent system for personal assistants and professional use cases across multiple environments.
 
 ### The Objective:
-Our goal is to transcend simple messaging. We are crafting a highly sophisticated AI ecosystem that learns, remembers, and acts as a true personal assistant. While WhatsApp is our primary channel today, we are not limited by it. We are progressively moving towards a **multi-channel engine**, implementing more networks and interaction environments to become a universal AI orchestration layer.
+Our goal is to transcend simple messaging. We are crafting a highly sophisticated, **channel-agnostic AI ecosystem** that learns, remembers, and acts as a true autonomous assistant. While WhatsApp is our primary production channel today, AZ-WAP is engineered to be a universal orchestration layer, progressively expanding into other networks and interaction environments.
 
 ---
 
@@ -49,14 +49,18 @@ Our goal is to transcend simple messaging. We are crafting a highly sophisticate
 
 ## ✨ Key Features
 
-- **High-Scale Concurrency**: Run hundreds of independent WhatsApp nodes using a centralized worker-pool architecture.
-- **Autonomous AI Agents**: Integrated with Gemini, OpenAI, and Anthropic. Supports advanced **Tool-Calling** and **Multimodal Context**.
-- **Human-Like Simulation**: Advanced presence logic including randomized typing indicators, voice recording simulation, and smart hibernation to prevent account bans.
-- **Enterprise Dashboard**: A premium Vue 3 + DaisyUI interface for real-time orchestration of all nodes and clients.
-- **Multi-Tenant SaaS Ready**: Built-in system for managing clients, subscriptions, and granular capability toggles.
-- **Native Chatwoot Sync**: Bi-directional communication for enterprise customer support workflows.
-- **Persistent Memory**: Shared, searchable AI memory across all chat sessions.
-- **Model Context Protocol (MCP)**: Use AZ-WAP as an MCP server to provide WhatsApp capabilities to other AI agents.
+- **Hybrid State Management**: High-performance architecture that utilizes **Valkey Engine** (Redis-compatible) for distributed session management and presence. If Valkey is unavailable, the system automatically falls back to **Native Server RAM**, ensuring zero-downtime and ultra-low latency for single-node deployments.
+- **Bot Variants & Granular Scoping**: Assign specific bot profiles (Staff, Guest, Business) per client. Each variant defines its own allowed tools, system prompts, and capability flags (Audio, Vision, Memory).
+- **Privacy & Audit Modes**:
+    - **Safe Mode**: Messages and session content are kept strictly private and invisible to system administrators when `AccessModePrivate` is enabled.
+    - **Tester Mode**: Specialized `IsTester` flag for development environments, enabling full log auditing and un-redacted AI traces for debugging.
+- **Enterprise Multi-Tenant Isolation**: Built from the ground up for SaaS. Features Attribute-Based Access Control (ABAC), decoupled workspaces, custom capability toggles per client, and strict data siloing.
+- **Standalone Passwordless Client Portal**: A dedicated environment for end-clients to manage their own Workspaces, view their analytics, and control their WhatsApp lines securely using **Magic Links** and isolated **JWT** authentication—keeping the main admin core unreachable.
+- **Autonomous Sovereign Agents**: Natively integrated with Gemini, OpenAI, and Anthropic. The AI ecosystem supports complex **Tool-Calling** schemas, stateful memory persistence across sessions, and distinct customizable **Bot Variants**.
+- **Human-Like Simulation**: Advanced presence logic including randomized typing indicators, audio-recording simulations, and smart connection hibernation to drastically reduce the risk of WhatsApp bans in cold campaigns.
+- **Premium Admin Command Center**: A master unified Vue 3 + DaisyUI dashboard to orchestrate the entire platform in real-time. Create accounts, toggle permissions, force-logout lines remotely, and monitor global AI traces.
+- **Native Chatwoot Synchronization**: Bi-directional communication architecture designed for seamless handoffs between AI agents and human enterprise customer support workflows.
+- **Model Context Protocol (MCP)**: Run AZ-WAP as an authorized MCP server, instantly granting physical WhatsApp and bot-configuration capabilities to external AI ecosystems.
 
 ---
 
@@ -65,10 +69,11 @@ Our goal is to transcend simple messaging. We are crafting a highly sophisticate
 AZ-WAP is built using **Clean Hexagonal Architecture**, ensuring the business logic remains pure and decoupled from external drivers.
 
 ### Core Layers:
-1.  **Domain**: Contains the pure business logic, entities (Bot, Workspace, Client), and port interfaces.
+1.  **Domain**: Contains the pure business logic, entities (Bot, Workspace, Client, PortalAccount), and port interfaces.
 2.  **Application (Use Cases)**: Orchestrates the flow of data between the Domain and Infrastructure.
 3.  **Infrastructure (Adapters)**:
     *   **WhatsApp Adapter**: High-availability driver built on `whatsmeow`.
+    *   **State Engine (Hybrid)**: Centralized state management using **Valkey** (distributed/Redis-compatible) with an automatic **Local RAM** fallback for standalone deployments.
     *   **AI Providers**: Dynamic adapters for Gemini, VertexAI, etc.
     *   **Persistence**: Repository implementations for SQLite and PostgreSQL.
     *   **REST/MCP Adapters**: Interface layers for external communication.
@@ -87,22 +92,19 @@ AZ-WAP includes a robust multi-tenant infrastructure designed to scale. The syst
 
 ---
 
-## 🤖 Advanced AI Bot Engine
+## 🛠️ Native Toolset & AI Intelligence
 
-The engine transforms simple chat sessions into **Sovereign Agents**.
+AZ-WAP exposes a suite of optimized native tools that the AI can invoke to interact with the real world:
 
-### Proactive Mental State
-The AI doesn't just respond; it thinks. It analyzes the conversation flow to determine if it should:
-- Record a voice note (Audio Generation).
-- Use a tool (Query database, fetch web data).
-- Save a memory (Update user profile).
-- Ack a complex task ("I'm working on that...").
+- **Financial Tool (`exchange_rate_tool`)**: Real-time currency conversion with support for global Fiat currencies.
+- **Smart Scheduler (`reminder_tool`)**: Advanced scheduling engine for tasks and notifications with relative time parsing (e.g., "remind me in 2 hours") and recurrence support.
+- **Resource Analytics (`analyze_resource`)**: Contextual processing of documents, links, and media shared within sessions.
+- **Group Management (`group_tool`)**: Administrative control over WhatsApp groups (members, settings, and metadata).
+- **Newsletter Engine (`newsletter_tool`)**: Control over scheduled broadcast posts and large-scale delivery management.
+- **External Extension (**MCP Servers**)**: Native support for **Model Context Protocol**, allowing the system to consume external AI tools and APIs securely.
 
-### Multimodal Intelligence
-Supports native analysis of:
-- **Images & Videos**: Real-time object and context recognition.
-- **Documents**: PDF/Text extraction and semantic search.
-- **Audio**: Whisper-powered transcription and HSL-controlled voice output.
+### Proactive Decision Making
+The AI doesn't just respond; it analyzes the conversation flow to determine if it should trigger a tool, record a voice note, or save a memory to the persistent profile. Its multimodal core allows for real-time analysis of Images, Videos, and Documents.
 
 ---
 
@@ -112,6 +114,7 @@ Supports native analysis of:
 - **Go 1.24+** (Modern Go features required)
 - **Node.js 20+** & **Bun** (Frontend package manager)
 - **FFmpeg** (Required for media conversion)
+- **Valkey / Redis** (Required for distributed state and session management)
 - **SQLite / PostgreSQL**
 
 ### Backend Setup
@@ -136,16 +139,34 @@ Copy `.env.example` to `.env` inside the `src` folder and configure your keys.
 
 ## ⚙️ Configuration Manual
 
-| Variable | Type | Description |
-| :--- | :--- | :--- |
-| `APP_PORT` | `int` | The main listener port (Default: 3000). |
-| `DB_URI` | `string` | Main DB (Example: `postgres://user:pass@host:5432/db`). |
-| `APP_BASIC_AUTH` | `string` | Dashboard credentials (`user:pass`). |
-| `WHATSAPP_AUTO_REPLY` | `string` | Global welcome message for new sessions. |
-| `WHATSAPP_WEBHOOK` | `url` | CSV list of URLs for event notifications. |
-| `GEMINI_API_KEY` | `string` | Main AI provider key. |
+AZ-WAP exposes a highly configurable environment. Use the `.env.example` as your baseline. Below are the critical subsets:
 
----
+### 1. Application Core & Security
+| Variable | Description |
+| :--- | :--- |
+| `APP_PORT` | The main listener port (Default: `3000`). |
+| `APP_BASIC_AUTH` | Master dashboard credentials (e.g., `user1:pass1,user2:pass2`). |
+| `APP_CORS_ALLOWED_ORIGINS` | Comma-separated list for strict CORS policies. |
+| `APP_TRUSTED_PROXIES` | Define trusted network proxies (e.g., `0.0.0.0/0`) for accurate IP resolution behind Nginx/Cloudflare. |
+
+### 2. Databases & State Engines
+| Variable | Description |
+| :--- | :--- |
+| `DB_URI` | URI for the main relational database (SQLite/PostgreSQL). |
+| `DB_KEYS_URI` | Separate database exclusively for cryptographic keys and WhatsApp session metadata. |
+| `VALKEY_ENABLED` | Flag (`true`/`false`) to activate the distributed Valkey engine. |
+| `VALKEY_ADDRESS` | Network address for your Valkey/Redis cluster (e.g., `localhost:6379`). |
+
+### 3. Portal & Client Access
+| Variable | Description |
+| :--- | :--- |
+| `PORTAL_INTERNAL_KEY` | Master key allowing internal bots to securely generate Magic Links for clients. |
+| `PORTAL_JWT_SECRET` | A completely isolated secret specifically for signing Client Portal session tokens. |
+
+### 4. Hardware Integrations (WhatsApp)
+| Variable | Description |
+| :--- | :--- |
+| `WHATSAPP_ACCOUNT_VALIDATION` | Toggles strict validation checks on WhatsApp business profiles upon connection. |
 
 ## 📂 Project Structure
 
@@ -155,10 +176,11 @@ az-wap/
 ├── src/                # Core implementation
 │   ├── botengine/      # AI Intelligence Layer (Hexagonal)
 │   ├── workspace/      # Session Management (Hexagonal)
-│   ├── clients/        # Multi-tenant Management
-│   ├── infrastructure/ # External Adapters (WA, DB, API)
+│   ├── clients/        # Multi-tenant Administration
+│   ├── clients_portal/ # Passwordless Client Portal (Hexagonal)
+│   ├── infrastructure/ # External Adapters (WA, DB, Valkey)
 │   ├── domains/        # Shared Business Entities
-│   ├── frontend/       # Enterprise Vue 3 Dashboard
+│   ├── frontend/       # Enterprise Vue 3 Admin Dashboard
 │   └── main.go         # Application Entry Point
 ├── docker/             # Containerization assets
 └── LICENSE             # Dual-License Agreement
