@@ -451,12 +451,44 @@ func (h *WorkspaceHandler) GetWhatsAppStatus(c *fiber.Ctx) error {
 		_ = h.uc.UpdateChannel(c.Context(), ch)
 	}
 
+	phone := ""
+	if err == nil && ch.Type == channel.ChannelTypeWhatsApp {
+		ext := ch.ExternalRef
+		if strings.Contains(ext, ":") {
+			ext = strings.Split(ext, ":")[0]
+		}
+		if strings.Contains(ext, "@") {
+			ext = strings.Split(ext, "@")[0]
+		}
+
+		if ext != "" && !strings.Contains(ext, "-") && len(ext) > 5 && len(ext) <= 20 {
+			phone = ext
+		} else {
+			if p, ok := ch.Config.Settings["phone"].(string); ok {
+				phone = p
+			}
+		}
+	}
+
+	if phone == "" && isConnected {
+		if me, err := adapter.GetMe(); err == nil && me.JID != "" {
+			jid := me.JID
+			if strings.Contains(jid, ":") {
+				jid = strings.Split(jid, ":")[0]
+			}
+			phone = strings.Split(jid, "@")[0]
+			ch.ExternalRef = phone
+			_ = h.uc.UpdateChannel(c.Context(), ch)
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"is_connected":   isConnected,
 		"is_logged_in":   isLoggedIn,
 		"is_hibernating": isHibernating,
 		"status":         status,
 		"channel_id":     cid,
+		"phone":          phone,
 	})
 }
 

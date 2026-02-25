@@ -2,9 +2,13 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/AzielCF/az-wap/botengine/domain/bot"
 	clientsApp "github.com/AzielCF/az-wap/clients/application"
@@ -229,9 +233,12 @@ func (h *FeaturesHandler) GetOwnedChannels(c *fiber.Ctx) error {
 		Name            string  `json:"name"`
 		Type            string  `json:"type"`
 		Status          string  `json:"status"`
+		Enabled         bool    `json:"enabled"`
 		BotName         string  `json:"bot_name,omitempty"`
 		BotDescription  string  `json:"bot_description,omitempty"`
 		AccumulatedCost float64 `json:"accumulated_cost,omitempty"`
+		Phone           string  `json:"phone,omitempty"`
+		AccessMode      string  `json:"access_mode,omitempty"`
 	}
 
 	// 1. Get all active subscriptions for this client to find bot overrides
@@ -248,10 +255,12 @@ func (h *FeaturesHandler) GetOwnedChannels(c *fiber.Ctx) error {
 	var safeChannels []SafeChannel
 	for _, ch := range channels {
 		sc := SafeChannel{
-			ID:     ch.ID,
-			Name:   ch.Name,
-			Type:   string(ch.Type),
-			Status: string(ch.Status),
+			ID:         ch.ID,
+			Name:       ch.Name,
+			Type:       string(ch.Type),
+			Status:     string(ch.Status),
+			Enabled:    ch.Enabled,
+			AccessMode: string(ch.Config.AccessMode),
 		}
 
 		// 2. Determine Bot ID (Subscription override > Channel config)
@@ -266,6 +275,26 @@ func (h *FeaturesHandler) GetOwnedChannels(c *fiber.Ctx) error {
 				sc.BotDescription = b.Description
 			}
 		}
+
+		phone := ""
+		if string(ch.Type) == "whatsapp" {
+			ext := ch.ExternalRef
+			if strings.Contains(ext, ":") { // Handle multi-device suffix
+				ext = strings.Split(ext, ":")[0]
+			}
+			if strings.Contains(ext, "@") {
+				ext = strings.Split(ext, "@")[0]
+			}
+
+			if ext != "" && !strings.Contains(ext, "-") && len(ext) > 5 && len(ext) <= 20 {
+				phone = ext
+			} else {
+				if p, ok := ch.Config.Settings["phone"].(string); ok {
+					phone = p
+				}
+			}
+		}
+		sc.Phone = phone
 
 		client, err := h.clientService.GetByID(ctxStd, user.ClientID)
 		if err == nil && client.IsTester {
@@ -815,4 +844,315 @@ func (h *FeaturesHandler) DeleteGuest(c *fiber.Ctx) error {
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// --- WhatsApp Specific Channel Handlers ---
+
+func (h *FeaturesHandler) GetWhatsAppStatus(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	// Verify possession
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if !ok {
+		// If adapter not running, check DB status for a "dry" status report
+		if err == nil {
+			return c.JSON(fiber.Map{
+				"is_connected": false,
+				"is_logged_in": ch.Status == channel.ChannelStatusConnected,
+				"status":       ch.Status,
+				"channel_id":   cid,
+				"is_paused":    !ch.Enabled,
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"is_connected": false,
+			"is_logged_in": false,
+			"status":       "disconnected",
+		})
+	}
+
+	if adapter.Type() != channel.ChannelTypeWhatsApp {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "not a whatsapp channel"})
+	}
+
+	status := adapter.Status()
+	isConnected := status == channel.ChannelStatusConnected
+	isHibernating := status == channel.ChannelStatusHibernating
+	isLoggedIn := adapter.IsLoggedIn()
+
+	phone := ""
+	ext := ch.ExternalRef
+	if strings.Contains(ext, ":") {
+		ext = strings.Split(ext, ":")[0]
+	}
+	if strings.Contains(ext, "@") {
+		ext = strings.Split(ext, "@")[0]
+	}
+
+	if ext != "" && !strings.Contains(ext, "-") && len(ext) > 5 && len(ext) <= 20 {
+		phone = ext
+	} else {
+		if p, ok := ch.Config.Settings["phone"].(string); ok {
+			phone = p
+		}
+	}
+
+	if phone == "" && isConnected {
+		if me, err := adapter.GetMe(); err == nil && me.JID != "" {
+			jid := me.JID
+			if strings.Contains(jid, ":") {
+				jid = strings.Split(jid, ":")[0]
+			}
+			phone = strings.Split(jid, "@")[0]
+			ch.ExternalRef = phone
+			_ = h.wsRepo.UpdateChannel(c.Context(), ch)
+		}
+	}
+
+	// If manual sync requested and we are hibernating, try to resume
+	if c.Query("resume") == "true" && isHibernating {
+		logrus.Infof("[REST Portal] Force Status Sync: Resuming hibernated channel %s", cid)
+		_ = adapter.Resume(c.Context())
+		// Refresh status after resume
+		status = adapter.Status()
+		isConnected = status == channel.ChannelStatusConnected
+		isHibernating = status == channel.ChannelStatusHibernating
+	}
+
+	// Sync local DB if there's a discrepancy (e.g. manual DB deletion or hibernation)
+	if ch.Status != status {
+		ch.Status = status
+		_ = h.wsRepo.UpdateChannel(c.Context(), ch)
+	}
+
+	return c.JSON(fiber.Map{
+		"is_connected":   isConnected,
+		"is_logged_in":   isLoggedIn,
+		"is_hibernating": isHibernating,
+		"is_paused":      !ch.Enabled,
+		"status":         status,
+		"channel_id":     cid,
+		"phone":          phone,
+	})
+}
+
+func (h *FeaturesHandler) WhatsAppLogin(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	// Verify possession
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if !ok {
+		// Try auto-start if not running
+		if err := h.wm.StartChannel(c.Context(), cid); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": fmt.Sprintf("channel start failed: %v", err)})
+		}
+		// Try get again
+		adapter, ok = h.wm.GetAdapter(cid)
+		if !ok {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "adapter failed to initialize"})
+		}
+	}
+
+	if err := adapter.Login(c.Context()); err != nil {
+		// If already connected but we are here, something is out of sync.
+		// Forced disconnect and retry once.
+		if strings.Contains(err.Error(), "already connected") {
+			logrus.Warnf("[REST Portal] Adapter %s reports already connected, forcing reset...", cid)
+			_ = adapter.Logout(c.Context())
+			if err := adapter.Login(c.Context()); err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to reset connection: " + err.Error()})
+			}
+		} else {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
+
+	qrChan, err := adapter.GetQRChannel(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	select {
+	case code, open := <-qrChan:
+		if !open {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "qr channel closed"})
+		}
+		return c.JSON(utils.ResponseData{
+			Status:  200,
+			Code:    "SUCCESS",
+			Message: "QR Generated",
+			Results: fiber.Map{
+				"qr_link":     code,
+				"qr_duration": 60, // approximate
+			},
+		})
+	case <-c.Context().Done():
+		return c.Status(fiber.StatusRequestTimeout).JSON(fiber.Map{"error": "timeout waiting for qr"})
+	}
+}
+
+func (h *FeaturesHandler) WhatsAppLoginWithCode(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	type req struct {
+		PhoneNumber string `json:"phone_number"`
+	}
+	var r req
+	if err := c.BodyParser(&r); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+	}
+
+	if r.PhoneNumber == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "phone_number is required"})
+	}
+
+	phone := strings.ReplaceAll(r.PhoneNumber, "+", "")
+	phone = strings.ReplaceAll(phone, " ", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+	phone = strings.TrimSpace(phone)
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if !ok {
+		// Try auto-start if not running
+		if err := h.wm.StartChannel(c.Context(), cid); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": fmt.Sprintf("channel start failed: %v", err)})
+		}
+		adapter, ok = h.wm.GetAdapter(cid)
+		if !ok {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "channel adapter not available"})
+		}
+	}
+
+	code, err := adapter.LoginWithCode(c.Context(), phone)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"code":   code,
+		"status": "pairing_code_generated",
+	})
+}
+
+func (h *FeaturesHandler) WhatsAppLogout(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	logrus.Infof("[REST Portal] Logging out channel %s", cid)
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if ok {
+		if err := adapter.Logout(c.Context()); err != nil {
+			logrus.Warnf("[REST Portal] Logout failed for %s, but syncing state anyway: %v", cid, err)
+		}
+		if err := adapter.Cleanup(c.Context()); err != nil {
+			logrus.Warnf("[REST Portal] Cleanup failed for %s: %v", cid, err)
+		}
+		h.wm.UnregisterAdapter(cid)
+	} else {
+		logrus.Infof("[REST Portal] Channel %s not running, attempting to start for proper logout", cid)
+
+		if err := h.wm.StartChannel(c.Context(), cid); err == nil {
+			if adapter, ok := h.wm.GetAdapter(cid); ok {
+				if err := adapter.Logout(c.Context()); err != nil {
+					logrus.Warnf("[REST Portal] Logout failed for %s: %v", cid, err)
+				}
+				if err := adapter.Cleanup(c.Context()); err != nil {
+					logrus.Warnf("[REST Portal] Cleanup failed for %s: %v", cid, err)
+				}
+				h.wm.UnregisterAdapter(cid)
+			}
+		} else {
+			logrus.Warnf("[REST Portal] Could not start channel %s for logout, cleaning up files only: %v", cid, err)
+			waDBPath := fmt.Sprintf("storages/whatsapp-%s.db", cid)
+			waFiles := []string{waDBPath, waDBPath + "-shm", waDBPath + "-wal"}
+			for _, f := range waFiles {
+				if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+					logrus.Warnf("[REST Portal] Failed to remove %s: %v", f, err)
+				}
+			}
+		}
+	}
+
+	// Update DB status
+	ch.Status = channel.ChannelStatusDisconnected
+	_ = h.wsRepo.UpdateChannel(c.Context(), ch)
+
+	return c.JSON(fiber.Map{"status": "logged_out"})
+}
+
+func (h *FeaturesHandler) EnableChannel(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	if err := h.wsUc.EnableChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := h.wm.StartChannel(c.Context(), cid); err != nil {
+		logrus.WithError(err).Warn("[REST Portal] Failed to start channel in manager after enabling")
+	}
+	return c.JSON(fiber.Map{"status": "enabled"})
+}
+
+func (h *FeaturesHandler) DisableChannel(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*portalDomain.PortalUser)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	cid := c.Params("cid")
+	ch, err := h.wsRepo.GetChannel(c.Context(), cid)
+	if err != nil || ch.OwnerID != user.ClientID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	if err := h.wsUc.DisableChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	h.wm.UnregisterAdapter(cid)
+	return c.JSON(fiber.Map{"status": "disabled"})
 }

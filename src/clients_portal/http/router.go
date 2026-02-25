@@ -54,6 +54,15 @@ func RegisterPortalRoutes(
 	// Edit Channel
 	protected.Put("/owned-channels/:cid/name", featuresHandler.UpdateChannelName)
 
+	// WhatsApp Channel Controls
+	protected.Get("/owned-channels/:cid/whatsapp/status", featuresHandler.GetWhatsAppStatus)
+	protected.Get("/owned-channels/:cid/whatsapp/login", featuresHandler.WhatsAppLogin)
+	protected.Post("/owned-channels/:cid/whatsapp/login-code", featuresHandler.WhatsAppLoginWithCode)
+	protected.Get("/owned-channels/:cid/whatsapp/logout", featuresHandler.WhatsAppLogout)
+
+	protected.Post("/owned-channels/:cid/enable", featuresHandler.EnableChannel)
+	protected.Post("/owned-channels/:cid/disable", featuresHandler.DisableChannel)
+
 	// Workspace Management (ABAC restricted)
 	protected.Get("/workspaces", featuresHandler.ListWorkspaces)
 	protected.Get("/workspaces/:wid/channels", featuresHandler.ListWorkspaceChannels)
