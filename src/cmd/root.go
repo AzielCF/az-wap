@@ -73,12 +73,13 @@ import (
 	healthApp "github.com/AzielCF/az-wap/core/common/health/application"
 	healthInfra "github.com/AzielCF/az-wap/core/common/health/infrastructure"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
-	whatsappadapter "github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp/adapter"
-	"github.com/AzielCF/az-wap/workspace/infrastructure/chatwoot"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
+	"github.com/AzielCF/az-wap/workspace/infrastructure/chatwoot"
 	workspaceInfra "github.com/AzielCF/az-wap/workspace/infrastructure/rest"
+	"github.com/AzielCF/az-wap/workspace/infrastructure/telegram"
+	whatsappadapter "github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	workspaceUsecaseLayer "github.com/AzielCF/az-wap/workspace/usecase"
 
@@ -106,8 +107,8 @@ import (
 	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
 	portalFeatures "github.com/AzielCF/az-wap/clients_portal/features/infrastructure"
 	clientPortalHTTP "github.com/AzielCF/az-wap/clients_portal/http"
-	"github.com/AzielCF/az-wap/core/pkg/rest/middleware"
 	"github.com/AzielCF/az-wap/core/infrastructure/websocket"
+	"github.com/AzielCF/az-wap/core/pkg/rest/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -546,6 +547,16 @@ func initApp() {
 			return nil, fmt.Errorf("channel_id or workspace_id missing in channel settings")
 		}
 		return whatsappadapter.NewAdapter(channelID, workspaceID, instanceID, nil, workspaceManager), nil
+	})
+
+	workspaceManager.RegisterFactory(channel.ChannelTypeTelegram, func(conf channel.ChannelConfig) (channel.ChannelAdapter, error) {
+		channelID, _ := conf.Settings["channel_id"].(string)
+		workspaceID, _ := conf.Settings["workspace_id"].(string)
+		token, _ := conf.Settings["token"].(string)
+		if channelID == "" || workspaceID == "" || token == "" {
+			return nil, fmt.Errorf("channel_id, workspace_id or token missing in channel settings")
+		}
+		return telegram.NewAdapter(channelID, workspaceID, token, workspaceManager), nil
 	})
 
 	// 6. Post-initialization
