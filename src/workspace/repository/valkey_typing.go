@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 )
 

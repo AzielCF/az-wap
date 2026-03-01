@@ -7,7 +7,7 @@ import (
 
 	domainClients "github.com/AzielCF/az-wap/clients/domain"
 	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/core/pkg/msgworker"
 	"github.com/AzielCF/az-wap/core/pkg/timeutils"
 	"github.com/AzielCF/az-wap/core/pkg/validations"

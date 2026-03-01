@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

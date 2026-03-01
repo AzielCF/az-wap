@@ -14,7 +14,7 @@ import (
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	clientDomain "github.com/AzielCF/az-wap/clients/domain"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/core/pkg/msgworker"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/application"

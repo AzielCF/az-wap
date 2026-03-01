@@ -10,7 +10,7 @@ import (
 	valkeylib "github.com/valkey-io/valkey-go"
 
 	"github.com/AzielCF/az-wap/botengine/domain"
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 )
 
 // ValkeyContextCacheStore implements domain.ContextCacheStore using Valkey.

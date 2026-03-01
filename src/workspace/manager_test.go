@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/workspace/application"
 	wsCommonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
 	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"

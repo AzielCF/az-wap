@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	valkeylib "github.com/valkey-io/valkey-go"
 
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/workspace/domain/session"
 	"github.com/google/uuid"
 )

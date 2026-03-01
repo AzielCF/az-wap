@@ -7,7 +7,7 @@ import (
 	"time"
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	"github.com/AzielCF/az-wap/infrastructure/whatsapp"
+	"github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"

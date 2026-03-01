@@ -7,7 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
 	valkeylib "github.com/valkey-io/valkey-go"

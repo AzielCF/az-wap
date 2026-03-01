@@ -13,7 +13,7 @@ import (
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	health "github.com/AzielCF/az-wap/core/common/health/domain"
 	domainCredential "github.com/AzielCF/az-wap/core/common/credential/domain"
-	"github.com/AzielCF/az-wap/infrastructure/valkey"
+	"github.com/AzielCF/az-wap/core/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
