@@ -60,7 +60,6 @@ Our goal is to transcend simple messaging. We are crafting a highly sophisticate
 - **Human-Like Simulation**: Advanced presence logic including randomized typing indicators, audio-recording simulations, and smart connection hibernation to drastically reduce the risk of WhatsApp bans in cold campaigns.
 - **Premium Admin Command Center**: A master unified Vue 3 + DaisyUI dashboard to orchestrate the entire platform in real-time. Create accounts, toggle permissions, force-logout lines remotely, and monitor global AI traces.
 - **Native Chatwoot Synchronization**: Bi-directional communication architecture designed for seamless handoffs between AI agents and human enterprise customer support workflows.
-- **Model Context Protocol (MCP)**: Run AZ-WAP as an authorized MCP server, instantly granting physical WhatsApp and bot-configuration capabilities to external AI ecosystems.
 
 ---
 
@@ -76,7 +75,7 @@ AZ-WAP is built using **Clean Hexagonal Architecture**, ensuring the business lo
     *   **State Engine (Hybrid)**: Centralized state management using **Valkey** (distributed/Redis-compatible) with an automatic **Local RAM** fallback for standalone deployments.
     *   **AI Providers**: Dynamic adapters for Gemini, VertexAI, etc.
     *   **Persistence**: Repository implementations for SQLite and PostgreSQL.
-    *   **REST/MCP Adapters**: Interface layers for external communication.
+    *   **REST Adapters**: Interface layers for external communication.
 
 ---
 
@@ -101,7 +100,6 @@ AZ-WAP exposes a suite of optimized native tools that the AI can invoke to inter
 - **Resource Analytics (`analyze_resource`)**: Contextual processing of documents, links, and media shared within sessions.
 - **Group Management (`group_tool`)**: Administrative control over WhatsApp groups (members, settings, and metadata).
 - **Newsletter Engine (`newsletter_tool`)**: Control over scheduled broadcast posts and large-scale delivery management.
-- **External Extension (**MCP Servers**)**: Native support for **Model Context Protocol**, allowing the system to consume external AI tools and APIs securely.
 
 ### Proactive Decision Making
 The AI doesn't just respond; it analyzes the conversation flow to determine if it should trigger a tool, record a voice note, or save a memory to the persistent profile. Its multimodal core allows for real-time analysis of Images, Videos, and Documents.
@@ -121,8 +119,8 @@ The AI doesn't just respond; it analyzes the conversation flow to determine if i
 ```bash
 cd src
 go mod tidy
-# Run in REST API mode
-go run . rest
+# Run the application
+go run .
 ```
 
 ### Frontend Setup
