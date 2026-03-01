@@ -3,7 +3,7 @@ package validations
 import (
 	"context"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

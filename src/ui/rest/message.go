@@ -2,7 +2,7 @@ package rest
 
 import (
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 

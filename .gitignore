@@ -16,7 +16,7 @@ bin
 .playwright-mcp
 .cursor/mcp.json
 planificaciones/
-az-wap.exe
+*.exe
 
 # Static Media (WhatsApp downloads)
 src/statics/workspaces/

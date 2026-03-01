@@ -11,7 +11,7 @@ import (
 	"time"
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )

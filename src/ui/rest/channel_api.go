@@ -12,7 +12,7 @@ import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	workspaceUsecase "github.com/AzielCF/az-wap/workspace/usecase"

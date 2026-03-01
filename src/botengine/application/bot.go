@@ -11,7 +11,7 @@ import (
 	coreDB "github.com/AzielCF/az-wap/core/database"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainHealth "github.com/AzielCF/az-wap/domains/health"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )

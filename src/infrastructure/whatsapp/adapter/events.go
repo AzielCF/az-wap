@@ -10,7 +10,7 @@ import (
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	waUtils "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter/utils"
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/sirupsen/logrus"

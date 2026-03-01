@@ -7,7 +7,7 @@ import (
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/dustin/go-humanize"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"

@@ -2,7 +2,7 @@ package rest
 
 import (
 	domainUser "github.com/AzielCF/az-wap/domains/user"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 

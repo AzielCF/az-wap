@@ -11,7 +11,7 @@ import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainCache "github.com/AzielCF/az-wap/domains/cache"
-	"github.com/AzielCF/az-wap/pkg/chatmedia"
+	"github.com/AzielCF/az-wap/core/pkg/chatmedia"
 	"github.com/dustin/go-humanize"
 	"github.com/sirupsen/logrus"
 )

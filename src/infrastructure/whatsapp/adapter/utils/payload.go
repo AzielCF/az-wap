@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"

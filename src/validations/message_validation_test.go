@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 )
 

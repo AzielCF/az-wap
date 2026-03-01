@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"

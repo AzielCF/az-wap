@@ -8,7 +8,7 @@ import (
 	"time"
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/pkg/crypto"
+	"github.com/AzielCF/az-wap/core/pkg/crypto"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

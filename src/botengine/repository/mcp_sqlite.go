@@ -7,7 +7,7 @@ import (
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	coreDB "github.com/AzielCF/az-wap/core/database"
-	"github.com/AzielCF/az-wap/pkg/crypto"
+	"github.com/AzielCF/az-wap/core/pkg/crypto"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 )

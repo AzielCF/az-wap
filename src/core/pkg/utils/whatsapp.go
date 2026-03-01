@@ -19,7 +19,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"go.mau.fi/whatsmeow"
 )
 

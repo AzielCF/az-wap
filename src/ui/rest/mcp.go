@@ -2,8 +2,8 @@ package rest
 
 import (
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 

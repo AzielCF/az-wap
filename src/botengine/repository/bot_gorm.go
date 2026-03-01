@@ -7,7 +7,7 @@ import (
 	"time"
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"gorm.io/gorm"
 )
 

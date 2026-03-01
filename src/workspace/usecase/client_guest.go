@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	"github.com/google/uuid"

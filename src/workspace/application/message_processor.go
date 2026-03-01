@@ -13,7 +13,7 @@ import (
 
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	commonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"

@@ -10,7 +10,7 @@ import (
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
 	"github.com/sirupsen/logrus"
 )

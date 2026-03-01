@@ -3,7 +3,7 @@ package rest
 import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )
 

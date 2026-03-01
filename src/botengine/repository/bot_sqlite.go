@@ -7,7 +7,7 @@ import (
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	coreDB "github.com/AzielCF/az-wap/core/database"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
 )

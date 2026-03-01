@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AzielCF/az-wap/pkg/chatmedia"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/chatmedia"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"

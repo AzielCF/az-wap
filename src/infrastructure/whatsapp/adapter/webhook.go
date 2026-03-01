@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 

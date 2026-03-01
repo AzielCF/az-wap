@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"go.mau.fi/whatsmeow"
 )

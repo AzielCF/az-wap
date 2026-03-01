@@ -12,8 +12,8 @@ import (
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/pkg/msgworker"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/msgworker"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/gofiber/fiber/v2"
 )

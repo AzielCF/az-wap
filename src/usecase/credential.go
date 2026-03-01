@@ -8,7 +8,7 @@ import (
 	"time"
 
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/genai"

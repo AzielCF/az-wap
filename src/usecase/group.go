@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	pkgUtils "github.com/AzielCF/az-wap/pkg/utils"
+	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"

@@ -12,7 +12,7 @@ import (
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	clientDomain "github.com/AzielCF/az-wap/clients/domain"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	"github.com/AzielCF/az-wap/pkg/msgworker"
+	"github.com/AzielCF/az-wap/core/pkg/msgworker"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
 	"github.com/AzielCF/az-wap/workspace/domain/session"

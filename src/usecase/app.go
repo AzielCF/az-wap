@@ -10,7 +10,7 @@ import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"

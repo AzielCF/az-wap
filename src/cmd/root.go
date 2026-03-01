@@ -55,7 +55,7 @@ import (
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
 	"github.com/AzielCF/az-wap/workspace"

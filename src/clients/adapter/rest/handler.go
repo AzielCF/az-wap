@@ -3,7 +3,7 @@ package rest
 import (
 	"github.com/AzielCF/az-wap/clients/application"
 	"github.com/AzielCF/az-wap/clients/domain"
-	"github.com/AzielCF/az-wap/pkg/utils"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	wsDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
 	wsRepo "github.com/AzielCF/az-wap/workspace/repository"
 	wsUcase "github.com/AzielCF/az-wap/workspace/usecase"

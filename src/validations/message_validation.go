@@ -4,7 +4,7 @@ import (
 	"context"
 
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
-	pkgError "github.com/AzielCF/az-wap/pkg/error"
+	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
