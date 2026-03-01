@@ -19,10 +19,15 @@ type TelegramAdapter struct {
 	token       string
 	client      *TelegramClient
 	manager     *workspace.Manager
-	status      channel.ChannelStatus
-	config      channel.ChannelConfig
-	mu          sync.RWMutex
-	onMessage   func(message.IncomingMessage)
+
+	statusMu sync.RWMutex
+	status   channel.ChannelStatus
+	loggedIn bool
+
+	configMu sync.RWMutex
+	config   channel.ChannelConfig
+
+	onMessage func(message.IncomingMessage)
 }
 
 func NewAdapter(channelID, workspaceID, token string, manager *workspace.Manager) *TelegramAdapter {
@@ -38,43 +43,53 @@ func NewAdapter(channelID, workspaceID, token string, manager *workspace.Manager
 
 func (ta *TelegramAdapter) ID() string                { return ta.channelID }
 func (ta *TelegramAdapter) Type() channel.ChannelType { return channel.ChannelTypeTelegram }
+
 func (ta *TelegramAdapter) Status() channel.ChannelStatus {
-	ta.mu.RLock()
-	defer ta.mu.RUnlock()
+	ta.statusMu.RLock()
+	defer ta.statusMu.RUnlock()
 	return ta.status
 }
+
 func (ta *TelegramAdapter) IsLoggedIn() bool {
-	return ta.Status() == channel.ChannelStatusConnected
+	ta.statusMu.RLock()
+	defer ta.statusMu.RUnlock()
+	return ta.loggedIn
 }
 
 func (ta *TelegramAdapter) Start(ctx context.Context, config channel.ChannelConfig) error {
-	ta.mu.Lock()
+	ta.configMu.Lock()
 	ta.config = config
+	ta.configMu.Unlock()
+
+	ta.statusMu.Lock()
 	ta.status = channel.ChannelStatusPending
-	ta.mu.Unlock()
+	ta.statusMu.Unlock()
 
 	// Probar conexión
 	me, err := ta.client.GetMe(ctx)
 	if err != nil {
-		ta.mu.Lock()
+		ta.statusMu.Lock()
 		ta.status = channel.ChannelStatusError
-		ta.mu.Unlock()
-		return fmt.Errorf("failed to connect to telegram: %w", err)
+		ta.statusMu.Unlock()
+		return fmt.Errorf("failed to validate telegram token: %w", err)
 	}
 
-	logrus.Infof("[TELEGRAM] Connected as %v", me["username"])
+	username, _ := me["username"].(string)
+	logrus.Infof("[TELEGRAM] Logged in as @%s", username)
 
-	ta.mu.Lock()
+	ta.statusMu.Lock()
 	ta.status = channel.ChannelStatusConnected
-	ta.mu.Unlock()
+	ta.loggedIn = true
+	ta.statusMu.Unlock()
 
 	return nil
 }
 
 func (ta *TelegramAdapter) Stop(ctx context.Context) error {
-	ta.mu.Lock()
+	ta.statusMu.Lock()
 	ta.status = channel.ChannelStatusDisconnected
-	ta.mu.Unlock()
+	ta.loggedIn = false
+	ta.statusMu.Unlock()
 	return nil
 }
 
@@ -82,9 +97,10 @@ func (ta *TelegramAdapter) Cleanup(ctx context.Context) error                { r
 func (ta *TelegramAdapter) Hibernate(ctx context.Context) error              { return nil }
 func (ta *TelegramAdapter) Resume(ctx context.Context) error                 { return nil }
 func (ta *TelegramAdapter) SetOnline(ctx context.Context, online bool) error { return nil }
+
 func (ta *TelegramAdapter) UpdateConfig(config channel.ChannelConfig) {
-	ta.mu.Lock()
-	defer ta.mu.Unlock()
+	ta.configMu.Lock()
+	defer ta.configMu.Unlock()
 	ta.config = config
 }
 
@@ -214,6 +230,5 @@ func (ta *TelegramAdapter) ResolveIdentity(ctx context.Context, i string) (strin
 	return i, nil
 }
 func (ta *TelegramAdapter) GetMe() (common.ContactInfo, error) {
-	// Fallback para cumplir la interfaz
 	return common.ContactInfo{JID: ta.ID(), Name: "Telegram Bot"}, nil
 }
