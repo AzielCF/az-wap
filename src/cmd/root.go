@@ -78,6 +78,27 @@ import (
 	// Portal Module
 	portalAuthApp "github.com/AzielCF/az-wap/clients_portal/auth/application"
 	portalAuthRepo "github.com/AzielCF/az-wap/clients_portal/auth/repository"
+
+	// REST Logic Dependencies
+	"net/http"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
+	portalFeatures "github.com/AzielCF/az-wap/clients_portal/features/infrastructure"
+	clientPortalHTTP "github.com/AzielCF/az-wap/clients_portal/http"
+	"github.com/AzielCF/az-wap/ui/rest"
+	"github.com/AzielCF/az-wap/ui/rest/middleware"
+	"github.com/AzielCF/az-wap/ui/websocket"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 )
 
 var (
@@ -133,6 +154,165 @@ var rootCmd = &cobra.Command{
 	Short: "Send free whatsapp API",
 	Long: `This application is from clone https://az-wap, 
 you can send whatsapp over http api but your whatsapp account have to be multi device version`,
+	Run: runServer,
+}
+
+func init() {
+	// Config via coreconfig
+	cobra.OnInitialize(initApp)
+	rootCmd.Flags().String("basic-auth", "", "Basic auth for API (format: user:pass,user2:pass2)")
+}
+
+func runServer(cmd *cobra.Command, _ []string) {
+	// Override basic auth if flag is provided
+	if baFlag, _ := cmd.Flags().GetString("basic-auth"); baFlag != "" {
+		coreconfig.Global.App.BasicAuth = strings.Split(baFlag, ",")
+	}
+
+	fiberConfig := fiber.Config{
+		EnableTrustedProxyCheck: true,
+		BodyLimit:               int(coreconfig.Global.Whatsapp.MaxVideoSize),
+		Network:                 "tcp",
+		AppName:                 "Az-Wap Enterprise Engine",
+		DisableStartupMessage:   false,
+		ServerHeader:            "Hidden",
+	}
+
+	if len(coreconfig.Global.App.TrustedProxies) > 0 {
+		fiberConfig.TrustedProxies = coreconfig.Global.App.TrustedProxies
+		fiberConfig.ProxyHeader = fiber.HeaderXForwardedHost
+	}
+
+	app := fiber.New(fiberConfig)
+	app.Use(requestid.New())
+
+	origins := strings.Join(coreconfig.Global.App.CorsAllowedOrigins, ", ")
+	if !strings.Contains(origins, coreconfig.Global.App.BaseUrl) {
+		origins += ", " + coreconfig.Global.App.BaseUrl
+	}
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: origins,
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Instance-Token, X-Request-ID",
+	}))
+	app.Use(middleware.Recovery())
+
+	app.Use(helmet.New(helmet.Config{
+		XSSProtection:         "1; mode=block",
+		ContentTypeNosniff:    "nosniff",
+		XFrameOptions:         "SAMEORIGIN",
+		HSTSMaxAge:            31536000,
+		HSTSExcludeSubdomains: false,
+		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.whatsapp.net; connect-src 'self' http://localhost:* ws://localhost:*;",
+	}))
+
+	app.Use(limiter.New(limiter.Config{
+		Max:        1000,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+	}))
+
+	if coreconfig.Global.App.Debug {
+		app.Use(logger.New())
+	}
+
+	if len(coreconfig.Global.App.BasicAuth) == 0 {
+		logrus.Fatalln("APP_BASIC_AUTH is required. Set APP_BASIC_AUTH=<user>:<secret> and restart.")
+	}
+
+	account := make(map[string]string)
+	for _, basicAuth := range coreconfig.Global.App.BasicAuth {
+		ba := strings.Split(basicAuth, ":")
+		if len(ba) == 2 {
+			account[ba[0]] = ba[1]
+		}
+	}
+
+	app.Static(coreconfig.Global.App.BasePath+"/statics", "./statics")
+	apiGroup := app.Group(coreconfig.Global.App.BasePath + "/api")
+
+	apiGroup.Use(basicauth.New(basicauth.Config{
+		Users: account,
+		Next: func(c *fiber.Ctx) bool {
+			if c.Method() == fiber.MethodOptions {
+				return true
+			}
+			if strings.HasPrefix(c.Path(), coreconfig.Global.App.BasePath+"/api/portal") {
+				return true
+			}
+			return false
+		},
+	}))
+
+	// Graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		logrus.Info("[APP] Shutdown signal received, stopping...")
+		if err := app.Shutdown(); err != nil {
+			logrus.Errorf("[APP] Fiber shutdown error: %v", err)
+		}
+		StopApp()
+	}()
+
+	// Handlers
+	rest.InitRestApp(apiGroup, appUsecase)
+	rest.InitRestSend(apiGroup, sendUsecase)
+	rest.InitRestUser(apiGroup, userUsecase)
+	rest.InitRestMessage(apiGroup, messageUsecase)
+	rest.InitRestGroup(apiGroup, groupUsecase)
+	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
+	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
+	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
+	rest.InitRestCredential(apiGroup, credentialUsecase)
+	rest.InitRestCache(apiGroup, cacheUsecase)
+	rest.InitRestMCP(apiGroup, mcpUsecase)
+	rest.InitRestHealth(apiGroup, healthUsecase)
+	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
+
+	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
+	portalFeaturesHandler := portalFeatures.NewFeaturesHandler(subService, clientService, newsletterUsecase, wkRepo, botUsecase, wkUsecase, workspaceManager)
+	portalAuthMiddleware := portalAuthInfra.NewAuthMiddleware(portalAuthRepo.NewGormAuthRepository(coreDB.GlobalDB))
+
+	clientPortalHTTP.RegisterPortalRoutes(app, apiGroup, portalAuthHandler, portalFeaturesHandler, portalAuthMiddleware)
+	clientHandler.RegisterRoutes(apiGroup)
+
+	websocket.SetValkeyClient(vkClient, serverID)
+	websocket.RegisterRoutes(apiGroup, appUsecase)
+	go websocket.RunHub()
+
+	apiGroup.All("/*", func(c *fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "API Endpoint not found"})
+	})
+
+	app.Use(coreconfig.Global.App.BasePath+"/", filesystem.New(filesystem.Config{
+		Root:       http.FS(EmbedFrontend),
+		PathPrefix: "frontend/dist",
+		Browse:     false,
+		Index:      "index.html",
+	}))
+
+	app.Get(coreconfig.Global.App.BasePath+"/*", func(c *fiber.Ctx) error {
+		path := c.Path()
+		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/statics") || strings.Contains(path, ".") {
+			return c.Next()
+		}
+		file, err := EmbedFrontend.ReadFile("frontend/dist/index.html")
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).SendString("Frontend not found")
+		}
+		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
+		return c.Send(file)
+	})
+
+	if err := app.Listen(":" + coreconfig.Global.App.Port); err != nil {
+		logrus.Fatalf("[APP] Failed to start server: %v", err)
+	}
 }
 
 func init() {

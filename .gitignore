@@ -29,3 +29,6 @@ src/frontend/dist/
 src/frontend/.bun/
 .vite/
 src/frontend/node_modules/.vite/
+frontend-portal/
+planificaciones/
+src/planificaciones/

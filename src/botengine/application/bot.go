@@ -254,35 +254,58 @@ func (s *botService) resolveCredentials(ctx context.Context, b *domainBot.Bot) {
 	b.APIKey = strings.TrimSpace(b.APIKey)
 	b.CredentialID = strings.TrimSpace(b.CredentialID)
 
-	if s.credService != nil && b.CredentialID != "" {
-		// If the bot has an API Key but also a CredentialID, we log it for awareness
-		if b.APIKey != "" {
-			logrus.Debugf("[BOT] Bot %s has its own API Key, skipping global credential %s. Clear bot's API Key to use the global one.", b.ID, b.CredentialID)
-		} else {
-			logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
-			cred, err := s.credService.GetByID(ctx, b.CredentialID)
-			if err != nil {
-				// Handle case where credential record doesn't exist anymore
-				if strings.Contains(err.Error(), "not found") {
-					logrus.Warnf("[BOT] Credential %s linked to bot %s NOT FOUND in database. Falling back to other keys.", b.CredentialID, b.ID)
-				} else {
-					logrus.Errorf("[BOT] Failed to load credential %s for bot %s: %v", b.CredentialID, b.ID, err)
-				}
-			} else {
-				isAI := cred.Kind == domainCredential.KindAI ||
-					cred.Kind == domainCredential.KindGemini ||
-					cred.Kind == domainCredential.KindOpenAI ||
-					cred.Kind == domainCredential.KindClaude
-
-				if isAI && cred.AIAPIKey != "" {
-					b.APIKey = strings.TrimSpace(cred.AIAPIKey)
-					logrus.Debugf("[BOT] API Key resolved from credential %s", cred.Name)
-				} else if isAI && cred.AIAPIKey == "" {
-					logrus.Warnf("[BOT] Credential %s found but AI API Key is empty", cred.Name)
-				}
-			}
-		}
+	if s.credService == nil || b.CredentialID == "" {
+		return
 	}
+
+	// If the bot already has its own API Key, skip credential resolution
+	if b.APIKey != "" {
+		logrus.Debugf(
+			"[BOT] Bot %s has its own API Key, skipping global credential %s. Clear bot's API Key to use the global one.",
+			b.ID,
+			b.CredentialID,
+		)
+		return
+	}
+
+	logrus.Debugf("[BOT] Resolving credential %s for bot %s", b.CredentialID, b.ID)
+
+	cred, err := s.credService.GetByID(ctx, b.CredentialID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			logrus.Warnf(
+				"[BOT] Credential %s linked to bot %s NOT FOUND in database. Falling back to other keys.",
+				b.CredentialID,
+				b.ID,
+			)
+			return
+		}
+
+		logrus.Errorf(
+			"[BOT] Failed to load credential %s for bot %s: %v",
+			b.CredentialID,
+			b.ID,
+			err,
+		)
+		return
+	}
+
+	isAI := cred.Kind == domainCredential.KindAI ||
+		cred.Kind == domainCredential.KindGemini ||
+		cred.Kind == domainCredential.KindOpenAI ||
+		cred.Kind == domainCredential.KindClaude
+
+	if !isAI {
+		return
+	}
+
+	if cred.AIAPIKey == "" {
+		logrus.Warnf("[BOT] Credential %s found but AI API Key is empty", cred.Name)
+		return
+	}
+
+	b.APIKey = strings.TrimSpace(cred.AIAPIKey)
+	logrus.Debugf("[BOT] API Key resolved from credential %s", cred.Name)
 
 	// Fallback to Config Variables if still empty
 	if b.APIKey == "" {

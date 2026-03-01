@@ -9,8 +9,7 @@ This file provides guidance towhen working with code in this repository.
 ### Building and Running
 
 - **Build binary**: `cd src && go build -o whatsapp` (Linux/macOS) or `go build -o whatsapp.exe` (Windows)
-- **Run REST API mode**: `cd src && go run . rest` or `./whatsapp rest`
-- **Run MCP server mode**: `cd src && go run . mcp` or `./whatsapp mcp`
+- **Run app**: `cd src && go run .` or `./whatsapp.exe`
 - **Run with Docker**: `docker-compose up -d --build`
 
 ### Testing
@@ -27,14 +26,14 @@ This file provides guidance towhen working with code in this repository.
 
 ## Project Architecture
 
-This is a Go-based WhatsApp Web API server supporting both REST API and MCP (Model Context Protocol) modes.
+This is a Go-based WhatsApp Web API server supporting REST API and an autonomous AI Bot Engine.
 
 ### Core Architecture Pattern
 
 - **Hexagonal Architecture**: Applied in `botengine/` and `workspace/` modules with clear layer separation
 - **Domain-Driven Design**: Business logic separated into domain packages
 - **Clean Architecture**: Clear separation between domain, application, infrastructure, and repository layers
-- **Cobra CLI**: Command pattern with separate commands for `rest` and `mcp` modes
+- **Cobra CLI**: Standard command execution via root command
 
 ### Hexagonal Architecture Structure
 
@@ -51,7 +50,7 @@ module/
 ### Key Directories
 
 - `src/`: Main source code directory
-- `src/cmd/`: CLI commands (root, rest, mcp)
+- `src/cmd/`: CLI commands (root, helpers)
 - `src/botengine/`: Bot engine module (hexagonal architecture)
   - `domain/`: Bot domain entities and interfaces
   - `application/`: Bot services and use cases
@@ -67,7 +66,7 @@ module/
 - `src/domains/`: Shared business domain logic (app, chat, group, message, send, user, newsletter)
 - `src/infrastructure/`: Core external integrations (WhatsApp adapter, database)
 - `src/frontend/`: Vue.js frontend application (UI)
-- `src/usecase/`: Application use cases bridging domains and REST/MCP interfaces
+- `src/usecase/`: Application use cases bridging domains and REST interfaces
 - `src/validations/`: Input validation logic
 - `src/pkg/`: Shared utilities and helpers
 - `src/views/`: HTML templates for REST mode
@@ -84,10 +83,9 @@ module/
 - **Chat Storage**: Separate SQLite database for chat history (`storages/chatstorage.db`)
 - **Database URIs**: Configurable via `DB_URI` and `DB_KEYS_URI` environment variables
 
-### Mode-Specific Architecture
+### Primary Architecture
 
-- **REST Mode**: Fiber web server with HTML templates, WebSocket support, middleware stack
-- **MCP Mode**: Model Context Protocol server with SSE transport for AI agent integration
+- **REST Mode**: Fiber web server with HTML templates, WebSocket support, middleware stack. This is the main interface for managing workspaces and WhatsApp connections.
 
 ### Key Dependencies
 
@@ -106,7 +104,6 @@ module/
 
 ## Important Notes
 
-- The application cannot run both REST and MCP modes simultaneously (limitation from whatsmeow library)
 - All source code must be in the `src/` directory
 - Media files are stored in `src/statics/media/` and `src/storages/`
 - HTML templates and assets are embedded in the binary using Go's embed feature

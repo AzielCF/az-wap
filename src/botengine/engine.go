@@ -437,28 +437,43 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	// Pre-requisito: Mapeo de herramientas MCP e instrucciones
 	serverMap := make(map[string]string)
 	var mcpInstructions strings.Builder
-	if b.ID != "" && e.mcpUsecase != nil {
-		if servers, err := e.mcpUsecase.ListServersForBot(ctx, b.ID); err == nil {
-			// Sort servers by ID for stable prompt generation
-			sort.Slice(servers, func(i, j int) bool {
-				return servers[i].ID < servers[j].ID
-			})
-			for _, srv := range servers {
-				if srv.Enabled {
-					if srv.Instructions != "" || srv.BotInstructions != "" {
-						mcpInstructions.WriteString(fmt.Sprintf("\n\n### TOOLSET: %s", srv.Name))
-						if srv.Instructions != "" {
-							mcpInstructions.WriteString(fmt.Sprintf("\nGeneral Purpose: %s", srv.Instructions))
-						}
-						if srv.BotInstructions != "" {
-							mcpInstructions.WriteString(fmt.Sprintf("\nGuidelines: %s", srv.BotInstructions))
-						}
-					}
-					for _, t := range srv.Tools {
-						serverMap[t.Name] = srv.ID
-					}
-				}
+	if b.ID == "" || e.mcpUsecase == nil {
+		return domain.BotOutput{}, nil
+	}
+
+	servers, err := e.mcpUsecase.ListServersForBot(ctx, b.ID)
+	if err != nil {
+		return domain.BotOutput{}, err
+	}
+
+	// Sort servers by ID for stable prompt generation
+	sort.Slice(servers, func(i, j int) bool {
+		return servers[i].ID < servers[j].ID
+	})
+
+	for _, srv := range servers {
+		if !srv.Enabled {
+			continue
+		}
+
+		if srv.Instructions != "" || srv.BotInstructions != "" {
+			mcpInstructions.WriteString(fmt.Sprintf("\n\n### TOOLSET: %s", srv.Name))
+
+			if srv.Instructions != "" {
+				mcpInstructions.WriteString(
+					fmt.Sprintf("\nGeneral Purpose: %s", srv.Instructions),
+				)
 			}
+
+			if srv.BotInstructions != "" {
+				mcpInstructions.WriteString(
+					fmt.Sprintf("\nGuidelines: %s", srv.BotInstructions),
+				)
+			}
+		}
+
+		for _, t := range srv.Tools {
+			serverMap[t.Name] = srv.ID
 		}
 	}
 
