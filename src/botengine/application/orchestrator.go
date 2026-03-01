@@ -11,7 +11,7 @@ import (
 	domain "github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	"github.com/AzielCF/az-wap/pkg/botmonitor"
+	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	"github.com/sirupsen/logrus"
 )
 

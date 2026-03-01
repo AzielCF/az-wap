@@ -13,7 +13,7 @@ import (
 	"github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	"github.com/AzielCF/az-wap/botengine/infrastructure"
-	"github.com/AzielCF/az-wap/pkg/botmonitor"
+	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )

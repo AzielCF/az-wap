@@ -4,7 +4,7 @@ import (
 	"net/url"
 
 	botdomain "github.com/AzielCF/az-wap/botengine/domain"
-	"github.com/AzielCF/az-wap/pkg/botmonitor"
+	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	"github.com/gofiber/fiber/v2"
@@ -28,7 +28,7 @@ func InitRestMonitoring(app fiber.Router, store monitoring.MonitoringStore, wm *
 	g.Get("/stats", h.GetGlobalStats)
 	g.Get("/typing", h.GetTypingStatus)
 
-	// Feed de eventos (mantenemos botmonitor por ahora para el log de eventos recientes)
+	// Feed de eventos (mantenemos monitoring por ahora para el log de eventos recientes)
 	g.Get("/events", h.GetRecentEvents)
 
 	// AI Cache Inspector
@@ -63,7 +63,7 @@ func (h *MonitoringHandler) GetGlobalStats(c *fiber.Ctx) error {
 }
 
 func (h *MonitoringHandler) GetRecentEvents(c *fiber.Ctx) error {
-	// Obtenemos los eventos de botmonitor (log en vivo)
+	// Obtenemos los eventos de monitoring (log en vivo)
 	stats := botmonitor.GetStats()
 	return c.JSON(stats)
 }

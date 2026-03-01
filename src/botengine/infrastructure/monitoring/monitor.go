@@ -1,4 +1,4 @@
-package botmonitor
+package monitoring
 
 import (
 	"context"
