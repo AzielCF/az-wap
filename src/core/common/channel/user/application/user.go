@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
-	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/core/pkg/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsDomainChannel "github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/disintegration/imaging"

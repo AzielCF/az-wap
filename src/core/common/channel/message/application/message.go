@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
-	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/core/pkg/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 )

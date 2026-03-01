@@ -11,7 +11,7 @@ import (
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
-	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/core/pkg/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 )

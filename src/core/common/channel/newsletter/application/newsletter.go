@@ -10,7 +10,7 @@ import (
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 	"github.com/AzielCF/az-wap/core/pkg/msgworker"
 	"github.com/AzielCF/az-wap/core/pkg/timeutils"
-	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/core/pkg/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	wsCommonDomain "github.com/AzielCF/az-wap/workspace/domain/common"

@@ -15,6 +15,7 @@ import (
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
+	restTypes "github.com/AzielCF/az-wap/core/pkg/rest"
 	workspaceUsecase "github.com/AzielCF/az-wap/workspace/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -100,9 +101,9 @@ func (handler *ChannelHandler) UpdateAISettings(c *fiber.Ctx) error {
 	return handler.GetAISettings(c)
 }
 
-// Helper to map Channel to LegacyInstanceResponse
-func (h *ChannelHandler) mapChannelToLegacy(ch channel.Channel) LegacyInstanceResponse {
-	inst := LegacyInstanceResponse{
+// Helper to map Channel to restTypes.LegacyInstanceResponse
+func (h *ChannelHandler) mapChannelToLegacy(ch channel.Channel) restTypes.LegacyInstanceResponse {
+	inst := restTypes.LegacyInstanceResponse{
 		ID:              ch.ID,
 		Name:            ch.Name,
 		Token:           ch.ID,
@@ -171,7 +172,7 @@ func (h *ChannelHandler) mapChannelToLegacy(ch channel.Channel) LegacyInstanceRe
 }
 
 func (handler *ChannelHandler) CreateInstance(c *fiber.Ctx) error {
-	var request CreateInstanceRequest
+	var request restTypes.CreateInstanceRequest
 	if err := c.BodyParser(&request); err != nil {
 		return c.Status(400).JSON(utils.ResponseData{Status: 400, Message: err.Error()})
 	}
@@ -231,7 +232,7 @@ func (handler *ChannelHandler) ListInstances(c *fiber.Ctx) error {
 		return c.Status(500).JSON(utils.ResponseData{Status: 500, Message: err.Error()})
 	}
 
-	var results []LegacyInstanceResponse
+	var results []restTypes.LegacyInstanceResponse
 	for _, ws := range workspaces {
 		channels, err := handler.WorkspaceUsecase.ListChannels(c.UserContext(), ws.ID)
 		if err != nil {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	domainChat "github.com/AzielCF/az-wap/core/common/channel/chat/domain"
-	"github.com/AzielCF/az-wap/validations"
+	"github.com/AzielCF/az-wap/core/pkg/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/sirupsen/logrus"
 )

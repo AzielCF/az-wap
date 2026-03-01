@@ -53,6 +53,7 @@ import (
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
+	botengineInfra "github.com/AzielCF/az-wap/botengine/infrastructure/rest"
 	cacheApp "github.com/AzielCF/az-wap/core/common/cache/application"
 	cacheInfra "github.com/AzielCF/az-wap/core/common/cache/infrastructure"
 	appApp "github.com/AzielCF/az-wap/core/common/channel/app/application"
@@ -74,10 +75,10 @@ import (
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
-	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
+	workspaceInfra "github.com/AzielCF/az-wap/workspace/infrastructure/rest"
 	"github.com/AzielCF/az-wap/workspace/repository"
 	workspaceUsecaseLayer "github.com/AzielCF/az-wap/workspace/usecase"
 
@@ -105,8 +106,7 @@ import (
 	portalAuthInfra "github.com/AzielCF/az-wap/clients_portal/auth/infrastructure"
 	portalFeatures "github.com/AzielCF/az-wap/clients_portal/features/infrastructure"
 	clientPortalHTTP "github.com/AzielCF/az-wap/clients_portal/http"
-	"github.com/AzielCF/az-wap/ui/rest"
-	"github.com/AzielCF/az-wap/ui/rest/middleware"
+	"github.com/AzielCF/az-wap/core/pkg/rest/middleware"
 	"github.com/AzielCF/az-wap/ui/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
@@ -283,14 +283,14 @@ func runServer(cmd *cobra.Command, _ []string) {
 	messageInfra.InitRestMessage(apiGroup, messageUsecase)
 	groupInfra.InitRestGroup(apiGroup, groupUsecase)
 	newsletterInfra.InitRestNewsletter(apiGroup, newsletterUsecase)
-	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
-	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
+	botengineInfra.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
+	workspaceInfra.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
 	credentialInfra.InitRestCredential(apiGroup, credentialUsecase)
 	cacheInfra.InitRestCache(apiGroup, cacheUsecase)
-	rest.InitRestMCP(apiGroup, mcpUsecase)
+	botengineInfra.InitRestMCP(apiGroup, mcpUsecase)
 	healthInfra.InitRestHealth(apiGroup, healthUsecase)
-	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
-	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
+	workspaceInfra.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	botengineInfra.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
 
 	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
 	portalFeaturesHandler := portalFeatures.NewFeaturesHandler(subService, clientService, newsletterUsecase, wkRepo, botUsecase, wkUsecase, workspaceManager)
@@ -552,7 +552,7 @@ func initApp() {
 	healthUsecase = healthApp.NewHealthService(mcpUsecase, credentialUsecase, botUsecase, workspaceManager, wkUsecase, vkClient)
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
-	uiRest.SetBotEngine(botEngine, workspaceManager)
+	botengineInfra.SetBotEngine(botEngine, workspaceManager)
 
 	// Initialize Integrations
 	chatwoot.SetRepositories(wkRepo, gormDB)
