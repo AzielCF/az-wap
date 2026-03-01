@@ -9,7 +9,7 @@ import (
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	wsCommonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
 )
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/AzielCF/az-wap/botengine/domain"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
-	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	"github.com/AzielCF/az-wap/workspace"
 )
 

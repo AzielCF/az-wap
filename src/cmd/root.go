@@ -42,23 +42,29 @@ import (
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 
 	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
+	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
+	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
+	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
 	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
-	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
-	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	cacheApp "github.com/AzielCF/az-wap/core/common/cache/application"
 	cacheInfra "github.com/AzielCF/az-wap/core/common/cache/infrastructure"
+	groupApp "github.com/AzielCF/az-wap/core/common/channel/group/application"
+	groupInfra "github.com/AzielCF/az-wap/core/common/channel/group/infrastructure"
 	messageApp "github.com/AzielCF/az-wap/core/common/channel/message/application"
 	messageInfra "github.com/AzielCF/az-wap/core/common/channel/message/infrastructure"
+	newsletterApp "github.com/AzielCF/az-wap/core/common/channel/newsletter/application"
+	newsletterInfra "github.com/AzielCF/az-wap/core/common/channel/newsletter/infrastructure"
 	sendApp "github.com/AzielCF/az-wap/core/common/channel/send/application"
 	sendInfra "github.com/AzielCF/az-wap/core/common/channel/send/infrastructure"
+	userApp "github.com/AzielCF/az-wap/core/common/channel/user/application"
+	userInfra "github.com/AzielCF/az-wap/core/common/channel/user/infrastructure"
 	healthApp "github.com/AzielCF/az-wap/core/common/health/application"
 	healthInfra "github.com/AzielCF/az-wap/core/common/health/infrastructure"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
@@ -270,10 +276,10 @@ func runServer(cmd *cobra.Command, _ []string) {
 	// Handlers
 	rest.InitRestApp(apiGroup, appUsecase)
 	sendInfra.InitRestSend(apiGroup, sendUsecase)
-	rest.InitRestUser(apiGroup, userUsecase)
+	userInfra.InitRestUser(apiGroup, userUsecase)
 	messageInfra.InitRestMessage(apiGroup, messageUsecase)
-	rest.InitRestGroup(apiGroup, groupUsecase)
-	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
+	groupInfra.InitRestGroup(apiGroup, groupUsecase)
+	newsletterInfra.InitRestNewsletter(apiGroup, newsletterUsecase)
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
 	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
@@ -518,9 +524,9 @@ func initApp() {
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED
 	appUsecase = usecase.NewAppService(workspaceManager, settingsSvc)
-	userUsecase = usecase.NewUserService(workspaceManager)
-	groupUsecase = usecase.NewGroupService(workspaceManager)
-	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, subRepo, monitorStore, vkClient)
+	userUsecase = userApp.NewUserService(workspaceManager)
+	groupUsecase = groupApp.NewGroupService(workspaceManager)
+	newsletterUsecase = newsletterApp.NewNewsletterService(workspaceManager, wkRepo, subRepo, monitorStore, vkClient)
 	sendUsecase = sendApp.NewSendService(appUsecase, workspaceManager)
 	messageUsecase = messageApp.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)

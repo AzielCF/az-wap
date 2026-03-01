@@ -1,7 +1,7 @@
-package rest
+package infrastructure
 
 import (
-	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

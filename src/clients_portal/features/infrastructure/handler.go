@@ -14,7 +14,7 @@ import (
 	clientsApp "github.com/AzielCF/az-wap/clients/application"
 	clientsDomain "github.com/AzielCF/az-wap/clients/domain"
 	portalDomain "github.com/AzielCF/az-wap/clients_portal/auth/domain"
-	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
+	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"

@@ -1,7 +1,7 @@
-package rest
+package infrastructure
 
 import (
-	domainUser "github.com/AzielCF/az-wap/domains/user"
+	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

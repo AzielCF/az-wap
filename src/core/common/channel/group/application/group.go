@@ -1,10 +1,10 @@
-package usecase
+package application
 
 import (
 	"context"
 	"fmt"
 
-	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"

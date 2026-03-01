@@ -1,4 +1,4 @@
-package newsletter
+package domain
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package rest
+package infrastructure
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 	"go.mau.fi/whatsmeow"

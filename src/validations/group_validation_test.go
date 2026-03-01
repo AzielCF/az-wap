@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 	"go.mau.fi/whatsmeow"

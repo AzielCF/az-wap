@@ -1,11 +1,11 @@
-package usecase
+package application
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 
-	domainUser "github.com/AzielCF/az-wap/domains/user"
+	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsDomainChannel "github.com/AzielCF/az-wap/workspace/domain/channel"

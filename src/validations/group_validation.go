@@ -3,7 +3,7 @@ package validations
 import (
 	"context"
 
-	domainGroup "github.com/AzielCF/az-wap/domains/group"
+	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"go.mau.fi/whatsmeow"
