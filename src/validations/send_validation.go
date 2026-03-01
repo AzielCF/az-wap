@@ -6,7 +6,7 @@ import (
 	"sort"
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	domainSend "github.com/AzielCF/az-wap/domains/send"
+	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/dustin/go-humanize"
 	validation "github.com/go-ozzo/ozzo-validation/v4"

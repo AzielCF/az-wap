@@ -1,4 +1,4 @@
-package send
+package domain
 
 type PollRequest struct {
 	BaseRequest

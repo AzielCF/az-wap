@@ -1,10 +1,10 @@
-package usecase
+package application
 
 import (
 	"context"
 	"fmt"
 
-	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
 	"github.com/AzielCF/az-wap/validations"
 	"github.com/AzielCF/az-wap/workspace"
 	wsChannelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"

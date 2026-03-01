@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	domainMessage "github.com/AzielCF/az-wap/domains/message"
+	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 )

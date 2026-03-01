@@ -1,4 +1,4 @@
-package send
+package domain
 
 import (
 	"context"

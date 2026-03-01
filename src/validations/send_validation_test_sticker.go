@@ -5,7 +5,7 @@ import (
 	"mime/multipart"
 	"testing"
 
-	domainSend "github.com/AzielCF/az-wap/domains/send"
+	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/stretchr/testify/assert"
 )

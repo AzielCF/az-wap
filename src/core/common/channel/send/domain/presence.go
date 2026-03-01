@@ -1,4 +1,4 @@
-package send
+package domain
 
 type PresenceRequest struct {
 	Type        string `json:"type" form:"type"`

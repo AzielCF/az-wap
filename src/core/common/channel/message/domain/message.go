@@ -1,4 +1,4 @@
-package message
+package domain
 
 type GenericResponse struct {
 	MessageID string `json:"message_id"`

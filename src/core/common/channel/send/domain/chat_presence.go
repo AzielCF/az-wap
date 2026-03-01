@@ -1,4 +1,4 @@
-package send
+package domain
 
 // ChatPresenceRequest represents a request to send chat presence (typing indicator)
 type ChatPresenceRequest struct {

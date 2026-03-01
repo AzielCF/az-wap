@@ -42,19 +42,23 @@ import (
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 
 	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
+	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
+	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	domainMessage "github.com/AzielCF/az-wap/domains/message"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
-	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	cacheApp "github.com/AzielCF/az-wap/core/common/cache/application"
 	cacheInfra "github.com/AzielCF/az-wap/core/common/cache/infrastructure"
+	messageApp "github.com/AzielCF/az-wap/core/common/channel/message/application"
+	messageInfra "github.com/AzielCF/az-wap/core/common/channel/message/infrastructure"
+	sendApp "github.com/AzielCF/az-wap/core/common/channel/send/application"
+	sendInfra "github.com/AzielCF/az-wap/core/common/channel/send/infrastructure"
 	healthApp "github.com/AzielCF/az-wap/core/common/health/application"
 	healthInfra "github.com/AzielCF/az-wap/core/common/health/infrastructure"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
@@ -265,9 +269,9 @@ func runServer(cmd *cobra.Command, _ []string) {
 
 	// Handlers
 	rest.InitRestApp(apiGroup, appUsecase)
-	rest.InitRestSend(apiGroup, sendUsecase)
+	sendInfra.InitRestSend(apiGroup, sendUsecase)
 	rest.InitRestUser(apiGroup, userUsecase)
-	rest.InitRestMessage(apiGroup, messageUsecase)
+	messageInfra.InitRestMessage(apiGroup, messageUsecase)
 	rest.InitRestGroup(apiGroup, groupUsecase)
 	rest.InitRestNewsletter(apiGroup, newsletterUsecase)
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
@@ -517,8 +521,8 @@ func initApp() {
 	userUsecase = usecase.NewUserService(workspaceManager)
 	groupUsecase = usecase.NewGroupService(workspaceManager)
 	newsletterUsecase = usecase.NewNewsletterService(workspaceManager, wkRepo, subRepo, monitorStore, vkClient)
-	sendUsecase = usecase.NewSendService(appUsecase, workspaceManager)
-	messageUsecase = usecase.NewMessageService(workspaceManager)
+	sendUsecase = sendApp.NewSendService(appUsecase, workspaceManager)
+	messageUsecase = messageApp.NewMessageService(workspaceManager)
 	wkUsecase = workspaceUsecaseLayer.NewWorkspaceUsecase(wkRepo, workspaceManager)
 
 	// Client REST Handler (Admin)

@@ -1,4 +1,4 @@
-package send
+package domain
 
 type BaseRequest struct {
 	Phone       string `json:"phone" form:"phone"`

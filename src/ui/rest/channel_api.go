@@ -11,7 +11,7 @@ import (
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
-	domainSend "github.com/AzielCF/az-wap/domains/send"
+	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"

@@ -1,12 +1,12 @@
-package send
+package domain
 
 import "mime/multipart"
 
-type ImageRequest struct {
+type VideoRequest struct {
 	BaseRequest
 	Caption  string                `json:"caption" form:"caption"`
-	Image    *multipart.FileHeader `json:"image" form:"image"`
-	ImageURL *string               `json:"image_url" form:"image_url"`
+	Video    *multipart.FileHeader `json:"video" form:"video"`
 	ViewOnce bool                  `json:"view_once" form:"view_once"`
 	Compress bool                  `json:"compress"`
+	VideoURL *string               `json:"video_url" form:"video_url"`
 }

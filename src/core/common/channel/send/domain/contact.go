@@ -1,4 +1,4 @@
-package send
+package domain
 
 type ContactRequest struct {
 	BaseRequest

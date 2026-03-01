@@ -1,4 +1,4 @@
-package usecase
+package application
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
 	"github.com/AzielCF/az-wap/domains/app"
-	domainSend "github.com/AzielCF/az-wap/domains/send"
+	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/rest/helpers"
