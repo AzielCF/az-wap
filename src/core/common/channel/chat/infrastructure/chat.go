@@ -1,7 +1,7 @@
-package rest
+package infrastructure
 
 import (
-	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	domainChat "github.com/AzielCF/az-wap/core/common/channel/chat/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

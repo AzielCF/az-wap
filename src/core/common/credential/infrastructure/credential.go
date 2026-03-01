@@ -1,9 +1,9 @@
-package rest
+package infrastructure
 
 import (
 	"strings"
 
-	domainCredential "github.com/AzielCF/az-wap/domains/credential"
+	domainCredential "github.com/AzielCF/az-wap/core/common/credential/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

@@ -1,4 +1,4 @@
-package chat
+package domain
 
 // Request and Response structures for chat operations
 

@@ -48,8 +48,8 @@ import (
 	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
+	domainCredential "github.com/AzielCF/az-wap/core/common/credential/domain"
 	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
-	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
@@ -67,13 +67,14 @@ import (
 	sendInfra "github.com/AzielCF/az-wap/core/common/channel/send/infrastructure"
 	userApp "github.com/AzielCF/az-wap/core/common/channel/user/application"
 	userInfra "github.com/AzielCF/az-wap/core/common/channel/user/infrastructure"
+	credentialApp "github.com/AzielCF/az-wap/core/common/credential/application"
+	credentialInfra "github.com/AzielCF/az-wap/core/common/credential/infrastructure"
 	healthApp "github.com/AzielCF/az-wap/core/common/health/application"
 	healthInfra "github.com/AzielCF/az-wap/core/common/health/infrastructure"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
 	uiRest "github.com/AzielCF/az-wap/ui/rest"
-	"github.com/AzielCF/az-wap/usecase"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
@@ -284,7 +285,7 @@ func runServer(cmd *cobra.Command, _ []string) {
 	newsletterInfra.InitRestNewsletter(apiGroup, newsletterUsecase)
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
 	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
-	rest.InitRestCredential(apiGroup, credentialUsecase)
+	credentialInfra.InitRestCredential(apiGroup, credentialUsecase)
 	cacheInfra.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
 	healthInfra.InitRestHealth(apiGroup, healthUsecase)
@@ -431,7 +432,7 @@ func initApp() {
 	}
 
 	// 1. Basic Usecases (No complex dependencies)
-	credentialUsecase = usecase.NewCredentialService(gormDB)
+	credentialUsecase = credentialApp.NewCredentialService(gormDB)
 	botUsecase = botUsecaseLayer.NewBotService(credentialUsecase)
 	cacheUsecase = cacheApp.NewCacheService(settingsSvc)
 	cacheUsecase.StartBackgroundCleanup(ctx)

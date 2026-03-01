@@ -1,4 +1,4 @@
-package credential
+package domain
 
 import "context"
 

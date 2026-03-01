@@ -3,7 +3,7 @@ package validations
 import (
 	"context"
 
-	domainChat "github.com/AzielCF/az-wap/domains/chat"
+	domainChat "github.com/AzielCF/az-wap/core/common/channel/chat/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )

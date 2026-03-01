@@ -1,4 +1,4 @@
-package usecase
+package application
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	domainCredential "github.com/AzielCF/az-wap/domains/credential"
+	domainCredential "github.com/AzielCF/az-wap/core/common/credential/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
