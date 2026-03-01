@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 
-	domainHealth "github.com/AzielCF/az-wap/domains/health"
+	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 )
 
 type ConnectionType string

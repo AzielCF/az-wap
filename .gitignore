@@ -10,7 +10,6 @@ src/pkged.go
 planing/
 testdata/
 storages
-cache/
 .env
 bin
 .playwright-mcp

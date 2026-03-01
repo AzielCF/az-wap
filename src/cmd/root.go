@@ -41,21 +41,25 @@ import (
 	botTools "github.com/AzielCF/az-wap/botengine/tools"
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 
+	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
+	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 	domainApp "github.com/AzielCF/az-wap/domains/app"
-	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	domainGroup "github.com/AzielCF/az-wap/domains/group"
-	domainHealth "github.com/AzielCF/az-wap/domains/health"
 	domainMessage "github.com/AzielCF/az-wap/domains/message"
 	domainNewsletter "github.com/AzielCF/az-wap/domains/newsletter"
 	domainSend "github.com/AzielCF/az-wap/domains/send"
 	domainUser "github.com/AzielCF/az-wap/domains/user"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
+	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
+	cacheApp "github.com/AzielCF/az-wap/core/common/cache/application"
+	cacheInfra "github.com/AzielCF/az-wap/core/common/cache/infrastructure"
+	healthApp "github.com/AzielCF/az-wap/core/common/health/application"
+	healthInfra "github.com/AzielCF/az-wap/core/common/health/infrastructure"
+	"github.com/AzielCF/az-wap/core/pkg/utils"
 	whatsappadapter "github.com/AzielCF/az-wap/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/integrations/chatwoot"
-	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
-	"github.com/AzielCF/az-wap/core/pkg/utils"
 	uiRest "github.com/AzielCF/az-wap/ui/rest"
 	"github.com/AzielCF/az-wap/usecase"
 	"github.com/AzielCF/az-wap/workspace"
@@ -269,9 +273,9 @@ func runServer(cmd *cobra.Command, _ []string) {
 	rest.InitRestBot(apiGroup, botUsecase, mcpUsecase, workspaceManager)
 	rest.InitChannelAPI(apiGroup, wkUsecase, workspaceManager, sendUsecase, settingsSvc)
 	rest.InitRestCredential(apiGroup, credentialUsecase)
-	rest.InitRestCache(apiGroup, cacheUsecase)
+	cacheInfra.InitRestCache(apiGroup, cacheUsecase)
 	rest.InitRestMCP(apiGroup, mcpUsecase)
-	rest.InitRestHealth(apiGroup, healthUsecase)
+	healthInfra.InitRestHealth(apiGroup, healthUsecase)
 	rest.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
 	rest.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
 
@@ -417,7 +421,7 @@ func initApp() {
 	// 1. Basic Usecases (No complex dependencies)
 	credentialUsecase = usecase.NewCredentialService(gormDB)
 	botUsecase = botUsecaseLayer.NewBotService(credentialUsecase)
-	cacheUsecase = usecase.NewCacheService(settingsSvc)
+	cacheUsecase = cacheApp.NewCacheService(settingsSvc)
 	cacheUsecase.StartBackgroundCleanup(ctx)
 	mcpUsecase = botUsecaseLayer.NewMCPService(gormDB)
 
@@ -532,7 +536,7 @@ func initApp() {
 	})
 
 	// 6. Post-initialization
-	healthUsecase = usecase.NewHealthService(mcpUsecase, credentialUsecase, botUsecase, workspaceManager, wkUsecase, vkClient)
+	healthUsecase = healthApp.NewHealthService(mcpUsecase, credentialUsecase, botUsecase, workspaceManager, wkUsecase, vkClient)
 	mcpUsecase.SetHealthUsecase(healthUsecase)
 	healthUsecase.StartPeriodicChecks(ctx)
 	uiRest.SetBotEngine(botEngine, workspaceManager)

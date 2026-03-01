@@ -1,7 +1,7 @@
-package rest
+package infrastructure
 
 import (
-	"github.com/AzielCF/az-wap/domains/health"
+	health "github.com/AzielCF/az-wap/core/common/health/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

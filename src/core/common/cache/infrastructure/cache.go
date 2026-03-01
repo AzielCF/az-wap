@@ -1,7 +1,7 @@
-package rest
+package infrastructure
 
 import (
-	domainCache "github.com/AzielCF/az-wap/domains/cache"
+	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

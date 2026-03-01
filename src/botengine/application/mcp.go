@@ -12,7 +12,7 @@ import (
 	"github.com/AzielCF/az-wap/botengine/infrastructure"
 	"github.com/AzielCF/az-wap/botengine/repository"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	domainHealth "github.com/AzielCF/az-wap/domains/health"
+	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 	"github.com/AzielCF/az-wap/core/pkg/crypto"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/google/uuid"

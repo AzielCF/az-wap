@@ -1,4 +1,4 @@
-package usecase
+package application
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"sort"
 	"time"
 
+	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
-	domainCache "github.com/AzielCF/az-wap/domains/cache"
 	"github.com/AzielCF/az-wap/core/pkg/chatmedia"
+	coreSettings "github.com/AzielCF/az-wap/core/settings/application"
 	"github.com/dustin/go-humanize"
 	"github.com/sirupsen/logrus"
 )

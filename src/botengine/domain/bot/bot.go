@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	domainHealth "github.com/AzielCF/az-wap/domains/health"
+	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
 )
 
 type Provider string
