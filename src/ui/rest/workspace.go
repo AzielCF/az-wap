@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"

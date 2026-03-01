@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	coreconfig "github.com/AzielCF/az-wap/core/config"
-	"github.com/AzielCF/az-wap/domains/app"
+	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
 	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
+	coreconfig "github.com/AzielCF/az-wap/core/config"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/ui/rest/helpers"
@@ -29,11 +29,11 @@ import (
 )
 
 type serviceSend struct {
-	appService       app.IAppUsecase
+	appService       domainApp.IAppUsecase
 	workspaceManager *workspace.Manager
 }
 
-func NewSendService(appService app.IAppUsecase, workspaceManager *workspace.Manager) domainSend.ISendUsecase {
+func NewSendService(appService domainApp.IAppUsecase, workspaceManager *workspace.Manager) domainSend.ISendUsecase {
 	return &serviceSend{
 		appService:       appService,
 		workspaceManager: workspaceManager,

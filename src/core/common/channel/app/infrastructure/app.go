@@ -1,8 +1,8 @@
-package rest
+package infrastructure
 
 import (
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	domainApp "github.com/AzielCF/az-wap/domains/app"
+	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
 	"github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/gofiber/fiber/v2"
 )

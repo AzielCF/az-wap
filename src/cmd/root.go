@@ -42,19 +42,21 @@ import (
 	onlyClients "github.com/AzielCF/az-wap/botengine/tools/only-clients"
 
 	domainCache "github.com/AzielCF/az-wap/core/common/cache/domain"
+	domainApp "github.com/AzielCF/az-wap/core/common/channel/app/domain"
 	domainGroup "github.com/AzielCF/az-wap/core/common/channel/group/domain"
 	domainMessage "github.com/AzielCF/az-wap/core/common/channel/message/domain"
 	domainNewsletter "github.com/AzielCF/az-wap/core/common/channel/newsletter/domain"
 	domainSend "github.com/AzielCF/az-wap/core/common/channel/send/domain"
 	domainUser "github.com/AzielCF/az-wap/core/common/channel/user/domain"
 	domainHealth "github.com/AzielCF/az-wap/core/common/health/domain"
-	domainApp "github.com/AzielCF/az-wap/domains/app"
 	domainCredential "github.com/AzielCF/az-wap/domains/credential"
 	"github.com/AzielCF/az-wap/infrastructure/valkey"
 
 	botmonitor "github.com/AzielCF/az-wap/botengine/infrastructure/monitoring"
 	cacheApp "github.com/AzielCF/az-wap/core/common/cache/application"
 	cacheInfra "github.com/AzielCF/az-wap/core/common/cache/infrastructure"
+	appApp "github.com/AzielCF/az-wap/core/common/channel/app/application"
+	appInfra "github.com/AzielCF/az-wap/core/common/channel/app/infrastructure"
 	groupApp "github.com/AzielCF/az-wap/core/common/channel/group/application"
 	groupInfra "github.com/AzielCF/az-wap/core/common/channel/group/infrastructure"
 	messageApp "github.com/AzielCF/az-wap/core/common/channel/message/application"
@@ -274,7 +276,7 @@ func runServer(cmd *cobra.Command, _ []string) {
 	}()
 
 	// Handlers
-	rest.InitRestApp(apiGroup, appUsecase)
+	appInfra.InitRestApp(apiGroup, appUsecase)
 	sendInfra.InitRestSend(apiGroup, sendUsecase)
 	userInfra.InitRestUser(apiGroup, userUsecase)
 	messageInfra.InitRestMessage(apiGroup, messageUsecase)
@@ -523,7 +525,7 @@ func initApp() {
 
 	// 4. Domain Usecases (Need WorkspaceManager)
 	// instanceUsecase = usecase.NewInstanceService(workspaceManager, wkRepo) // DEPRECATED
-	appUsecase = usecase.NewAppService(workspaceManager, settingsSvc)
+	appUsecase = appApp.NewAppService(workspaceManager, settingsSvc)
 	userUsecase = userApp.NewUserService(workspaceManager)
 	groupUsecase = groupApp.NewGroupService(workspaceManager)
 	newsletterUsecase = newsletterApp.NewNewsletterService(workspaceManager, wkRepo, subRepo, monitorStore, vkClient)
