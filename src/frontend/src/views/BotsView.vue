@@ -17,7 +17,8 @@ import {
   Video,
   FileText,
   Brain,
-  Search
+  Search,
+  Plus
 } from 'lucide-vue-next'
 
 const api = useApi()

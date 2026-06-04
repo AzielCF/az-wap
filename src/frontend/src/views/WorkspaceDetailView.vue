@@ -9,7 +9,7 @@ import ChannelConfig from '@/components/ChannelConfig.vue'
 import ChannelInfo from '@/components/ChannelInfo.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
 import ChatSimulator from '@/components/ChatSimulator.vue'
-import { Plus, Settings, Trash2, Globe, Info, Send, MessageSquare } from 'lucide-vue-next'
+import { Plus, Settings, Trash2, Globe, Info, Send, MessageSquare, Cpu, ShieldAlert, CheckCircle2 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
