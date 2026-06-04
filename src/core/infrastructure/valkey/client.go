@@ -35,8 +35,9 @@ type Client struct {
 // Returns an error if the connection cannot be established within the timeout.
 func NewClient(cfg Config) (*Client, error) {
 	opts := valkeylib.ClientOption{
-		InitAddress: []string{cfg.Address},
-		SelectDB:    cfg.DB,
+		InitAddress:           []string{cfg.Address},
+		SelectDB:              cfg.DB,
+		DisableAutoPipelining: true, // Fix: Prevents pipe.go panics caused by context cancellations or dirty sockets
 	}
 	if cfg.Password != "" {
 		opts.Password = cfg.Password
