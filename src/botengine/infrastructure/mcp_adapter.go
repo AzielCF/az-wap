@@ -46,7 +46,10 @@ func (a *MCPProviderAdapter) ListTools(ctx context.Context, server domainMCP.MCP
 		return nil, err
 	}
 
-	res, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	res, err := c.ListTools(timeoutCtx, mcp.ListToolsRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +83,10 @@ func (a *MCPProviderAdapter) CallTool(ctx context.Context, server domainMCP.MCPS
 	callReq.Params.Name = toolName
 	callReq.Params.Arguments = args
 
-	callRes, callErr := c.CallTool(ctx, callReq)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	callRes, callErr := c.CallTool(timeoutCtx, callReq)
 	if callErr != nil {
 		return domainMCP.CallToolResult{}, callErr
 	}
@@ -127,7 +133,10 @@ func (a *MCPProviderAdapter) Validate(ctx context.Context, server domainMCP.MCPS
 		return nil, err
 	}
 
-	res, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
+	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	res, err := mcpClient.ListTools(timeoutCtx, mcp.ListToolsRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -219,9 +228,12 @@ func (a *MCPProviderAdapter) initializeClient(ctx context.Context, mcpClient *cl
 	req.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
 	req.Params.ClientInfo = mcp.Implementation{Name: "az-wap-bot", Version: "1.0.0"}
 
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	var initErr error
 	for i := 0; i < 5; i++ {
-		_, initErr = mcpClient.Initialize(ctx, req)
+		_, initErr = mcpClient.Initialize(timeoutCtx, req)
 		if initErr == nil {
 			return nil
 		}
