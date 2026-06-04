@@ -36,6 +36,7 @@ import (
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	botInfrastructure "github.com/AzielCF/az-wap/botengine/infrastructure"
 	"github.com/AzielCF/az-wap/botengine/providers"
 	botengineRepo "github.com/AzielCF/az-wap/botengine/repository"
 	botTools "github.com/AzielCF/az-wap/botengine/tools"
@@ -78,6 +79,7 @@ import (
 	"github.com/AzielCF/az-wap/workspace/domain/monitoring"
 	"github.com/AzielCF/az-wap/workspace/infrastructure/chatwoot"
 	workspaceInfra "github.com/AzielCF/az-wap/workspace/infrastructure/rest"
+	"github.com/AzielCF/az-wap/workspace/infrastructure/simulator"
 	"github.com/AzielCF/az-wap/workspace/infrastructure/telegram"
 	whatsappadapter "github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp/adapter"
 	"github.com/AzielCF/az-wap/workspace/repository"
@@ -261,6 +263,9 @@ func runServer(cmd *cobra.Command, _ []string) {
 			if strings.HasPrefix(c.Path(), coreconfig.Global.App.BasePath+"/api/portal") {
 				return true
 			}
+			if strings.HasPrefix(c.Path(), coreconfig.Global.App.BasePath+"/api/ws") {
+				return true // bypass basic auth for WS, they must authenticate via query token or logic
+			}
 			return false
 		},
 	}))
@@ -290,8 +295,10 @@ func runServer(cmd *cobra.Command, _ []string) {
 	cacheInfra.InitRestCache(apiGroup, cacheUsecase)
 	botengineInfra.InitRestMCP(apiGroup, mcpUsecase)
 	healthInfra.InitRestHealth(apiGroup, healthUsecase)
-	workspaceInfra.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	wkHandler := workspaceInfra.InitRestWorkspace(apiGroup, wkUsecase, workspaceManager, appUsecase)
+	app.Post("/api/v1/telegram/webhook/:cid", wkHandler.HandleTelegramWebhook)
 	botengineInfra.InitRestMonitoring(apiGroup, monitorStore, workspaceManager, contextCacheStore)
+	simulator.InitRestSimulator(apiGroup, botEngine, wkRepo)
 
 	portalAuthHandler := portalAuthInfra.NewAuthHandler(portalAuthService)
 	portalFeaturesHandler := portalFeatures.NewFeaturesHandler(subService, clientService, newsletterUsecase, wkRepo, botUsecase, wkUsecase, workspaceManager)
@@ -331,11 +338,6 @@ func runServer(cmd *cobra.Command, _ []string) {
 	if err := app.Listen(":" + coreconfig.Global.App.Port); err != nil {
 		logrus.Fatalf("[APP] Failed to start server: %v", err)
 	}
-}
-
-func init() {
-	// Config via coreconfig
-	cobra.OnInitialize(initApp)
 }
 
 // ... (imports remain)
@@ -440,7 +442,10 @@ func initApp() {
 	mcpUsecase = botUsecaseLayer.NewMCPService(gormDB)
 
 	// 2. Bot Engine Initialization (Needs BotUsecase, MCPUsecase)
-	botEngine = botengine.NewEngine(botUsecase, mcpUsecase)
+	httpFetcher := botInfrastructure.NewStandardHTTPFetcher()
+	fileStorage := botInfrastructure.NewLocalFileStorage()
+	mediaService := botengineDomain.NewMediaService(httpFetcher, fileStorage, coreconfig.Global.AI.MaxRAMDownloadMB, coreconfig.Global.AI.MaxGlobalRAMMB)
+	botEngine = botengine.NewEngine(botUsecase, mcpUsecase, mediaService)
 
 	// Initialize Shared Infrastrucutre (Valkey)
 	if coreconfig.Global.Database.ValkeyEnabled {
@@ -552,9 +557,9 @@ func initApp() {
 	workspaceManager.RegisterFactory(channel.ChannelTypeTelegram, func(conf channel.ChannelConfig) (channel.ChannelAdapter, error) {
 		channelID, _ := conf.Settings["channel_id"].(string)
 		workspaceID, _ := conf.Settings["workspace_id"].(string)
-		token, _ := conf.Settings["token"].(string)
-		if channelID == "" || workspaceID == "" || token == "" {
-			return nil, fmt.Errorf("channel_id, workspace_id or token missing in channel settings")
+		token, _ := conf.Settings["token"].(string) // Token is optional during start (handled by adapter)
+		if channelID == "" || workspaceID == "" {
+			return nil, fmt.Errorf("channel_id or workspace_id missing in channel settings")
 		}
 		return telegram.NewAdapter(channelID, workspaceID, token, workspaceManager), nil
 	})
@@ -570,27 +575,32 @@ func initApp() {
 
 	// Hooks (Bot Engine depends on wkRepo)
 	botEngine.RegisterPostReplyHook(func(ctx context.Context, b domainBot.Bot, input botengineDomain.BotInput, output botengineDomain.BotOutput) {
+		actualInstanceID := input.InstanceID
+		if strings.HasPrefix(actualInstanceID, "sim_") {
+			actualInstanceID = strings.TrimPrefix(actualInstanceID, "sim_")
+		}
+
 		// 1. Acumular costos en DB (Independiente de phone)
-		if output.TotalCost > 0 && input.InstanceID != "" {
+		if output.TotalCost > 0 && actualInstanceID != "" {
 			breakdown := make(map[string]float64)
 			for _, d := range output.CostDetails {
 				key := d.BotID + ":" + d.Model
 				breakdown[key] += d.Cost
 			}
-			if err := wkRepo.AddChannelComplexCost(ctx, input.InstanceID, output.TotalCost, breakdown); err != nil {
+			if err := wkRepo.AddChannelComplexCost(ctx, actualInstanceID, output.TotalCost, breakdown); err != nil {
 				logrus.WithError(err).Error("[ENGINE] Failed to accumulate channel cost")
 			}
 		}
 
 		// 2. Notificaciones Chatwoot (Dependiente de phone)
 		phone, _ := input.Metadata["phone"].(string)
-		if phone == "" || input.InstanceID == "" {
+		if phone == "" || actualInstanceID == "" {
 			return
 		}
 
-		ch, err := wkRepo.GetChannel(ctx, input.InstanceID)
+		ch, err := wkRepo.GetChannel(ctx, actualInstanceID)
 		if err != nil {
-			go chatwoot.ForwardBotReplyFromEvent(ctx, input.InstanceID, phone, output.Text)
+			go chatwoot.ForwardBotReplyFromEvent(ctx, actualInstanceID, phone, output.Text)
 			return
 		}
 		if ch.Config.Chatwoot != nil && ch.Config.Chatwoot.Enabled {
@@ -628,6 +638,12 @@ func initApp() {
 	botEngine.RegisterNativeTool(&domain.NativeTool{
 		Tool:    terminateTool.Tool,
 		Handler: terminateTool.Handler,
+	})
+
+	remoteURLTool := botTools.NewAnalyzeRemoteResourceTool("shared")
+	botEngine.RegisterNativeTool(&domain.NativeTool{
+		Tool:    remoteURLTool.Tool,
+		Handler: remoteURLTool.Handler,
 	})
 
 	// Register Newsletter Tools

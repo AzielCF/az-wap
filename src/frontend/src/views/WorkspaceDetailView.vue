@@ -8,7 +8,8 @@ import WhatsAppControl from '@/components/WhatsAppControl.vue'
 import ChannelConfig from '@/components/ChannelConfig.vue'
 import ChannelInfo from '@/components/ChannelInfo.vue'
 import ConfirmationDialog from '@/components/ConfirmationDialog.vue'
-import { Plus, Settings, Trash2, Globe, Info, Send } from 'lucide-vue-next'
+import ChatSimulator from '@/components/ChatSimulator.vue'
+import { Plus, Settings, Trash2, Globe, Info, Send, MessageSquare } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +28,7 @@ const showWhatsAppControl = ref(false)
 const showConfigModal = ref(false)
 const showChannelInfo = ref(false)
 const showEditWorkspace = ref(false)
+const showSimulator = ref(false)
 const selectedChannel = ref<any>(null)
 
 const confirmDialog = ref({
@@ -161,6 +163,11 @@ function openInfo(ch: any) {
   showChannelInfo.value = true
 }
 
+function openSimulator(ch: any) {
+  selectedChannel.value = ch
+  showSimulator.value = true
+}
+
 function copyId(id: string) {
     navigator.clipboard.writeText(id)
 }
@@ -268,6 +275,9 @@ onMounted(loadData)
                                 <div class="flex justify-end gap-3 items-center">
                                     <button v-if="ch.type === 'whatsapp'" class="btn-premium btn-premium-primary px-8 h-11 text-xs" @click="openWhatsAppControl(ch)">
                                         Open Protocol
+                                    </button>
+                                    <button class="btn-premium btn-premium-square btn-premium-sm btn-premium-ghost border border-white/10" @click="openSimulator(ch)" title="Simulate Chat">
+                                        <MessageSquare class="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
                                     </button>
                                     <button class="btn-premium btn-premium-square btn-premium-sm btn-premium-ghost border border-white/10" @click="openConfig(ch)" title="Config">
                                         <Settings class="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
@@ -419,6 +429,17 @@ onMounted(loadData)
           v-if="selectedChannel"
           :channel="selectedChannel"
           :workspaceId="(route.params.id as string)"
+        />
+      </div>
+    </AppModal>
+
+    <AppModal v-model="showSimulator" title="Simulator" maxWidth="max-w-md" noPadding noScroll>
+      <div class="h-[600px] w-full">
+        <ChatSimulator 
+          v-if="selectedChannel && showSimulator"
+          :channel="selectedChannel"
+          :workspaceId="(route.params.id as string)"
+          @close="showSimulator = false"
         />
       </div>
     </AppModal>
