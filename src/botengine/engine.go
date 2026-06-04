@@ -48,23 +48,25 @@ type Engine struct {
 	// Nuevos servicios desacoplados
 	prompter     *application.Prompter
 	orchestrator *application.Orchestrator
+	mediaService *domain.MediaService
 }
 
-func NewEngine(botService bot.IBotUsecase, mcpService domainMCP.IMCPUsecase) *Engine {
+func NewEngine(botService bot.IBotUsecase, mcpService domainMCP.IMCPUsecase, mediaService *domain.MediaService) *Engine {
 	e := &Engine{
-		botUsecase:  botService,
-		mcpUsecase:  mcpService,
-		providers:   make(map[string]domain.AIProvider),
-		transports:  make(map[string]domain.Transport),
-		humanizer:   infrastructure.NewHumanizer(true),
-		nativeTools: make(map[string]*domain.NativeTool),
+		botUsecase:   botService,
+		mcpUsecase:   mcpService,
+		providers:    make(map[string]domain.AIProvider),
+		transports:   make(map[string]domain.Transport),
+		humanizer:    infrastructure.NewHumanizer(true),
+		nativeTools:  make(map[string]*domain.NativeTool),
+		mediaService: mediaService,
 	}
 
 	// Default tools are now registered in cmd/root.go to avoid import cycles
 
 	// Inicializar servicios
 	e.prompter = application.NewPrompter()
-	e.orchestrator = application.NewOrchestrator(mcpService, e.CallNativeTool)
+	e.orchestrator = application.NewOrchestrator(mcpService, e.CallNativeTool, mediaService)
 
 	return e
 }
@@ -134,7 +136,18 @@ func (e *Engine) GetBotUsecase() bot.IBotUsecase {
 }
 
 // Process maneja el ciclo de vida completo de un mensaje
-func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.BotOutput, error) {
+func (e *Engine) Process(ctx context.Context, input domain.BotInput) (out domain.BotOutput, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic caught in engine.Process: %v", r)
+			logrus.Errorf("[ENGINE] PANIC in Process: %v", r)
+			out = domain.BotOutput{
+				Text:      "Ocurrió un error interno muy grave, disculpe las molestias.",
+				TotalCost: 0,
+			}
+		}
+	}()
+
 	// 0. Ensure TraceID
 	if input.TraceID == "" {
 		input.TraceID = uuid.NewString()
@@ -349,6 +362,8 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 	transport, hasTransport := e.transports[input.InstanceID]
 	e.mu.RUnlock()
 
+	isHighSpeedPlatform := input.Platform == domain.PlatformTelegram
+
 	// Acknowledgement (Outbound ACK) - Humanized
 	if hasTransport && mindset != nil && mindset.Acknowledgement != "" {
 		// Only send ACK if we haven't replied in the last 10 seconds
@@ -361,7 +376,12 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 				time.Sleep(time.Duration(300+e.humanizer.Rng.Intn(500)) * time.Millisecond)
 
 				// Fast typing for ACK
-				if ok := e.humanizer.SimulateTypingWithProfile(ctx, transport, input.ChatID, mindset.Acknowledgement, infrastructure.FastTyperProfile); ok {
+				ackProfile := infrastructure.FastTyperProfile
+				if isHighSpeedPlatform {
+					ackProfile = infrastructure.InstantProfile
+				}
+
+				if ok := e.humanizer.SimulateTypingWithProfile(ctx, transport, input.ChatID, mindset.Acknowledgement, ackProfile); ok {
 					_ = transport.SendMessage(ctx, input.ChatID, mindset.Acknowledgement, "")
 
 					botmonitor.Record(botmonitor.Event{
@@ -391,7 +411,11 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 				}
 
 				noticeDelay := time.Duration(noticeBase+e.humanizer.Rng.Intn(1500)) * time.Millisecond
-				if noticeBase > 0 {
+				if isHighSpeedPlatform {
+					noticeDelay = 0
+				}
+
+				if noticeDelay > 0 {
 					time.Sleep(noticeDelay)
 				}
 
@@ -427,7 +451,15 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			}
 
 			readDelay := time.Duration(readingBase+e.humanizer.Rng.Intn(1500)) * time.Millisecond
+			if isHighSpeedPlatform {
+				readDelay = 100 * time.Millisecond
+			}
 			time.Sleep(readDelay)
+
+			// Para Telegram, activamos el "Escribiendo" desde ya para que se vea mientras la IA piensa
+			if isHighSpeedPlatform {
+				_ = transport.SendPresence(ctx, input.ChatID, true, false)
+			}
 		}
 		presencerStartedTyping <- true
 	}()
@@ -515,16 +547,57 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		})
 	} else if len(input.Medias) > 0 {
 		md := map[string]string{}
+
+		analyzedCount := 0
+		blockedCount := 0
+		var blockedInfo []string
+		var allMediaSummary []string
+
+		for _, m := range input.Medias {
+			if m == nil {
+				continue
+			}
+			if m.State == domain.MediaStateAnalyzed {
+				analyzedCount++
+				allMediaSummary = append(allMediaSummary, fmt.Sprintf("✅ %s (%s)", m.FileName, m.MimeType))
+			} else if m.State == domain.MediaStateBlocked {
+				blockedCount++
+				reason := "Access Denied"
+				if m.BlockReason != "" {
+					reason = m.BlockReason
+				}
+				blockedInfo = append(blockedInfo, fmt.Sprintf("%s: %s", m.FileName, reason))
+				allMediaSummary = append(allMediaSummary, fmt.Sprintf("🚫 %s (%s) - %s", m.FileName, m.MimeType, reason))
+			} else {
+				allMediaSummary = append(allMediaSummary, fmt.Sprintf("⏳ %s (%s) - Pending/Available", m.FileName, m.MimeType))
+			}
+		}
+
+		md["analyzed_count"] = fmt.Sprintf("%d", analyzedCount)
+		md["blocked_count"] = fmt.Sprintf("%d", blockedCount)
+		md["media_summary"] = strings.Join(allMediaSummary, " | ")
+
+		if blockedCount > 0 {
+			md["blocked_details"] = strings.Join(blockedInfo, "; ")
+		}
+
 		if usageMult != nil {
 			md["model"] = usageMult.Model
 			md["cost"] = fmt.Sprintf("$%.6f", usageMult.CostUSD)
 			md["input_tokens"] = fmt.Sprintf("%d", usageMult.InputTokens)
 			md["output_tokens"] = fmt.Sprintf("%d", usageMult.OutputTokens)
 		}
+
+		status := "ok"
+		if blockedCount > 0 && analyzedCount == 0 {
+			// If EVERYTHING was blocked, it's effectively a "skipped" or "warning" status
+			status = "warning"
+		}
+
 		botmonitor.Record(botmonitor.Event{
 			TraceID:    input.TraceID,
 			InstanceID: input.InstanceID, ChatJID: input.ChatID,
-			Provider: string(b.Provider), Stage: "multimodal_interpretation", Status: "ok",
+			Provider: string(b.Provider), Stage: "multimodal_interpretation", Status: status,
 			Metadata: md,
 		})
 	}
@@ -655,7 +728,7 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 		}
 
 		// 8. Work Simulation (If IA says it was hard work)
-		if output.Mindset != nil && output.Mindset.Work {
+		if output.Mindset != nil && output.Mindset.Work && !isHighSpeedPlatform {
 			// Additional delay to simulate "processing/working"
 			workDelay := time.Duration(1500+e.humanizer.Rng.Intn(2500)) * time.Millisecond
 			select {
@@ -665,16 +738,23 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			}
 		}
 
-		bubbles := e.humanizer.SplitIntoBubbles(output.Text)
+		bubbles := e.humanizer.SplitIntoBubbles(output.Text, isHighSpeedPlatform)
 		if output.Metadata == nil {
 			output.Metadata = make(map[string]any)
 		}
 		output.Metadata["bubbles"] = fmt.Sprintf("%d", len(bubbles))
 
+		// En Telegram, apagamos el indicador de "Thinking" antes de empezar la ráfaga
+		if isHighSpeedPlatform {
+			_ = transport.SendPresence(ctx, input.ChatID, false, false)
+		}
+
 		for i, bubble := range bubbles {
 			// 2. Select Typing Profile based on Mindset Pace
 			profile := infrastructure.DefaultProfile
-			if output.Mindset != nil {
+			if isHighSpeedPlatform {
+				profile = infrastructure.InstantProfile
+			} else if output.Mindset != nil {
 				switch output.Mindset.Pace {
 				case "fast":
 					profile = infrastructure.FastTyperProfile
@@ -683,9 +763,11 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 				}
 			}
 
-			// 3. Simulate Typing for this bubble
-			if ok := e.humanizer.SimulateTypingWithProfile(ctx, transport, input.ChatID, bubble, profile); !ok {
-				break
+			// 3. Simulate Typing for this bubble (Skip for Telegram as it's an official bot)
+			if !isHighSpeedPlatform {
+				if ok := e.humanizer.SimulateTypingWithProfile(ctx, transport, input.ChatID, bubble, profile); !ok {
+					break
+				}
 			}
 
 			// HUMAN ESSENCE: Decide if we should REPLY (quote) the message
@@ -735,6 +817,9 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (domain.Bot
 			// 5. Small gap between bubbles
 			if i < len(bubbles)-1 {
 				gap := time.Duration(500+e.humanizer.Rng.Intn(700)) * time.Millisecond
+				if isHighSpeedPlatform {
+					gap = 100 * time.Millisecond
+				}
 				select {
 				case <-time.After(gap):
 				case <-ctx.Done():

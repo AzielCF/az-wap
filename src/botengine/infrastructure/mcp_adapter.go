@@ -33,7 +33,14 @@ func NewMCPProviderAdapter() *MCPProviderAdapter {
 	return a
 }
 
-func (a *MCPProviderAdapter) ListTools(ctx context.Context, server domainMCP.MCPServer) ([]domainMCP.Tool, error) {
+func (a *MCPProviderAdapter) ListTools(ctx context.Context, server domainMCP.MCPServer) (tools []domainMCP.Tool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in MCP ListTools: %v", r)
+			logrus.Errorf("[MCPAdapter] PANIC in ListTools for %s: %v", server.Name, r)
+		}
+	}()
+
 	c, err := a.getOrConnectClient(ctx, server)
 	if err != nil {
 		return nil, err
@@ -44,18 +51,26 @@ func (a *MCPProviderAdapter) ListTools(ctx context.Context, server domainMCP.MCP
 		return nil, err
 	}
 
-	var tools []domainMCP.Tool
+	var tList []domainMCP.Tool
 	for _, t := range res.Tools {
-		tools = append(tools, domainMCP.Tool{
+		tList = append(tList, domainMCP.Tool{
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: t.InputSchema,
 		})
 	}
-	return tools, nil
+	return tList, nil
 }
 
-func (a *MCPProviderAdapter) CallTool(ctx context.Context, server domainMCP.MCPServer, toolName string, args map[string]interface{}) (domainMCP.CallToolResult, error) {
+func (a *MCPProviderAdapter) CallTool(ctx context.Context, server domainMCP.MCPServer, toolName string, args map[string]interface{}) (res domainMCP.CallToolResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in MCP CallTool: %v", r)
+			logrus.Errorf("[MCPAdapter] PANIC in CallTool for %s (tool: %s): %v", server.Name, toolName, r)
+			res = domainMCP.CallToolResult{IsError: true}
+		}
+	}()
+
 	c, err := a.getOrConnectClient(ctx, server)
 	if err != nil {
 		return domainMCP.CallToolResult{}, err
@@ -65,14 +80,14 @@ func (a *MCPProviderAdapter) CallTool(ctx context.Context, server domainMCP.MCPS
 	callReq.Params.Name = toolName
 	callReq.Params.Arguments = args
 
-	res, err := c.CallTool(ctx, callReq)
-	if err != nil {
-		return domainMCP.CallToolResult{}, err
+	callRes, callErr := c.CallTool(ctx, callReq)
+	if callErr != nil {
+		return domainMCP.CallToolResult{}, callErr
 	}
 
 	var result domainMCP.CallToolResult
-	result.IsError = res.IsError
-	for _, content := range res.Content {
+	result.IsError = callRes.IsError
+	for _, content := range callRes.Content {
 		if textContent, ok := content.(mcp.TextContent); ok {
 			result.Content = append(result.Content, domainMCP.CallToolContent{
 				Type: "text",
@@ -84,7 +99,14 @@ func (a *MCPProviderAdapter) CallTool(ctx context.Context, server domainMCP.MCPS
 	return result, nil
 }
 
-func (a *MCPProviderAdapter) Validate(ctx context.Context, server domainMCP.MCPServer, fullHandshake bool) ([]domainMCP.Tool, error) {
+func (a *MCPProviderAdapter) Validate(ctx context.Context, server domainMCP.MCPServer, fullHandshake bool) (tools []domainMCP.Tool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in MCP Validate: %v", r)
+			logrus.Errorf("[MCPAdapter] PANIC in Validate for %s: %v", server.Name, r)
+		}
+	}()
+
 	// Check basic reachability first (status 200/etc)
 	if err := a.checkAvailability(ctx, server); err != nil {
 		return nil, err
@@ -110,13 +132,13 @@ func (a *MCPProviderAdapter) Validate(ctx context.Context, server domainMCP.MCPS
 		return nil, err
 	}
 
-	var tools []domainMCP.Tool
+	var tList []domainMCP.Tool
 	for _, t := range res.Tools {
-		tools = append(tools, domainMCP.Tool{
+		tList = append(tList, domainMCP.Tool{
 			Name: t.Name, Description: t.Description, InputSchema: t.InputSchema,
 		})
 	}
-	return tools, nil
+	return tList, nil
 }
 
 func (a *MCPProviderAdapter) Shutdown() {
