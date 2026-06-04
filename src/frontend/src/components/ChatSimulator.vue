@@ -16,23 +16,20 @@ const socket = ref<WebSocket | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 
 const getWsUrl = () => {
-    let url = localStorage.getItem('api_url')
-    if (!url && typeof window !== 'undefined') {
-        if (window.location.port === '5173') {
-            url = 'http://localhost:3000'
+    let url = import.meta.env.VITE_WS_URL || ''
+    if (!url) {
+        let apiUrl = localStorage.getItem('api_url')
+        if (apiUrl) {
+            url = apiUrl.replace(/^http/, 'ws')
         } else {
-            url = window.location.origin
+            url = window.location.origin.replace(/^http/, 'ws')
+            if (window.location.port === '5173') {
+                url = 'ws://localhost:3000'
+            }
         }
     }
-    if (!url) url = 'http://localhost:3000'
-    url = url.replace(/\/$/, '').replace(/^http/, 'ws')
-    
-    // Ensure the URL correctly points to the API group
-    if (!url.endsWith('/api')) {
-        url += '/api'
-    }
     const token = localStorage.getItem('api_token')
-    return `${url}/ws/simulator/${props.channel.id}?token=${token}`
+    return `${url}/api/ws/simulator/${props.channel.id}?token=${token}`
 }
 
 const connectWebSocket = () => {
