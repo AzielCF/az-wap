@@ -182,6 +182,11 @@ func (pm *PresenceManager) EnsureChannelConnectivity(channelID string) {
 		return
 	}
 
+	// Do not auto-heal channels that are not logged in (waiting for QR, etc.)
+	if !adapter.IsLoggedIn() {
+		return
+	}
+
 	// If socket is not connected, reconnect it AUTOMATICALLY
 	if adapter.Status() != channel.ChannelStatusConnected {
 		logrus.Infof("[PresenceManager] Auto-healing: reconnecting socket for channel %s", channelID)
