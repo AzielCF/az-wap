@@ -20,6 +20,7 @@ type Config struct {
 	WorkerPool WorkerPoolConfig
 	Security   SecurityConfig
 	APIKeys    APIKeysConfig
+	Telegram   TelegramConfig
 }
 
 type AppConfig struct {
@@ -86,6 +87,8 @@ type AIConfig struct {
 	TypingEnabled      bool
 	MaxAudioBytes      int64
 	MaxImageBytes      int64
+	MaxRAMDownloadMB   int
+	MaxGlobalRAMMB     int
 }
 
 type WorkerPoolConfig struct {
@@ -104,6 +107,11 @@ type APIKeysConfig struct {
 	OpenAI string
 	Claude string
 	AI     string // Generic/Fallback
+}
+
+type TelegramConfig struct {
+	WebhookEnabled bool
+	WebhookURL     string // Base URL for webhooks
 }
 
 // Global provides access to the loaded configuration globally (Migration Helper)
@@ -203,6 +211,8 @@ func LoadConfig() (*Config, error) {
 		TypingEnabled:      getEnvBool("AI_TYPING_ENABLED", true),
 		MaxAudioBytes:      getEnvInt64("AI_MAX_AUDIO_BYTES", 4*1024*1024),
 		MaxImageBytes:      getEnvInt64("AI_MAX_IMAGE_BYTES", 4*1024*1024),
+		MaxRAMDownloadMB:   getEnvInt("AI_MAX_RAM_DOWNLOAD_MB", 5),
+		MaxGlobalRAMMB:     getEnvInt("AI_MAX_GLOBAL_RAM_MB", 50),
 	}
 
 	// Worker Pool & Security & API Keys
@@ -230,6 +240,10 @@ func LoadConfig() (*Config, error) {
 			OpenAI: getEnv("OPENAI_API_KEY", ""),
 			Claude: getEnv("CLAUDE_API_KEY", ""),
 			AI:     getEnv("AI_API_KEY", ""),
+		},
+		Telegram: TelegramConfig{
+			WebhookEnabled: getEnvBool("TELEGRAM_WEBHOOK_ENABLED", false),
+			WebhookURL:     getEnv("TELEGRAM_WEBHOOK_URL", ""),
 		},
 	}
 
