@@ -181,12 +181,16 @@ func init() {
 	// Config via coreconfig
 	cobra.OnInitialize(initApp)
 	rootCmd.Flags().String("basic-auth", "", "Basic auth for API (format: user:pass,user2:pass2)")
+	rootCmd.Flags().StringP("port", "p", "", "Port to run the server on (overrides APP_PORT)")
 }
 
 func runServer(cmd *cobra.Command, _ []string) {
 	// Override basic auth if flag is provided
 	if baFlag, _ := cmd.Flags().GetString("basic-auth"); baFlag != "" {
 		coreconfig.Global.App.BasicAuth = strings.Split(baFlag, ",")
+	}
+	if portFlag, _ := cmd.Flags().GetString("port"); portFlag != "" {
+		coreconfig.Global.App.Port = portFlag
 	}
 
 	fiberConfig := fiber.Config{
