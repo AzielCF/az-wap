@@ -86,6 +86,7 @@ type BotInput struct {
 	PendingTasks  []string       `json:"pending_tasks,omitempty"`
 	LastReplyTime time.Time      `json:"last_reply_time,omitempty"`
 	Language      string         `json:"language,omitempty"` // Idioma resuelto para la respuesta (es, en, etc.)
+	IsTester      bool           `json:"is_tester"`
 
 	// Client Context - Información del cliente registrado (si existe)
 	ClientContext *ClientContext `json:"client_context,omitempty"`

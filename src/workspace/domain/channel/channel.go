@@ -57,6 +57,7 @@ type ChannelConfig struct {
 	Chatwoot              *ChatwootConfig             `json:"chatwoot,omitempty"`
 	Credentials           map[string]string           `json:"credentials,omitempty"`
 	AccessMode            AccessMode                  `json:"access_mode,omitempty"`
+	IsTester              bool                        `json:"is_tester"`
 	AllowImages           bool                        `json:"allow_images"`
 	AllowAudio            bool                        `json:"allow_audio"`
 	AllowVideo            bool                        `json:"allow_video"`

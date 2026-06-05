@@ -94,6 +94,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		Metadata:    safeMetadata,
 		FocusScore:  currentFocus,
 		Language:    ch.Config.DefaultLanguage, // Default from channel
+		IsTester:    ch.Config.IsTester,
 	}
 
 	// Inject channel timezone into metadata for tool resolution chain

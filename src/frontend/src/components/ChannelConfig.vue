@@ -79,6 +79,7 @@ const config = ref<any>({
           ru: ''
       }
   },
+  is_tester: false,
   owner_id: props.channel.owner_id || ''
 })
 
@@ -138,6 +139,7 @@ function loadInitialConfig() {
         }
         Object.assign(config.value, c)
         // Ensure defaults if missing (newly added fields)
+        if (config.value.is_tester === undefined) config.value.is_tester = false
         if (config.value.allow_images === undefined) config.value.allow_images = true
         if (config.value.allow_audio === undefined) config.value.allow_audio = true
         if (config.value.allow_video === undefined) config.value.allow_video = true
@@ -604,6 +606,16 @@ onMounted(loadInitialConfig)
                     v-model:timeout="config.session_timeout"
                     v-model:warning="config.inactivity_warning_time"
                 />
+            </section>
+            
+            <section class="space-y-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="text-sm font-bold text-white uppercase tracking-[0.2em] border-l-2 border-primary pl-4">Tester Mode</h4>
+                        <p class="text-xs text-slate-500 font-medium uppercase mt-1">Enable tester mode for all incoming messages</p>
+                    </div>
+                    <input type="checkbox" v-model="config.is_tester" class="toggle toggle-primary toggle-sm" />
+                </div>
             </section>
             
             <section class="space-y-6">

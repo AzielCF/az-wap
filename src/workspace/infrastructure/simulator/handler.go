@@ -69,6 +69,7 @@ func InitRestSimulator(router fiber.Router, engine *botengine.Engine, repo repos
 						ChatID:      "sim_user",
 						Platform:    botengineDomain.PlatformTest,
 						Text:        text,
+						IsTester:    true,
 						Metadata: map[string]any{
 							"phone": "sim_user",
 							"name":  "Simulator Tester",

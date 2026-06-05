@@ -167,9 +167,9 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (out domain
 	meta := map[string]string{"trace_id": input.TraceID}
 
 	// REDACTION LOGIC
-	isTester := false
-	if input.ClientContext != nil {
-		isTester = input.ClientContext.IsTester
+	isTester := input.IsTester
+	if input.ClientContext != nil && input.ClientContext.IsTester {
+		isTester = true
 	}
 	redactIfNeeded := func(text string) string {
 		if isTester {

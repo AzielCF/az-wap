@@ -1,7 +1,11 @@
-<script setup lang="ts">
+<script lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { Send, User, Bot, X } from 'lucide-vue-next'
+import { Send, User, Bot, Trash2 } from 'lucide-vue-next'
 
+const historyCache = ref<Record<string, any[]>>({})
+</script>
+
+<script setup lang="ts">
 const props = defineProps<{
     channel: any,
     workspaceId: string
@@ -37,7 +41,8 @@ const connectWebSocket = () => {
     socket.value = new WebSocket(wsUrl)
 
     socket.value.onopen = () => {
-        messages.value.push({ text: 'System: Test session started.', sender: 'system' })
+        messages.value.push({ text: 'System: Test session connected.', sender: 'system' })
+        scrollToBottom()
     }
 
     socket.value.onmessage = (event) => {
@@ -65,11 +70,13 @@ const connectWebSocket = () => {
     socket.value.onclose = () => {
         messages.value.push({ text: 'System: Disconnected.', sender: 'system' })
         isTyping.value = false
+        scrollToBottom()
     }
     
     socket.value.onerror = (error) => {
         messages.value.push({ text: 'System: Connection Error.', sender: 'system' })
         isTyping.value = false
+        scrollToBottom()
     }
 }
 
@@ -84,6 +91,11 @@ const sendMessage = () => {
     inputText.value = ''
 }
 
+const clearChat = () => {
+    historyCache.value[props.channel.id] = []
+    messages.value = historyCache.value[props.channel.id] || []
+}
+
 const scrollToBottom = () => {
     nextTick(() => {
         if (messagesContainer.value) {
@@ -93,7 +105,13 @@ const scrollToBottom = () => {
 }
 
 onMounted(() => {
+    if (!historyCache.value[props.channel.id]) {
+        historyCache.value[props.channel.id] = []
+    }
+    messages.value = historyCache.value[props.channel.id] || []
     connectWebSocket()
+    // Scroll to bottom immediately on mount in case we have history
+    scrollToBottom()
 })
 
 onUnmounted(() => {
@@ -117,6 +135,9 @@ onUnmounted(() => {
                     <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Simulator Test Mode</span>
                 </div>
             </div>
+            <button @click="clearChat" class="btn-premium btn-premium-square btn-premium-sm btn-premium-ghost border border-white/10" title="Clear History">
+                <Trash2 class="w-4 h-4 text-error" />
+            </button>
         </div>
 
         <!-- Chat Area -->

@@ -58,9 +58,9 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 	}
 
 	// REDACTION LOGIC: Check if client is a tester
-	isTester := false
-	if input.ClientContext != nil {
-		isTester = input.ClientContext.IsTester
+	isTester := input.IsTester
+	if input.ClientContext != nil && input.ClientContext.IsTester {
+		isTester = true
 	}
 
 	// Helper for redaction
