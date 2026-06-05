@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 	domainCredential "github.com/AzielCF/az-wap/core/common/credential/domain"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"github.com/google/uuid"
@@ -72,8 +73,11 @@ func (s *credentialService) initSchema(ctx context.Context) error {
 		}
 	}
 
-	// 2. GORM AutoMigrate
-	return s.db.AutoMigrate(&credentialModel{})
+	// 2. GORM SafeMigrate
+	models := map[string]interface{}{
+		"credentials": &credentialModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(context.Background(), s.db, models)
 }
 
 func NewCredentialService(db *gorm.DB) domainCredential.ICredentialUsecase {

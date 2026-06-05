@@ -6,6 +6,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 )
 
 type GlobalSettingModel struct {
@@ -26,7 +28,10 @@ func NewGlobalSettingsGormRepository(db *gorm.DB) *GlobalSettingsGormRepository 
 }
 
 func (r *GlobalSettingsGormRepository) InitSchema(ctx context.Context) error {
-	return r.db.WithContext(ctx).AutoMigrate(&GlobalSettingModel{})
+	models := map[string]interface{}{
+		"global_settings": &GlobalSettingModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
 
 func (r *GlobalSettingsGormRepository) Get(ctx context.Context, key string) (string, error) {

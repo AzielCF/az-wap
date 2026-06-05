@@ -50,7 +50,7 @@ func NewSubscriptionGormRepository(db *gorm.DB) *SubscriptionGormRepository {
 
 func (r *SubscriptionGormRepository) InitSchema(ctx context.Context) error {
 	models := map[string]interface{}{
-		"subscriptions": &subscriptionModel{},
+		"client_subscriptions": &subscriptionModel{},
 	}
 	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
