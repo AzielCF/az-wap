@@ -12,12 +12,12 @@ import (
 	"time"
 
 	botengineDomain "github.com/AzielCF/az-wap/botengine/domain"
-	"github.com/AzielCF/az-wap/workspace/infrastructure/chatwoot"
 	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	channelDomain "github.com/AzielCF/az-wap/workspace/domain/channel"
 	commonDomain "github.com/AzielCF/az-wap/workspace/domain/common"
 	messageDomain "github.com/AzielCF/az-wap/workspace/domain/message"
 	workspaceDomain "github.com/AzielCF/az-wap/workspace/domain/workspace"
+	"github.com/AzielCF/az-wap/workspace/infrastructure/chatwoot"
 	"github.com/sirupsen/logrus"
 )
 
@@ -89,7 +89,7 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		InstanceID:  ch.ID,
 		ChatID:      msg.ChatID,
 		SenderID:    msg.SenderID,
-		Platform:    botengineDomain.PlatformWhatsApp,
+		Platform:    p.mapChannelTypeToPlatform(ch.Type),
 		Text:        msg.Text,
 		Metadata:    safeMetadata,
 		FocusScore:  currentFocus,
@@ -282,12 +282,22 @@ func (p *MessageProcessor) loadBotMedia(m *messageDomain.IncomingMedia) *botengi
 			return nil
 		}
 	}
+	fileName := filepath.Base(m.Path)
+	if fileName == "." || fileName == "" {
+		if m.Blocked {
+			fileName = fmt.Sprintf("blocked_%s", strings.ReplaceAll(m.MimeType, "/", "_"))
+		} else {
+			fileName = "unknown_media"
+		}
+	}
+
 	return &botengineDomain.BotMedia{
-		Data:      data,
-		MimeType:  m.MimeType,
-		FileName:  filepath.Base(m.Path),
-		LocalPath: m.Path,
-		State:     state,
+		Data:        data,
+		MimeType:    m.MimeType,
+		FileName:    fileName,
+		LocalPath:   m.Path,
+		State:       state,
+		BlockReason: m.BlockReason,
 	}
 }
 
@@ -377,4 +387,17 @@ func (p *MessageProcessor) normalizeIdentity(id string) string {
 		}
 	}
 	return id
+}
+
+func (p *MessageProcessor) mapChannelTypeToPlatform(chType channelDomain.ChannelType) botengineDomain.Platform {
+	switch chType {
+	case channelDomain.ChannelTypeWhatsApp:
+		return botengineDomain.PlatformWhatsApp
+	case channelDomain.ChannelTypeTelegram:
+		return botengineDomain.PlatformTelegram
+	case channelDomain.ChannelTypeWebChat:
+		return botengineDomain.PlatformWeb
+	default:
+		return botengineDomain.PlatformWhatsApp
+	}
 }

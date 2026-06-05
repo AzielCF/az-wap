@@ -9,12 +9,13 @@ import (
 	"time"
 
 	coreconfig "github.com/AzielCF/az-wap/core/config"
-	waUtils "github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp/adapter/utils"
 	pkgUtils "github.com/AzielCF/az-wap/core/pkg/utils"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/message"
+	waUtils "github.com/AzielCF/az-wap/workspace/infrastructure/whatsapp/adapter/utils"
 	"github.com/sirupsen/logrus"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -157,6 +158,12 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 
 		text := pkgUtils.ExtractMessageTextFromEvent(v)
 
+		// Extract Quoted Message for Contextual Responses (Helpful for URLs or targeted answers)
+		evtMsg := pkgUtils.BuildEventMessage(v)
+		if evtMsg.QuotedMessage != "" {
+			text = fmt.Sprintf("[Replying to message: \"%s\"]\n%s", evtMsg.QuotedMessage, text)
+		}
+
 		msg := message.IncomingMessage{
 			WorkspaceID: wa.workspaceID,
 			ChannelID:   wa.channelID,
@@ -175,215 +182,195 @@ func (wa *WhatsAppAdapter) handleEvent(evt interface{}) {
 			},
 		}
 
-		// Media handling
-		var downloadable whatsmeow.DownloadableMessage
-		mediaType := ""
-		caption := ""
+		// Parse Primary Media
+		wa.configMu.RLock()
+		conf = wa.config
+		wa.configMu.RUnlock()
 
-		var fileSize int64 = 0
-		var fileName string
-
-		if img := v.Message.GetImageMessage(); img != nil {
-			downloadable = img
-			mediaType = "image"
-			caption = img.GetCaption()
-			if img.FileLength != nil {
-				fileSize = int64(*img.FileLength)
-			}
-		} else if audio := v.Message.GetAudioMessage(); audio != nil {
-			downloadable = audio
-			mediaType = "audio"
-			if audio.FileLength != nil {
-				fileSize = int64(*audio.FileLength)
-			}
-			// Check if it's only voice notes allowed
-			if conf.VoiceNotesOnly && (audio.PTT == nil || !*audio.PTT) {
-				logrus.Debugf("[WHATSAPP] Blocking audio because it's not a voice note (PTT)")
-				mediaType = "" // Discard
-			}
-		} else if video := v.Message.GetVideoMessage(); video != nil {
-			downloadable = video
-			mediaType = "video"
-			caption = video.GetCaption()
-			if video.FileLength != nil {
-				fileSize = int64(*video.FileLength)
-			}
-		} else if doc := v.Message.GetDocumentMessage(); doc != nil {
-			downloadable = doc
-			mediaType = "document"
-			caption = doc.GetCaption()
-			fileName = doc.GetFileName()
-			if doc.FileLength != nil {
-				fileSize = int64(*doc.FileLength)
-			}
-		} else if sticker := v.Message.GetStickerMessage(); sticker != nil {
-			downloadable = sticker
-			mediaType = "sticker"
-			if sticker.FileLength != nil {
-				fileSize = int64(*sticker.FileLength)
-			}
+		if primaryMedia := wa.processWhatsAppMedia(&msg, v.Message, conf); primaryMedia != nil {
+			msg.Media = primaryMedia
 		}
 
-		if downloadable != nil && mediaType != "" {
-			// Check if extension is allowed if list is provided
-			if len(conf.AllowedExtensions) > 0 && fileName != "" {
-				ext := strings.ToLower(filepath.Ext(fileName))
-				allowed := false
-				for _, a := range conf.AllowedExtensions {
-					if strings.ToLower(a) == ext || strings.ToLower(a) == strings.TrimPrefix(ext, ".") {
-						allowed = true
-						break
-					}
-				}
-				if !allowed {
-					logrus.Warnf("[WHATSAPP] Blocked file %s due to extension %s not in allowed list", fileName, ext)
-					mediaType = ""
-					downloadable = nil
-				}
-			}
+		// Parse Quoted Media
+		extendedMessage := v.Message.GetExtendedTextMessage()
+		var quoted *waE2E.Message
+		if extendedMessage != nil && extendedMessage.ContextInfo != nil {
+			quoted = extendedMessage.ContextInfo.GetQuotedMessage()
 		}
 
-		if downloadable != nil && mediaType != "" {
-			// Check if media type is allowed in channel config
-			isAllowed := true
-			switch mediaType {
-			case "image":
-				isAllowed = conf.AllowImages
-			case "audio":
-				isAllowed = conf.AllowAudio
-			case "video":
-				isAllowed = conf.AllowVideo
-			case "document":
-				isAllowed = conf.AllowDocuments
-			case "sticker":
-				isAllowed = conf.AllowStickers
-			}
+		var quotedMedia *message.IncomingMedia
+		if quoted != nil {
+			quotedMedia = wa.processWhatsAppMedia(&msg, quoted, conf)
+		}
 
-			if !isAllowed {
-				blockedTag := fmt.Sprintf(" [MEDIA BLOCKED: %s]", mediaType)
-				if msg.Text == "" && caption != "" {
-					msg.Text = caption + blockedTag
-				} else if msg.Text == "" {
-					msg.Text = blockedTag
-				} else {
-					msg.Text += blockedTag
+		if quotedMedia != nil {
+			msg.Medias = append(msg.Medias, quotedMedia)
+			if quotedMedia.Blocked {
+				reason := "safety or configuration limits"
+				if quotedMedia.BlockReason != "" {
+					reason = quotedMedia.BlockReason
 				}
-				msg.Media = &message.IncomingMedia{
-					MimeType: mediaType,
-					Blocked:  true,
-				}
-				logrus.Warnf("[WHATSAPP] Blocked %s download for channel %s due to config", mediaType, wa.channelID)
-			} else {
-				// Check size limit
-				maxSize := conf.MaxDownloadSize
-				if maxSize <= 0 {
-					maxSize = coreconfig.Global.Whatsapp.MaxDownloadSize
-				}
-
-				if fileSize > maxSize {
-					sizeMB := float64(fileSize) / (1024 * 1024)
-					limitMB := float64(maxSize) / (1024 * 1024)
-					blockedTag := fmt.Sprintf(" [EXCEEDS SIZE LIMIT: %.2fMB / Max: %.2fMB]", sizeMB, limitMB)
-					if msg.Text == "" && caption != "" {
-						msg.Text = caption + blockedTag
-					} else if msg.Text == "" {
-						msg.Text = blockedTag
-					} else {
-						msg.Text += blockedTag
-					}
-					msg.Media = &message.IncomingMedia{
-						MimeType: mediaType,
-						Blocked:  true,
-					}
-					logrus.Warnf("[WHATSAPP] Blocked %s download for channel %s: size %.2fMB exceeds limit %.2fMB", mediaType, wa.channelID, sizeMB, limitMB)
-				} else {
-					// 1. Get info (Hash, Extension) without download
-					info, errInfo := pkgUtils.GetMediaInfo(downloadable)
-					if errInfo != nil {
-						logrus.Warnf("[WHATSAPP] Failed to get media info: %v", errInfo)
-						// Fallback? If we can't get hash, we can't efficiently dedup or name.
-						// We might decide to skip or try legacy download.
-						// Let's skip for safety in this strict mode.
-						// We should not return here, as it would skip the event handler.
-						// Instead, we mark it as an error and proceed.
-						msg.Text += fmt.Sprintf(" [MEDIA ERROR: Failed to get info: %v]", errInfo)
-					} else {
-						// 2. Prepare Session File (Get Path)
-						sessionKey := wa.channelID + "|" + msg.ChatID + "|" + msg.SenderID
-
-						// Use Hash as physical filename (Collision safe)
-						fileName := info.FileHash + info.Extension
-
-						// Determine Friendly Name (Contextual)
-						friendlyName := fileName
-						if info.OriginalFilename != "" {
-							friendlyName = pkgUtils.SanitizeFilename(info.OriginalFilename)
-						}
-
-						// Prepare File and Register Resource
-						targetPath, errPrep := wa.manager.PrepareSessionFile(
-							wa.workspaceID,
-							wa.channelID,
-							sessionKey,
-							fileName,
-							friendlyName,
-							info.MimeType,
-							info.FileHash,
-						)
-
-						if errPrep != nil {
-							logrus.Errorf("[WHATSAPP] Failed to prepare session file: %v", errPrep)
-							msg.Text += " [MEDIA ERROR: Storage Prep Failed]"
-						} else {
-							// 3. Download directly to file
-							// Check if file already exists (deduplication optimization!)
-							if _, errExist := os.Stat(targetPath); errExist == nil {
-								// File exists! No need to download.
-								logrus.Debugf("[WHATSAPP] Media %s already exists in session, skipping download", fileName)
-							} else {
-								// Download
-								errDownload := pkgUtils.DownloadToFile(context.Background(), wa.client, downloadable, targetPath)
-								if errDownload != nil {
-									logrus.Errorf("[WHATSAPP] Failed to download to file: %v", errDownload)
-									msg.Text += " [MEDIA ERROR: Download Failed]"
-									// Cleanup empty file if created
-									os.Remove(targetPath)
-									targetPath = "" // Invalidate path
-								}
-							}
-
-							if targetPath != "" {
-								msg.Media = &message.IncomingMedia{
-									Path:     targetPath,
-									MimeType: info.MimeType,
-									Caption:  info.Caption,
-								}
-
-								// Textual Context Overlay
-								// If it's a document/file, we want the LLM to see its name.
-								// Format: "📄 Document {friendlyName}"
-								fileTag := fmt.Sprintf("%s", friendlyName)
-
-								// Clean existing text if it's just generic metadata
-								currentText := strings.TrimSpace(msg.Text)
-								isGeneric := currentText == "" ||
-									strings.EqualFold(currentText, "document") ||
-									strings.EqualFold(currentText, info.MimeType)
-
-								if isGeneric {
-									msg.Text = fileTag
-								} else {
-									// If there is a caption, append the file info
-									msg.Text = fmt.Sprintf("%s\n(%s)", currentText, fileTag)
-								}
-							}
-						}
-					}
-				}
+				msg.Text += fmt.Sprintf("\n[SYSTEM NOTE: Access Denied. You do not have permission to read/listen to the quoted media (%s) because: %s]", quotedMedia.MimeType, reason)
+			} else if quotedMedia.Path != "" {
+				msg.Text += fmt.Sprintf("\n[SYSTEM NOTE: The quoted media is available as '%s']", filepath.Base(quotedMedia.Path))
 			}
 		}
 
 		wa.eventHandler(msg)
+	}
+}
+
+func (wa *WhatsAppAdapter) processWhatsAppMedia(msg *message.IncomingMessage, rawMsg *waE2E.Message, conf channel.ChannelConfig) *message.IncomingMedia {
+	if rawMsg == nil {
+		return nil
+	}
+
+	var downloadable whatsmeow.DownloadableMessage
+	mediaType := ""
+	caption := ""
+	var fileSize int64 = 0
+	var fileName string
+
+	if img := rawMsg.GetImageMessage(); img != nil {
+		downloadable = img
+		mediaType = "image"
+		caption = img.GetCaption()
+		if img.FileLength != nil {
+			fileSize = int64(*img.FileLength)
+		}
+	} else if audio := rawMsg.GetAudioMessage(); audio != nil {
+		downloadable = audio
+		mediaType = "audio"
+		if audio.FileLength != nil {
+			fileSize = int64(*audio.FileLength)
+		}
+		if conf.VoiceNotesOnly && (audio.PTT == nil || !*audio.PTT) {
+			logrus.Debugf("[WHATSAPP] Blocking audio because it's not a voice note (PTT)")
+			return nil
+		}
+	} else if video := rawMsg.GetVideoMessage(); video != nil {
+		downloadable = video
+		mediaType = "video"
+		caption = video.GetCaption()
+		if video.FileLength != nil {
+			fileSize = int64(*video.FileLength)
+		}
+	} else if doc := rawMsg.GetDocumentMessage(); doc != nil {
+		downloadable = doc
+		mediaType = "document"
+		caption = doc.GetCaption()
+		fileName = doc.GetFileName()
+		if doc.FileLength != nil {
+			fileSize = int64(*doc.FileLength)
+		}
+	} else if sticker := rawMsg.GetStickerMessage(); sticker != nil {
+		downloadable = sticker
+		mediaType = "sticker"
+		if sticker.FileLength != nil {
+			fileSize = int64(*sticker.FileLength)
+		}
+	}
+
+	if downloadable == nil || mediaType == "" {
+		return nil
+	}
+
+	// Extension checks
+	if len(conf.AllowedExtensions) > 0 && fileName != "" {
+		ext := strings.ToLower(filepath.Ext(fileName))
+		allowed := false
+		for _, a := range conf.AllowedExtensions {
+			if strings.ToLower(a) == ext || strings.ToLower(a) == strings.TrimPrefix(ext, ".") {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			logrus.Warnf("[WHATSAPP] Blocked file %s due to extension %s not in allowed list", fileName, ext)
+			return nil
+		}
+	}
+
+	// Permission checks
+	isAllowed := true
+	switch mediaType {
+	case "image":
+		isAllowed = conf.AllowImages
+	case "audio":
+		isAllowed = conf.AllowAudio
+	case "video":
+		isAllowed = conf.AllowVideo
+	case "document":
+		isAllowed = conf.AllowDocuments
+	case "sticker":
+		isAllowed = conf.AllowStickers
+	}
+
+	if !isAllowed {
+		reason := fmt.Sprintf("Downloading %s is disabled in channel settings", mediaType)
+		logrus.Warnf("[WHATSAPP] Blocked %s download for channel %s due to config", mediaType, wa.channelID)
+		return &message.IncomingMedia{MimeType: mediaType, Blocked: true, BlockReason: reason}
+	}
+
+	maxSize := conf.MaxDownloadSize
+	if maxSize <= 0 {
+		maxSize = coreconfig.Global.Whatsapp.MaxDownloadSize
+	}
+
+	if fileSize > maxSize {
+		sizeMB := float64(fileSize) / (1024 * 1024)
+		limitMB := float64(maxSize) / (1024 * 1024)
+		reason := fmt.Sprintf("File size (%.2fMB) exceeds the maximum allowed limit (%.2fMB)", sizeMB, limitMB)
+		logrus.Warnf("[WHATSAPP] Blocked %s download for channel %s: size %.2fMB exceeds limit %.2fMB", mediaType, wa.channelID, sizeMB, limitMB)
+		return &message.IncomingMedia{MimeType: mediaType, Blocked: true, BlockReason: reason}
+	}
+
+	// Gather Info
+	info, errInfo := pkgUtils.GetMediaInfo(downloadable)
+	if errInfo != nil {
+		logrus.Warnf("[WHATSAPP] Failed to get media info: %v", errInfo)
+		return nil
+	}
+
+	sessionKey := wa.channelID + "|" + msg.ChatID + "|" + msg.SenderID
+	physicalFileName := info.FileHash + info.Extension
+	friendlyName := physicalFileName
+	if info.OriginalFilename != "" {
+		friendlyName = pkgUtils.SanitizeFilename(info.OriginalFilename)
+	}
+
+	targetPath, errPrep := wa.manager.PrepareSessionFile(
+		wa.workspaceID,
+		wa.channelID,
+		sessionKey,
+		physicalFileName,
+		friendlyName,
+		info.MimeType,
+		info.FileHash,
+	)
+
+	if errPrep != nil {
+		logrus.Errorf("[WHATSAPP] Failed to prepare session file: %v", errPrep)
+		return nil
+	}
+
+	if _, errExist := os.Stat(targetPath); errExist != nil {
+		errDownload := pkgUtils.DownloadToFile(context.Background(), wa.client, downloadable, targetPath)
+		if errDownload != nil {
+			logrus.Errorf("[WHATSAPP] Failed to download to file: %v", errDownload)
+			os.Remove(targetPath)
+			return nil
+		}
+	} else {
+		logrus.Debugf("[WHATSAPP] Media %s already exists in session, skipping download", physicalFileName)
+	}
+
+	// Attach text prefix for primary message only, if needed? No, let's keep it clean
+	// We just return the media object
+	return &message.IncomingMedia{
+		Path:     targetPath,
+		MimeType: info.MimeType,
+		Caption:  caption,
 	}
 }
 

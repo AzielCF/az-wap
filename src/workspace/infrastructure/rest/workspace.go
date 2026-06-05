@@ -10,6 +10,8 @@ import (
 	"github.com/AzielCF/az-wap/workspace"
 	"github.com/AzielCF/az-wap/workspace/domain/channel"
 	"github.com/AzielCF/az-wap/workspace/domain/common"
+	tgAdapter "github.com/AzielCF/az-wap/workspace/infrastructure/telegram"
+	tgDomain "github.com/AzielCF/az-wap/workspace/infrastructure/telegram/domain"
 	"github.com/AzielCF/az-wap/workspace/usecase"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
@@ -56,6 +58,11 @@ func InitRestWorkspace(app fiber.Router, uc *usecase.WorkspaceUsecase, wm *works
 	g.Get("/:id/channels/:cid/whatsapp/reconnect", handler.WhatsAppReconnect)
 	g.Post("/:id/channels/:cid/whatsapp/login-code", handler.WhatsAppLoginWithCode)
 
+	// Telegram Control
+	g.Get("/:id/channels/:cid/telegram/status", handler.GetTelegramStatus)
+	g.Post("/:id/channels/:cid/telegram/token", handler.SetTelegramToken)
+	g.Get("/:id/channels/:cid/telegram/logout", handler.TelegramLogout)
+
 	// Bot Control in Channel
 	g.Post("/:id/channels/:cid/bot-memory/clear", handler.ClearChannelBotMemory)
 
@@ -70,8 +77,6 @@ func (h *WorkspaceHandler) GetActiveTyping(c *fiber.Ctx) error {
 	active, _ := h.wm.GetActiveTyping(c.Context())
 	return c.JSON(active)
 }
-
-// ... existing code ...
 
 func (h *WorkspaceHandler) ClearChannelBotMemory(c *fiber.Ctx) error {
 	workspaceID := c.Params("id")
@@ -247,6 +252,18 @@ func (h *WorkspaceHandler) UpdateChannelConfig(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "channel not found"})
 	}
 
+	// Preserve token for Telegram if not provided in update
+	if ch.Type == channel.ChannelTypeTelegram {
+		oldToken, _ := ch.Config.Settings["token"].(string)
+		newToken, _ := cfg.Settings["token"].(string)
+		if newToken == "" && oldToken != "" {
+			if cfg.Settings == nil {
+				cfg.Settings = make(map[string]any)
+			}
+			cfg.Settings["token"] = oldToken
+		}
+	}
+
 	// Update only the config
 	ch.Config = cfg
 
@@ -293,8 +310,17 @@ func (h *WorkspaceHandler) UpdateChannel(c *fiber.Ctx) error {
 	ch.OwnerID = req.OwnerID
 
 	// We assume if Config is passed, we update it.
-	// To be safer, we could check emptiness, but in Go zero value is empty strict.
-	// Since it's a PUT, full replacement of sent fields is expected.
+	// Preserve token for Telegram if not provided in update
+	if ch.Type == channel.ChannelTypeTelegram {
+		oldToken, _ := ch.Config.Settings["token"].(string)
+		newToken, _ := req.Config.Settings["token"].(string)
+		if newToken == "" && oldToken != "" {
+			if req.Config.Settings == nil {
+				req.Config.Settings = make(map[string]any)
+			}
+			req.Config.Settings["token"] = oldToken
+		}
+	}
 	ch.Config = req.Config
 
 	// Sync ExternalRef for bypass logic if WhatsApp
@@ -676,6 +702,123 @@ func (h *WorkspaceHandler) WhatsAppReconnect(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "reconnected"})
 }
 
+// Telegram Control Handlers
+
+func (h *WorkspaceHandler) GetTelegramStatus(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if !ok {
+		ch, err := h.uc.GetChannel(c.Context(), cid)
+		if err == nil {
+			token, _ := ch.Config.Settings["token"].(string)
+			return c.JSON(fiber.Map{
+				"is_connected": false,
+				"is_logged_in": token != "", // Si hay token, está "logueado" (autorizado)
+				"status":       ch.Status,
+				"channel_id":   cid,
+				"bot_name":     ch.ExternalRef, // Devolvemos el nombre cacheado si existe
+			})
+		}
+		return c.JSON(fiber.Map{"is_connected": false, "is_logged_in": false, "status": "disconnected"})
+	}
+
+	if adapter.Type() != channel.ChannelTypeTelegram {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "not a telegram channel"})
+	}
+
+	status := adapter.Status()
+	isLoggedIn := adapter.IsLoggedIn()
+	botName := ""
+
+	// Si el adaptador no reporta como logueado aún (puede estar arrancando),
+	// pero tenemos token en la base de datos, lo tratamos como logueado para la UI.
+	ch, err := h.uc.GetChannel(c.Context(), cid)
+	if err == nil {
+		token, _ := ch.Config.Settings["token"].(string)
+		if !isLoggedIn && token != "" {
+			isLoggedIn = true
+		}
+		botName = ch.ExternalRef
+	}
+
+	// Si el adaptador está vivo, intentamos obtener el nombre actual real
+	if me, err := adapter.GetMe(); err == nil && me.Name != "" {
+		botName = me.Name
+	}
+
+	return c.JSON(fiber.Map{
+		"is_connected": status == channel.ChannelStatusConnected,
+		"is_logged_in": isLoggedIn,
+		"status":       status,
+		"channel_id":   cid,
+		"bot_name":     botName,
+	})
+}
+
+func (h *WorkspaceHandler) SetTelegramToken(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+
+	type req struct {
+		Token string `json:"token"`
+	}
+	var r req
+	if err := c.BodyParser(&r); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+	}
+
+	ch, err := h.uc.GetChannel(c.Context(), cid)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "channel not found"})
+	}
+
+	if ch.Config.Settings == nil {
+		ch.Config.Settings = make(map[string]interface{})
+	}
+	ch.Config.Settings["token"] = r.Token
+	ch.Enabled = true // Forzamos el habilitado al conectar para que auto-arranque al reiniciar
+
+	if _, ok := h.wm.GetAdapter(cid); ok {
+		h.wm.UnregisterAdapter(cid)
+	}
+
+	if err := h.uc.UpdateChannel(c.Context(), ch); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if err := h.wm.StartChannel(c.Context(), cid); err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid token or connection failed: " + err.Error()})
+	}
+
+	name := "Telegram Bot"
+	if adapter, ok := h.wm.GetAdapter(cid); ok {
+		me, _ := adapter.GetMe()
+		name = me.Name
+	}
+
+	ch.ExternalRef = name
+	_ = h.uc.UpdateChannel(c.Context(), ch)
+
+	return c.JSON(fiber.Map{"status": "connected", "bot_name": name})
+}
+
+func (h *WorkspaceHandler) TelegramLogout(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+
+	ch, err := h.uc.GetChannel(c.Context(), cid)
+	if err == nil {
+		if ch.Config.Settings != nil {
+			delete(ch.Config.Settings, "token")
+		}
+		ch.Status = channel.ChannelStatusDisconnected
+		_ = h.uc.UpdateChannel(c.Context(), ch)
+	}
+
+	h.wm.UnregisterAdapter(cid)
+
+	return c.JSON(fiber.Map{"status": "logged_out"})
+}
+
 // Access Rules Handlers
 
 func (h *WorkspaceHandler) ListAccessRules(c *fiber.Ctx) error {
@@ -806,4 +949,24 @@ func (h *WorkspaceHandler) ResolveIdentity(c *fiber.Ctx) error {
 		"name":              name,
 		"status":            "verified",
 	})
+}
+func (h *WorkspaceHandler) HandleTelegramWebhook(c *fiber.Ctx) error {
+	cid := c.Params("cid")
+	var update tgDomain.Update
+	if err := c.BodyParser(&update); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "failed to parse telegram update"})
+	}
+
+	adapter, ok := h.wm.GetAdapter(cid)
+	if !ok {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "channel adapter not found"})
+	}
+
+	tg, ok := adapter.(*tgAdapter.TelegramAdapter)
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "channel is not a telegram bot"})
+	}
+
+	tg.ProcessTelegramUpdate(update)
+	return c.SendStatus(fiber.StatusOK)
 }

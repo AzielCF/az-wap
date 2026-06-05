@@ -110,18 +110,47 @@ func ExtractMessageTextFromProto(msg *waE2E.Message) string {
 	}
 
 	// Check for image with caption
-	if img := msg.GetImageMessage(); img != nil && img.GetCaption() != "" {
-		return img.GetCaption()
+	if img := msg.GetImageMessage(); img != nil {
+		text := img.GetCaption()
+		if text == "" {
+			return "🖼️ Image"
+		}
+		return "🖼️ " + text
 	}
 
 	// Check for video with caption
-	if vid := msg.GetVideoMessage(); vid != nil && vid.GetCaption() != "" {
-		return vid.GetCaption()
+	if vid := msg.GetVideoMessage(); vid != nil {
+		text := vid.GetCaption()
+		if text == "" {
+			return "🎥 Video"
+		}
+		return "🎥 " + text
 	}
 
 	// Check for document with caption
-	if doc := msg.GetDocumentMessage(); doc != nil && doc.GetCaption() != "" {
-		return doc.GetCaption()
+	if doc := msg.GetDocumentMessage(); doc != nil {
+		text := doc.GetCaption()
+		if text == "" {
+			return "📄 Document"
+		}
+		return "📄 " + text
+	}
+
+	// Check for audio
+	if audio := msg.GetAudioMessage(); audio != nil {
+		if audio.GetPTT() {
+			return "🎤 Voice Message"
+		}
+		return "🎧 Audio"
+	}
+
+	// Check for sticker
+	if sticker := msg.GetStickerMessage(); sticker != nil {
+		text := "🎨 Sticker"
+		if sticker.GetIsAnimated() {
+			text = "✨ Animated Sticker"
+		}
+		return text
 	}
 
 	// Check for buttons response message
@@ -796,13 +825,13 @@ func BuildEventMessage(evt *events.Message) (message EvtMessage) {
 	if extendedMessage := evt.Message.GetExtendedTextMessage(); extendedMessage != nil {
 		message.Text = extendedMessage.GetText()
 		message.RepliedId = extendedMessage.ContextInfo.GetStanzaID()
-		message.QuotedMessage = extendedMessage.ContextInfo.GetQuotedMessage().GetConversation()
+		message.QuotedMessage = ExtractMessageTextFromProto(extendedMessage.ContextInfo.GetQuotedMessage())
 	} else if protocolMessage := evt.Message.GetProtocolMessage(); protocolMessage != nil {
 		if editedMessage := protocolMessage.GetEditedMessage(); editedMessage != nil {
 			if extendedText := editedMessage.GetExtendedTextMessage(); extendedText != nil {
 				message.Text = extendedText.GetText()
 				message.RepliedId = extendedText.ContextInfo.GetStanzaID()
-				message.QuotedMessage = extendedText.ContextInfo.GetQuotedMessage().GetConversation()
+				message.QuotedMessage = ExtractMessageTextFromProto(extendedText.ContextInfo.GetQuotedMessage())
 			}
 		}
 	}

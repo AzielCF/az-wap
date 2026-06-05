@@ -2,10 +2,11 @@ package message
 
 // IncomingMedia representa el contenido multimedia recibido de un canal
 type IncomingMedia struct {
-	Path     string `json:"path"`
-	MimeType string `json:"mime_type"`
-	Caption  string `json:"caption,omitempty"`
-	Blocked  bool   `json:"blocked,omitempty"` // Indica si la descarga fue bloqueada
+	Path        string `json:"path"`
+	MimeType    string `json:"mime_type"`
+	Caption     string `json:"caption,omitempty"`
+	Blocked     bool   `json:"blocked,omitempty"`      // Indica si la descarga fue bloqueada
+	BlockReason string `json:"block_reason,omitempty"` // Causa específica del bloqueo (e.g. "config_disabled", "size_limit", "download_error")
 }
 
 // IncomingMessage representa un mensaje recibido de cualquier canal

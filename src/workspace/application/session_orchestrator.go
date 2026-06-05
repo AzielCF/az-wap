@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -469,6 +470,26 @@ func (s *SessionOrchestrator) EnqueueDebounced(ctx context.Context, ch channel.C
 	}
 	if msg.Text != "" {
 		e.Texts = append(e.Texts, msg.Text)
+
+		// Map URLs as session resources for later reference by tools
+		re := regexp.MustCompile(`https?:\/\/[^\s]+`)
+		urls := re.FindAllString(msg.Text, -1)
+		for _, u := range urls {
+			resCount := len(e.Memory.GetResources())
+			friendlyName := fmt.Sprintf("url_link_%d", resCount+1)
+
+			// Quick dedup against same URL
+			alreadyExists := false
+			for _, r := range e.Memory.GetResources() {
+				if r.LocalPath == u {
+					alreadyExists = true
+					break
+				}
+			}
+			if !alreadyExists {
+				e.Memory.AddResource(friendlyName, "url_reference", "text/uri-list", u)
+			}
+		}
 	}
 
 	// Save updated entry
