@@ -1,6 +1,8 @@
 package domain
 
-import "time"
+import (
+	"time"
+)
 
 // ToolCall representa una intención de la IA de llamar a una herramienta
 type ToolCall struct {
@@ -32,6 +34,7 @@ type Platform string
 
 const (
 	PlatformWhatsApp Platform = "whatsapp"
+	PlatformTelegram Platform = "telegram"
 	PlatformTest     Platform = "test"
 	PlatformWeb      Platform = "web"
 )
@@ -47,11 +50,20 @@ const (
 
 // BotMedia representa un archivo adjunto (imagen, audio, etc.)
 type BotMedia struct {
-	Data      []byte     `json:"-"`
-	MimeType  string     `json:"mime_type"`
-	FileName  string     `json:"file_name,omitempty"`
-	LocalPath string     `json:"local_path,omitempty"`
-	State     MediaState `json:"state"`
+	Data        []byte     `json:"-"`
+	MimeType    string     `json:"mime_type"`
+	FileName    string     `json:"file_name,omitempty"`
+	LocalPath   string     `json:"local_path,omitempty"`
+	URL         string     `json:"url,omitempty"`
+	State       MediaState `json:"state"`
+	BlockReason string     `json:"block_reason,omitempty"`
+	CleanupFunc func()     `json:"-"`
+}
+
+func (m *BotMedia) Cleanup() {
+	if m.CleanupFunc != nil {
+		m.CleanupFunc()
+	}
 }
 
 // BotInput es la estructura agnóstica de entrada para el motor del bot

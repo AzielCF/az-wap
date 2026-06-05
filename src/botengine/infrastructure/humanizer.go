@@ -81,6 +81,14 @@ var CasualTyperProfile = TypingProfile{
 	ThinkingPauseMaxMs:     800,
 }
 
+// InstantProfile for robots/official APIs (minimal latency)
+var InstantProfile = TypingProfile{
+	BaseCharDelayMs:        1,
+	CharDelayVarianceMs:    1,
+	PunctuationPauseChance: 0,
+	ThinkingPauseChance:    0,
+}
+
 func NewHumanizer(enabled bool) *Humanizer {
 	return &Humanizer{
 		Enabled:                 enabled,
@@ -180,7 +188,11 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 		consecutiveSpaces = 0
 	)
 
-	nextWordBreak := profile.WordsPerBreak + h.Rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
+	variance := 0
+	if profile.WordsBreakVariance > 0 {
+		variance = h.Rng.Intn(profile.WordsBreakVariance*2) - profile.WordsBreakVariance
+	}
+	nextWordBreak := profile.WordsPerBreak + variance
 	if nextWordBreak < 5 {
 		nextWordBreak = 5
 	}
@@ -189,7 +201,10 @@ func (h *Humanizer) SimulateTypingWithProfile(ctx context.Context, t domain.Tran
 		if segmentChars <= 0 {
 			return true
 		}
-		variance := time.Duration(h.Rng.Intn(profile.CharDelayVarianceMs+1)) * time.Millisecond
+		variance := time.Duration(0)
+		if profile.CharDelayVarianceMs > 0 {
+			variance = time.Duration(h.Rng.Intn(profile.CharDelayVarianceMs)) * time.Millisecond
+		}
 		perChar := perCharBase + variance
 		delay := time.Duration(segmentChars) * perChar
 
@@ -356,13 +371,13 @@ func (h *Humanizer) sleep(ctx context.Context, d time.Duration) bool {
 
 // SplitIntoBubbles breaks a long text into logically separated chunks (paragraphs)
 // to simulate multiple "message bubbles" like a human would.
-func (h *Humanizer) SplitIntoBubbles(text string) []string {
+func (h *Humanizer) SplitIntoBubbles(text string, highSpeed bool) []string {
 	if text == "" {
 		return nil
 	}
 
 	// ANTI-BAN & REALISM: 30% chance to NOT split at all, even if it has paragraphs.
-	if h.Rng.Intn(100) < 30 {
+	if !highSpeed && h.Rng.Intn(100) < 30 {
 		return []string{text}
 	}
 
@@ -377,7 +392,11 @@ func (h *Humanizer) SplitIntoBubbles(text string) []string {
 		}
 
 		// 2. If a paragraph is still too long (e.g. > 600 chars), split by sentences
-		if len(p) > 600 {
+		limit := 600
+		if highSpeed {
+			limit = 900
+		}
+		if len(p) > limit {
 			sentences := h.splitIntoSentences(p)
 			bubbles = append(bubbles, sentences...)
 		} else {
@@ -386,14 +405,21 @@ func (h *Humanizer) SplitIntoBubbles(text string) []string {
 	}
 
 	// SAFETY LIMIT: Max 3 bubbles to avoid ban risk on non-official API
-	if len(bubbles) <= 3 {
+	maxBubbles := 3
+	if highSpeed {
+		maxBubbles = 10
+	}
+	if len(bubbles) <= maxBubbles {
 		return bubbles
 	}
 
-	// If we have more than 3, we take the first 2 as is,
-	// and merge ALL remaining text into the 3rd bubble.
-	result := []string{bubbles[0], bubbles[1]}
-	remaining := strings.Join(bubbles[2:], "\n\n")
+	// If we have more than limits, we take the first N-1 as is,
+	// and merge ALL remaining text into the last bubble.
+	result := []string{}
+	for i := 0; i < maxBubbles-1; i++ {
+		result = append(result, bubbles[i])
+	}
+	remaining := strings.Join(bubbles[maxBubbles-1:], "\n\n")
 	result = append(result, remaining)
 
 	return result

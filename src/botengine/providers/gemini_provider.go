@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -479,10 +480,51 @@ Return the results in JSON format.
 Your PRIMARY language for descriptions and summaries is: %s.`, userText, language)}}
 
 	for _, m := range medias {
-		if len(m.Data) > 0 {
-			parts = append(parts, &genai.Part{
-				InlineData: &genai.Blob{MIMEType: m.MimeType, Data: m.Data},
-			})
+		isDoc := strings.Contains(m.MimeType, "pdf") || strings.Contains(m.MimeType, "csv") || strings.Contains(m.MimeType, "text/")
+		isUnsupportedDoc := strings.Contains(m.MimeType, "document") || strings.Contains(m.MimeType, "sheet") || strings.Contains(m.MimeType, "msword") || strings.Contains(m.MimeType, "powerpoint")
+
+		if isUnsupportedDoc {
+			logrus.Warnf("[GEMINI] Skipping unsupported MIME type for direct analysis: %s", m.MimeType)
+			parts = append(parts, &genai.Part{Text: fmt.Sprintf("\n[SYSTEM NOTE: The attached file '%s' (%s) is in a format not natively supported for direct content analysis. Acknowledge its existence but explain you cannot read it immediately.]", m.FileName, m.MimeType)})
+			continue
+		}
+
+		if m.URL != "" {
+			// URLs are processed and downloaded by the application layer using SmartDownloader
+			logrus.Warn("[GEMINI] Received unhandled raw URL without downloading, ignoring")
+		} else if isDoc && m.LocalPath != "" {
+			// Upload heavy local document to Files API (from SmartDownloader or disk)
+			uploadConfig := &genai.UploadFileConfig{MIMEType: m.MimeType, DisplayName: m.FileName}
+			if uploadConfig.DisplayName == "" {
+				uploadConfig.DisplayName = "local_document"
+			}
+			logrus.Debugf("[GEMINI] Uploading document file from Path: %s", m.LocalPath)
+			uploadedFile, errUp := client.Files.UploadFromPath(ctx, m.LocalPath, uploadConfig)
+			if errUp == nil {
+				parts = append(parts, genai.NewPartFromURI(uploadedFile.URI, uploadedFile.MIMEType))
+			} else {
+				logrus.WithError(errUp).Warn("[GEMINI] Failed to upload local document to Files API")
+			}
+		} else if len(m.Data) > 0 {
+			if isDoc {
+				// Upload heavy document if it's in memory (via SmartDownloader that detected it was small enough for RAM)
+				uploadConfig := &genai.UploadFileConfig{MIMEType: m.MimeType, DisplayName: m.FileName}
+				if uploadConfig.DisplayName == "" {
+					uploadConfig.DisplayName = "memory_document"
+				}
+				logrus.Debugf("[GEMINI] Uploading document file from RAM")
+				uploadedFile, errUp := client.Files.Upload(ctx, bytes.NewReader(m.Data), uploadConfig)
+				if errUp == nil {
+					parts = append(parts, genai.NewPartFromURI(uploadedFile.URI, uploadedFile.MIMEType))
+				} else {
+					logrus.WithError(errUp).Warn("[GEMINI] Failed to upload RAM document to Files API")
+				}
+			} else {
+				// Inline data fallback (for small images, etc. where Files API is unnecessary)
+				parts = append(parts, &genai.Part{
+					InlineData: &genai.Blob{MIMEType: m.MimeType, Data: m.Data},
+				})
+			}
 		}
 	}
 

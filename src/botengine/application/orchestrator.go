@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -15,16 +14,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Orchestrator maneja el ciclo de vida de una conversación con herramientas
+// Orchestrator handles the lifecycle of a conversation with tools
 type Orchestrator struct {
 	mcpUsecase       domainMCP.IMCPUsecase
 	nativeToolCaller func(ctx context.Context, name string, input domain.BotInput, args map[string]interface{}) (map[string]interface{}, error)
+	mediaService     *domain.MediaService
 }
 
-func NewOrchestrator(mcp domainMCP.IMCPUsecase, nativeCaller func(context.Context, string, domain.BotInput, map[string]interface{}) (map[string]interface{}, error)) *Orchestrator {
+func NewOrchestrator(mcp domainMCP.IMCPUsecase, nativeCaller func(context.Context, string, domain.BotInput, map[string]interface{}) (map[string]interface{}, error), mediaService *domain.MediaService) *Orchestrator {
 	return &Orchestrator{
 		mcpUsecase:       mcp,
 		nativeToolCaller: nativeCaller,
+		mediaService:     mediaService,
 	}
 }
 
@@ -263,26 +264,39 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 				} else {
 					logrus.Infof("[GEMINI] Native tool %s success", tc.Name)
 
-					// LOGICA ESPECIAL: Si la tool nativa pide un análisis multimodal dinámico
+					// SPECIAL LOGIC: If the native tool asks for dynamic multimodal analysis
 					if action, ok := nRes["action"].(string); ok && action == "trigger_multimodal_analysis" {
 						logrus.Infof("[GEMINI] Triggering dynamic multimodal analysis for %s", tc.Name)
 						path, _ := nRes["path"].(string)
 						mime, _ := nRes["mime_type"].(string)
 						fname, _ := nRes["filename"].(string)
 						intent, _ := nRes["intent"].(string)
+						isURL, _ := nRes["is_url"].(bool)
 
-						data, err := os.ReadFile(path)
+						var err error
+						var media *domain.BotMedia
+
+						if o.mediaService != nil {
+							media, err = o.mediaService.ProcessMedia(ctx, isURL, path, mime, fname)
+						} else {
+							err = fmt.Errorf("media domain service not initialized")
+						}
+
 						if err != nil {
-							// Paridad exacta en el mensaje de error de lectura
+							// Exact parity in the read error message
 							toolResult = map[string]any{"error": fmt.Sprintf("could not read file at %s: %v", path, err)}
-						} else if multimodal, ok := p.(domain.MultimodalInterpreter); ok {
-							media := &domain.BotMedia{Data: data, MimeType: mime, FileName: fname}
-							interp, usageInt, err := multimodal.Interpret(ctx, b.APIKey, b.Model, intent, input.Language, []*domain.BotMedia{media})
-							if err == nil && usageInt != nil {
+						} else if multimodal, ok := p.(domain.MultimodalInterpreter); ok && media != nil {
+							interp, usageInt, errInt := multimodal.Interpret(ctx, b.APIKey, b.Model, intent, input.Language, []*domain.BotMedia{media})
+
+							// Release RAM/Disk immediately after uploading/interpreting is done
+							// Don't use defer in this loop to avoid holding resources until the end of the chat turn
+							media.Cleanup()
+
+							if errInt == nil && usageInt != nil {
 								addCost(b.ID, usageInt.Model, usageInt.CostUSD)
 							}
-							if err != nil {
-								toolResult = map[string]any{"error": fmt.Sprintf("multimodal analysis error: %v", err)}
+							if errInt != nil {
+								toolResult = map[string]any{"error": fmt.Sprintf("multimodal analysis error: %v", errInt)}
 							} else {
 								toolResult = map[string]any{
 									"analysis": interp,
@@ -296,6 +310,11 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 									}
 								}
 							}
+						} else {
+							if media != nil {
+								media.Cleanup()
+							}
+							toolResult = map[string]any{"error": "provider does not support multimodal vision/analysis"}
 						}
 					} else {
 						toolResult = nRes
@@ -326,9 +345,16 @@ func (o *Orchestrator) Execute(ctx context.Context, p domain.AIProvider, b domai
 						}
 					}
 				}
+				status := "ok"
+				var errorMsg string
+				if errRaw, ok := toolResult["error"]; ok {
+					status = "error"
+					errorMsg = fmt.Sprintf("%v", errRaw)
+				}
+
 				botmonitor.Record(botmonitor.Event{
 					TraceID: traceID, InstanceID: instanceID, ChatJID: chatJID,
-					Provider: "native", Stage: "native_call", Kind: tc.Name, Status: "ok", DurationMs: duration,
+					Provider: "native", Stage: "native_call", Kind: tc.Name, Status: status, Error: errorMsg, DurationMs: duration,
 					Metadata: md,
 				})
 			} else {

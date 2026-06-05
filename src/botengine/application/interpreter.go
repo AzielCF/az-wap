@@ -55,12 +55,14 @@ func (i *Interpreter) EnrichInput(ctx context.Context, model string, input domai
 
 		if m.State == domain.MediaStateAnalyzed {
 			toAnalyze = append(toAnalyze, m)
-		} else {
-			stateLabel := "AVAILABLE"
-			if m.State == domain.MediaStateBlocked {
-				stateLabel = "BLOCKED"
+		} else if m.State == domain.MediaStateBlocked {
+			reason := "safety or configuration limits"
+			if m.BlockReason != "" {
+				reason = m.BlockReason
 			}
-			resourceNotes = append(resourceNotes, fmt.Sprintf("[RESOURCE %s: %s]", stateLabel, displayName))
+			resourceNotes = append(resourceNotes, fmt.Sprintf("[SYSTEM NOTE: Access Denied. You do not have permission to read/listen to '%s' because: %s]", displayName, reason))
+		} else {
+			resourceNotes = append(resourceNotes, fmt.Sprintf("[RESOURCE AVAILABLE: %s]", displayName))
 		}
 	}
 

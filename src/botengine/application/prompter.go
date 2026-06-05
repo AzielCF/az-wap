@@ -8,6 +8,7 @@ import (
 	domain "github.com/AzielCF/az-wap/botengine/domain"
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
 	coreconfig "github.com/AzielCF/az-wap/core/config"
+	"github.com/sirupsen/logrus"
 )
 
 // Prompter se encarga de ensamblar las instrucciones del sistema (System Prompt)
@@ -162,6 +163,35 @@ func (p *Prompter) BuildInstructionsSplit(b domainBot.Bot, input domain.BotInput
 	dynamic.WriteString("3. EXECUTION SILENCE: When you decide to call a tool, do NOT write any conversational text (like 'Let me check...' or 'Un momento'). Output ONLY the mindset tag and the tool call.\n")
 	dynamic.WriteString("4. REGIONAL CONTEXT: If Client_Country is set, infer their default currency (e.g. PE=PEN, US=USD) and preferred time format (12h/24h) based on that country's conventions.\n")
 	dynamic.WriteString("5. REMINDER PRIVACY (SPOILER PREVENTION): When listing/searching reminders, NEVER repeat the exact creative text or emojis saved in the database. You MUST summarize the activity in a neutral, boring tone (e.g., 'Cita con el dentista' instead of '¡A lucir esa sonrisa! 🦷'). The creative flair and emojis are ONLY for the final delivery.\n")
+
+	// 7. Platform-Specific Formatting (THE MOST IMPORTANT RULES AT THE END)
+	logrus.Debugf("[PROMPTER] Generating instructions for platform: %s", input.Platform)
+	switch input.Platform {
+	case domain.PlatformWhatsApp:
+		dynamic.WriteString("\n### CRITICAL: WHATSAPP FORMATTING RULES\n")
+		dynamic.WriteString("Use ONLY these symbols for styling:\n")
+		dynamic.WriteString("- Bold: *text*\n")
+		dynamic.WriteString("- Italic: _text_\n")
+		dynamic.WriteString("- Strikethrough: ~text~\n")
+		dynamic.WriteString("- Monospace: ```text```\n")
+		dynamic.WriteString("- Quote: > text\n")
+		dynamic.WriteString("- Inline Code: `text`\n")
+		dynamic.WriteString("- Lists: Use * or - for bullets.\n\n")
+	case domain.PlatformTelegram:
+		dynamic.WriteString("\n### CRITICAL: TELEGRAM FORMATTING RULES (HTML ONLY)\n")
+		dynamic.WriteString("NEVER USE MARKDOWN (**bold**, _italic_, `code`). Telegram will NOT parse it and users will see raw symbols.\n")
+		dynamic.WriteString("You MUST use HTML tags for EVERY style. Always use lowercase tags.\n")
+		dynamic.WriteString("- Bold: <b>text</b>\n")
+		dynamic.WriteString("- Italic: <i>text</i>\n")
+		dynamic.WriteString("- Underline: <u>text</u>\n")
+		dynamic.WriteString("- Strikethrough: <s>text</s>\n")
+		dynamic.WriteString("- Inline Code: <code>text</code>\n")
+		dynamic.WriteString("- Code Block: <pre>text</pre>\n")
+		dynamic.WriteString("- Quotation: <blockquote>text</blockquote>\n")
+		dynamic.WriteString("- Links: <a href=\"URL\">text</a>\n")
+		dynamic.WriteString("- Lists: Use standard bullets like '•' or '-' followed by space. DO NOT use HTML list tags.\n")
+		dynamic.WriteString("IMPORTANT: Escape any literal '<' or '>' character that is NOT part of a tag (e.g. use &lt; and &gt;).\n\n")
+	}
 
 	return stable.String(), dynamic.String()
 }

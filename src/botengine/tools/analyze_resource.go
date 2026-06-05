@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
 )
@@ -80,18 +81,23 @@ func NewAnalyzeSessionResourceTool() ToolDefinition {
 				return map[string]interface{}{"error": "File path not available for this resource"}, nil
 			}
 
-			// Check if file exists
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				return map[string]interface{}{"error": "The physical file is no longer available on the server (it likely expired)"}, nil
+			isURL := targetResource["mime"] == "text/uri-list" || strings.HasPrefix(path, "http")
+
+			// Check if file exists, if it is a local file
+			if !isURL {
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					return map[string]interface{}{"error": "The physical file is no longer available on the server (it likely expired)"}, nil
+				}
 			}
 
-			// SIGNAL FOR THE PROVIDER:
+			// SIGNAL FOR THE PROVIDER OR ORCHESTRATOR:
 			return map[string]interface{}{
 				"action":    "trigger_multimodal_analysis",
 				"path":      path,
 				"mime_type": targetResource["mime"],
 				"filename":  targetResource["name"],
 				"intent":    args["intent"],
+				"is_url":    isURL,
 			}, nil
 		},
 	}
