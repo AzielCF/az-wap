@@ -18,9 +18,9 @@ import (
 
 type workspaceModel struct {
 	ID                    string         `gorm:"primaryKey;column:id"`
-	Name                  string         `gorm:"column:name;not null"`
+	Name                  string         `gorm:"column:name"`
 	Description           sql.NullString `gorm:"column:description"`
-	OwnerID               string         `gorm:"column:owner_id;not null"`
+	OwnerID               string         `gorm:"column:owner_id"`
 	ConfigTimezone        string         `gorm:"column:config_timezone;default:UTC"`
 	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:en"`
 	ConfigMetadata        sql.NullString `gorm:"column:config_metadata"` // JSON
@@ -29,8 +29,8 @@ type workspaceModel struct {
 	MaxBots               int            `gorm:"column:limits_max_bots;default:10"`
 	RateLimitPerMinute    int            `gorm:"column:limits_rate_limit_per_minute;default:60"`
 	Enabled               bool           `gorm:"column:enabled;default:true"`
-	CreatedAt             time.Time      `gorm:"column:created_at;not null"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at;not null"`
+	CreatedAt             time.Time      `gorm:"column:created_at"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at"`
 }
 
 func (workspaceModel) TableName() string { return "workspaces" }
@@ -150,39 +150,51 @@ func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
 	)
 }
 
-// preMigrateSQLite adds missing NOT NULL columns to existing tables before AutoMigrate runs.
-// Each ALTER TABLE is idempotent: if the column already exists, SQLite returns "duplicate column"
-// which we silently ignore.
+// preMigrateSQLite ensures old databases can be migrated safely.
+// Adds missing columns as nullable (matching the GORM model) and backfills
+// sensible defaults into existing rows. This prevents GORM's AutoMigrate from
+// triggering a table recreation that would fail on NOT NULL constraints.
 func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
-	type migration struct {
-		table  string
-		column string
-		ddl    string // full ALTER TABLE statement
+	// Only run if the workspaces table already exists
+	var count int64
+	r.db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='workspaces'").Scan(&count)
+	if count == 0 {
+		return nil // Fresh install, AutoMigrate will create everything
 	}
 
-	migrations := []migration{
-		// workspaces: name and owner_id were added after initial release
-		{"workspaces", "name", `ALTER TABLE workspaces ADD COLUMN name TEXT NOT NULL DEFAULT 'Workspace'`},
-		{"workspaces", "owner_id", `ALTER TABLE workspaces ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'system'`},
-		{"workspaces", "created_at", `ALTER TABLE workspaces ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`},
-		{"workspaces", "updated_at", `ALTER TABLE workspaces ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`},
-		{"workspaces", "config_default_language", `ALTER TABLE workspaces ADD COLUMN config_default_language TEXT DEFAULT 'en'`},
+	// Step 1: Add missing columns (nullable, to match model tags)
+	// ALTER TABLE ADD COLUMN is idempotent: "duplicate column" errors are ignored.
+	columns := []string{
+		`ALTER TABLE workspaces ADD COLUMN name TEXT`,
+		`ALTER TABLE workspaces ADD COLUMN owner_id TEXT`,
+		`ALTER TABLE workspaces ADD COLUMN created_at DATETIME`,
+		`ALTER TABLE workspaces ADD COLUMN updated_at DATETIME`,
+		`ALTER TABLE workspaces ADD COLUMN config_default_language TEXT DEFAULT 'en'`,
+		`ALTER TABLE workspaces ADD COLUMN config_metadata TEXT`,
+		`ALTER TABLE workspaces ADD COLUMN limits_max_channels INTEGER DEFAULT 5`,
+		`ALTER TABLE workspaces ADD COLUMN limits_rate_limit_per_minute INTEGER DEFAULT 60`,
 	}
 
-	for _, m := range migrations {
-		// Check if table exists first
-		var count int64
-		r.db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", m.table).Scan(&count)
-		if count == 0 {
-			continue // Table doesn't exist yet, AutoMigrate will create it fresh
-		}
-
-		// Try to add the column; ignore "duplicate column name" errors
-		if err := r.db.WithContext(ctx).Exec(m.ddl).Error; err != nil {
+	for _, ddl := range columns {
+		if err := r.db.WithContext(ctx).Exec(ddl).Error; err != nil {
 			if strings.Contains(err.Error(), "duplicate column") {
 				continue
 			}
-			return fmt.Errorf("migration %s.%s failed: %w", m.table, m.column, err)
+			return fmt.Errorf("pre-migration add column failed: %w", err)
+		}
+	}
+
+	// Step 2: Backfill defaults for rows that have NULL in required fields
+	backfills := []string{
+		`UPDATE workspaces SET name = 'Workspace' WHERE name IS NULL OR name = ''`,
+		`UPDATE workspaces SET owner_id = 'system' WHERE owner_id IS NULL OR owner_id = ''`,
+		`UPDATE workspaces SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL`,
+		`UPDATE workspaces SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL`,
+	}
+
+	for _, sql := range backfills {
+		if err := r.db.WithContext(ctx).Exec(sql).Error; err != nil {
+			return fmt.Errorf("pre-migration backfill failed: %w", err)
 		}
 	}
 
