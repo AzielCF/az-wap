@@ -17,19 +17,19 @@ import (
 
 type workspaceModel struct {
 	ID                    string         `gorm:"primaryKey;column:id"`
-	Name                  string         `gorm:"column:name;not null;default:'Default Workspace'"`
+	Name                  string         `gorm:"column:name;not null;default:Workspace"`
 	Description           sql.NullString `gorm:"column:description"`
-	OwnerID               string         `gorm:"column:owner_id;not null;default:'system'"`
-	ConfigTimezone        string         `gorm:"column:config_timezone;default:'UTC'"`
-	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:'en'"`
+	OwnerID               string         `gorm:"column:owner_id;not null;default:system"`
+	ConfigTimezone        string         `gorm:"column:config_timezone;default:UTC"`
+	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:en"`
 	ConfigMetadata        sql.NullString `gorm:"column:config_metadata"` // JSON
 	MaxMessagesPerDay     int            `gorm:"column:limits_max_messages_per_day;default:10000"`
 	MaxChannels           int            `gorm:"column:limits_max_channels;default:5"`
 	MaxBots               int            `gorm:"column:limits_max_bots;default:10"`
 	RateLimitPerMinute    int            `gorm:"column:limits_rate_limit_per_minute;default:60"`
 	Enabled               bool           `gorm:"column:enabled;default:true"`
-	CreatedAt             time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP"`
+	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (workspaceModel) TableName() string { return "workspaces" }
@@ -38,17 +38,17 @@ type channelModel struct {
 	ID              string         `gorm:"primaryKey;column:id"`
 	WorkspaceID     string         `gorm:"column:workspace_id;not null;index"`
 	OwnerID         sql.NullString `gorm:"column:owner_id;index"` // Client ID
-	Type            string         `gorm:"column:type;not null"`
-	Name            string         `gorm:"column:name;not null"`
+	Type            string         `gorm:"column:type;not null;default:whatsapp"`
+	Name            string         `gorm:"column:name;not null;default:Channel"`
 	Enabled         bool           `gorm:"column:enabled;default:false"`
 	Config          sql.NullString `gorm:"column:config;type:text"` // JSON
-	Status          string         `gorm:"column:status;default:'pending'"`
+	Status          string         `gorm:"column:status;default:pending"`
 	ExternalRef     *string        `gorm:"column:external_ref;uniqueIndex"`
 	LastSeen        *time.Time     `gorm:"column:last_seen"`
 	AccumulatedCost float64        `gorm:"column:accumulated_cost;default:0"`
-	CostBreakdown   sql.NullString `gorm:"column:cost_breakdown;default:'{}'"` // JSON
-	CreatedAt       time.Time      `gorm:"column:created_at;not null"`
-	UpdatedAt       time.Time      `gorm:"column:updated_at;not null"`
+	CostBreakdown   sql.NullString `gorm:"column:cost_breakdown;default:{}"` // JSON
+	CreatedAt       time.Time      `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt       time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (channelModel) TableName() string { return "channels" }
@@ -59,8 +59,8 @@ type accessRuleModel struct {
 	Identity  string `gorm:"not null;uniqueIndex:idx_channel_identity"`
 	Action    string `gorm:"not null"`
 	Label     sql.NullString
-	CreatedAt time.Time `gorm:"not null"`
-	UpdatedAt time.Time `gorm:"not null"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
 func (accessRuleModel) TableName() string { return "access_rules" }
@@ -79,8 +79,8 @@ type scheduledPostModel struct {
 	RecurrenceDays sql.NullString `gorm:"column:recurrence_days"`
 	OriginalTime   sql.NullString `gorm:"column:original_time"`
 	ExecutionCount int            `gorm:"column:execution_count;default:0"`
-	CreatedAt      time.Time      `gorm:"not null"`
-	UpdatedAt      time.Time      `gorm:"not null"`
+	CreatedAt      time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt      time.Time      `gorm:"autoUpdateTime"`
 }
 
 func (scheduledPostModel) TableName() string { return "scheduled_posts" }
@@ -90,8 +90,8 @@ type clientWorkspaceModel struct {
 	OwnerID     string         `gorm:"column:owner_id;not null;index"`
 	Name        string         `gorm:"column:name;not null"`
 	Description sql.NullString `gorm:"column:description"`
-	CreatedAt   time.Time      `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;not null"`
+	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (clientWorkspaceModel) TableName() string { return "client_workspaces" }
@@ -99,7 +99,7 @@ func (clientWorkspaceModel) TableName() string { return "client_workspaces" }
 type clientWorkspaceChannelModel struct {
 	ClientWorkspaceID string    `gorm:"primaryKey;column:client_workspace_id"`
 	ChannelID         string    `gorm:"primaryKey;column:channel_id"`
-	CreatedAt         time.Time `gorm:"column:created_at;not null"`
+	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime"`
 }
 
 func (clientWorkspaceChannelModel) TableName() string { return "client_workspace_channels" }
@@ -112,8 +112,8 @@ type clientWorkspaceGuestModel struct {
 	BotID               string    `gorm:"column:bot_id;not null"`
 	BotTemplateID       string    `gorm:"column:bot_template_id;not null"`
 	PlatformIdentifiers string    `gorm:"column:platform_identifiers;type:text"` // JSON
-	CreatedAt           time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt           time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (clientWorkspaceGuestModel) TableName() string { return "client_workspace_guests" }
