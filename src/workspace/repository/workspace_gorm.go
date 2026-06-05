@@ -150,10 +150,16 @@ func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
 	)
 }
 
-// preMigrateSQLite ensures old databases can be migrated safely.
-// Adds missing columns as nullable (matching the GORM model) and backfills
-// sensible defaults into existing rows. This prevents GORM's AutoMigrate from
-// triggering a table recreation that would fail on NOT NULL constraints.
+// preMigrateSQLite handles schema evolution for the workspaces table.
+//
+// GORM's SQLite AutoMigrate uses a "recreate table" strategy that copies the OLD DDL
+// from sqlite_master and only patches the specific column being changed. This preserves
+// NOT NULL constraints from the old schema in the temp table. The INSERT SELECT then
+// excludes "changed" columns, causing NOT NULL violations for columns that exist in the
+// old table but with different definitions.
+//
+// The only reliable fix: do the full migration manually via raw SQL, then let AutoMigrate
+// handle the remaining tables which don't have this legacy schema problem.
 func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
 	// Only run if the workspaces table already exists
 	var count int64
@@ -162,43 +168,68 @@ func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
 		return nil // Fresh install, AutoMigrate will create everything
 	}
 
-	// Step 1: Add missing columns (nullable, to match model tags)
-	// ALTER TABLE ADD COLUMN is idempotent: "duplicate column" errors are ignored.
-	columns := []string{
-		`ALTER TABLE workspaces ADD COLUMN name TEXT`,
-		`ALTER TABLE workspaces ADD COLUMN owner_id TEXT`,
-		`ALTER TABLE workspaces ADD COLUMN created_at DATETIME`,
-		`ALTER TABLE workspaces ADD COLUMN updated_at DATETIME`,
-		`ALTER TABLE workspaces ADD COLUMN config_default_language TEXT DEFAULT 'en'`,
-		`ALTER TABLE workspaces ADD COLUMN config_metadata TEXT`,
-		`ALTER TABLE workspaces ADD COLUMN limits_max_channels INTEGER DEFAULT 5`,
-		`ALTER TABLE workspaces ADD COLUMN limits_rate_limit_per_minute INTEGER DEFAULT 60`,
+	// Check if the table needs migration by looking at the stored DDL
+	var rawDDL string
+	r.db.WithContext(ctx).Raw("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='workspaces' AND name='workspaces'").Scan(&rawDDL)
+
+	// If the DDL already matches our target schema (no NOT NULL on name), skip migration
+	if !strings.Contains(rawDDL, "name TEXT NOT NULL") && strings.Contains(rawDDL, "config_default_language") {
+		return nil // Schema is already up to date
 	}
 
-	for _, ddl := range columns {
-		if err := r.db.WithContext(ctx).Exec(ddl).Error; err != nil {
-			if strings.Contains(err.Error(), "duplicate column") {
-				continue
-			}
-			return fmt.Errorf("pre-migration add column failed: %w", err)
+	// Full manual table recreation with the correct target schema
+	stmts := []string{
+		// 1. Create the new table with the EXACT schema matching our GORM model
+		`CREATE TABLE IF NOT EXISTS workspaces_new (
+			id TEXT PRIMARY KEY,
+			name TEXT,
+			description TEXT,
+			owner_id TEXT,
+			config_timezone TEXT DEFAULT 'UTC',
+			config_default_language TEXT DEFAULT 'en',
+			config_metadata TEXT,
+			limits_max_messages_per_day INTEGER DEFAULT 10000,
+			limits_max_channels INTEGER DEFAULT 5,
+			limits_max_bots INTEGER DEFAULT 10,
+			limits_rate_limit_per_minute INTEGER DEFAULT 60,
+			enabled BOOLEAN DEFAULT 1,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+
+		// 2. Copy data with COALESCE to fill in defaults for any missing/NULL columns
+		`INSERT OR IGNORE INTO workspaces_new
+			SELECT
+				id,
+				COALESCE(name, 'Workspace'),
+				description,
+				COALESCE(owner_id, 'system'),
+				COALESCE(config_timezone, 'UTC'),
+				COALESCE(config_default_language, 'en'),
+				config_metadata,
+				COALESCE(limits_max_messages_per_day, 10000),
+				COALESCE(limits_max_channels, 5),
+				COALESCE(limits_max_bots, 10),
+				COALESCE(limits_rate_limit_per_minute, 60),
+				COALESCE(enabled, 1),
+				COALESCE(created_at, CURRENT_TIMESTAMP),
+				COALESCE(updated_at, CURRENT_TIMESTAMP)
+			FROM workspaces`,
+
+		// 3. Drop old table and rename
+		`DROP TABLE workspaces`,
+		`ALTER TABLE workspaces_new RENAME TO workspaces`,
+	}
+
+	// Run inside a transaction for safety
+	tx := r.db.WithContext(ctx).Begin()
+	for _, stmt := range stmts {
+		if err := tx.Exec(stmt).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("manual migration failed: %w", err)
 		}
 	}
-
-	// Step 2: Backfill defaults for rows that have NULL in required fields
-	backfills := []string{
-		`UPDATE workspaces SET name = 'Workspace' WHERE name IS NULL OR name = ''`,
-		`UPDATE workspaces SET owner_id = 'system' WHERE owner_id IS NULL OR owner_id = ''`,
-		`UPDATE workspaces SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL`,
-		`UPDATE workspaces SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL`,
-	}
-
-	for _, sql := range backfills {
-		if err := r.db.WithContext(ctx).Exec(sql).Error; err != nil {
-			return fmt.Errorf("pre-migration backfill failed: %w", err)
-		}
-	}
-
-	return nil
+	return tx.Commit().Error
 }
 
 // Workspace CRUD
