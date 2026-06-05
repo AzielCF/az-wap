@@ -17,9 +17,9 @@ import (
 
 type workspaceModel struct {
 	ID                    string         `gorm:"primaryKey;column:id"`
-	Name                  string         `gorm:"column:name;not null"`
+	Name                  string         `gorm:"column:name;not null;default:'Default Workspace'"`
 	Description           sql.NullString `gorm:"column:description"`
-	OwnerID               string         `gorm:"column:owner_id;not null"`
+	OwnerID               string         `gorm:"column:owner_id;not null;default:'system'"`
 	ConfigTimezone        string         `gorm:"column:config_timezone;default:'UTC'"`
 	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:'en'"`
 	ConfigMetadata        sql.NullString `gorm:"column:config_metadata"` // JSON
@@ -28,8 +28,8 @@ type workspaceModel struct {
 	MaxBots               int            `gorm:"column:limits_max_bots;default:10"`
 	RateLimitPerMinute    int            `gorm:"column:limits_rate_limit_per_minute;default:60"`
 	Enabled               bool           `gorm:"column:enabled;default:true"`
-	CreatedAt             time.Time      `gorm:"column:created_at;not null"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at;not null"`
+	CreatedAt             time.Time      `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP"`
 }
 
 func (workspaceModel) TableName() string { return "workspaces" }
