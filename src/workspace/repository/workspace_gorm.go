@@ -161,25 +161,30 @@ func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
 // The only reliable fix: do the full migration manually via raw SQL, then let AutoMigrate
 // handle the remaining tables which don't have this legacy schema problem.
 func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
-	// Only run if the workspaces table already exists
+	if err := migrateWorkspacesTable(ctx, r.db); err != nil {
+		return err
+	}
+	if err := migrateChannelsTable(ctx, r.db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migrateWorkspacesTable(ctx context.Context, db *gorm.DB) error {
 	var count int64
-	r.db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='workspaces'").Scan(&count)
+	db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='workspaces'").Scan(&count)
 	if count == 0 {
-		return nil // Fresh install, AutoMigrate will create everything
+		return nil
 	}
 
-	// Check if the table needs migration by looking at the stored DDL
 	var rawDDL string
-	r.db.WithContext(ctx).Raw("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='workspaces' AND name='workspaces'").Scan(&rawDDL)
+	db.WithContext(ctx).Raw("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='workspaces' AND name='workspaces'").Scan(&rawDDL)
 
-	// If the DDL already matches our target schema (no NOT NULL on name), skip migration
 	if !strings.Contains(rawDDL, "name TEXT NOT NULL") && strings.Contains(rawDDL, "config_default_language") {
-		return nil // Schema is already up to date
+		return nil
 	}
 
-	// Full manual table recreation with the correct target schema
 	stmts := []string{
-		// 1. Create the new table with the EXACT schema matching our GORM model
 		`CREATE TABLE IF NOT EXISTS workspaces_new (
 			id TEXT PRIMARY KEY,
 			name TEXT,
@@ -196,8 +201,6 @@ func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-
-		// 2. Copy data with COALESCE to fill in defaults for any missing/NULL columns
 		`INSERT OR IGNORE INTO workspaces_new
 			SELECT
 				id,
@@ -215,21 +218,89 @@ func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
 				COALESCE(created_at, CURRENT_TIMESTAMP),
 				COALESCE(updated_at, CURRENT_TIMESTAMP)
 			FROM workspaces`,
-
-		// 3. Drop old table and rename
 		`DROP TABLE workspaces`,
 		`ALTER TABLE workspaces_new RENAME TO workspaces`,
 	}
 
-	// Run inside a transaction for safety
-	tx := r.db.WithContext(ctx).Begin()
+	tx := db.WithContext(ctx).Begin()
 	for _, stmt := range stmts {
 		if err := tx.Exec(stmt).Error; err != nil {
 			tx.Rollback()
-			return fmt.Errorf("manual migration failed: %w", err)
+			return fmt.Errorf("manual workspace migration failed: %w", err)
 		}
 	}
 	return tx.Commit().Error
+}
+
+func migrateChannelsTable(ctx context.Context, db *gorm.DB) error {
+	var count int64
+	db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='channels'").Scan(&count)
+	if count == 0 {
+		return nil
+	}
+
+	// GORM's sqlite driver has a bug where it parses "FOREIGN KEY..." as a column named "FOREIGN"
+	// We do a clean recreate to bypass it and add new columns.
+	var rawDDL string
+	db.WithContext(ctx).Raw("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='channels' AND name='channels'").Scan(&rawDDL)
+
+	if strings.Contains(rawDDL, "accumulated_cost") && strings.Contains(rawDDL, "owner_id") && !strings.Contains(rawDDL, "FOREIGN KEY (workspace_id)") {
+		return nil // Assume already migrated if it has new columns and no problematic constraint
+	}
+
+	// Turn off foreign keys temporarily
+	db.WithContext(ctx).Exec("PRAGMA foreign_keys = OFF")
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS channels_new (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			owner_id TEXT,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			enabled BOOLEAN DEFAULT 0,
+			config TEXT,
+			status TEXT DEFAULT 'pending',
+			external_ref TEXT,
+			last_seen DATETIME,
+			accumulated_cost REAL DEFAULT 0,
+			cost_breakdown TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_external_ref ON channels_new(external_ref)`,
+		`CREATE INDEX IF NOT EXISTS idx_channels_workspace_id ON channels_new(workspace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_channels_owner_id ON channels_new(owner_id)`,
+		`INSERT OR IGNORE INTO channels_new (id, workspace_id, owner_id, type, name, enabled, config, status, external_ref, last_seen, created_at, updated_at)
+			SELECT
+				id,
+				workspace_id,
+				NULL as owner_id,
+				type,
+				name,
+				enabled,
+				config,
+				status,
+				external_ref,
+				last_seen,
+				created_at,
+				updated_at
+			FROM channels`,
+		`DROP TABLE channels`,
+		`ALTER TABLE channels_new RENAME TO channels`,
+	}
+
+	tx := db.WithContext(ctx).Begin()
+	for _, stmt := range stmts {
+		if err := tx.Exec(stmt).Error; err != nil {
+			tx.Rollback()
+			db.WithContext(ctx).Exec("PRAGMA foreign_keys = ON")
+			return fmt.Errorf("manual channel migration failed: %w", err)
+		}
+	}
+	err := tx.Commit().Error
+	db.WithContext(ctx).Exec("PRAGMA foreign_keys = ON")
+	return err
 }
 
 // Workspace CRUD
