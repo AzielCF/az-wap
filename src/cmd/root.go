@@ -228,7 +228,7 @@ func runServer(cmd *cobra.Command, _ []string) {
 		HSTSMaxAge:            31536000,
 		HSTSExcludeSubdomains: false,
 		ReferrerPolicy:        "strict-origin-when-cross-origin",
-		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.whatsapp.net; connect-src 'self' http://localhost:* ws://localhost:*;",
+		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.whatsapp.net; connect-src 'self' https://cloudflareinsights.com http://localhost:* ws://localhost:*;",
 	}))
 
 	app.Use(limiter.New(limiter.Config{
@@ -324,20 +324,14 @@ func runServer(cmd *cobra.Command, _ []string) {
 		PathPrefix: "frontend/dist",
 		Browse:     false,
 		Index:      "index.html",
+		NotFoundFile: "index.html",
+		Next: func(c *fiber.Ctx) bool {
+			path := c.Path()
+			return strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/api") || strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/statics")
+		},
 	}))
 
-	app.Get(coreconfig.Global.App.BasePath+"/*", func(c *fiber.Ctx) error {
-		path := c.Path()
-		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/statics") || strings.Contains(path, ".") {
-			return c.Next()
-		}
-		file, err := EmbedFrontend.ReadFile("frontend/dist/index.html")
-		if err != nil {
-			return c.Status(fiber.StatusNotFound).SendString("Frontend not found")
-		}
-		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
-		return c.Send(file)
-	})
+	// Fallback route removed since filesystem handles NotFoundFile
 
 	if err := app.Listen(":" + coreconfig.Global.App.Port); err != nil {
 		logrus.Fatalf("[APP] Failed to start server: %v", err)

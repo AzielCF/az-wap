@@ -117,8 +117,8 @@ func (h *WorkspaceHandler) CreateWorkspace(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
 	}
 
-	if r.Name == "" || r.OwnerID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "name and owner_id are required"})
+	if r.Name == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "name is required"})
 	}
 
 	ws, err := h.uc.CreateWorkspace(c.Context(), r.Name, r.Description, r.OwnerID)
