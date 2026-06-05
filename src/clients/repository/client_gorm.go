@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AzielCF/az-wap/clients/domain"
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -55,8 +56,10 @@ func NewClientGormRepository(db *gorm.DB) *ClientGormRepository {
 }
 
 func (r *ClientGormRepository) InitSchema(ctx context.Context) error {
-	// GORM AutoMigrate handles creation and schema updates
-	return r.db.WithContext(ctx).AutoMigrate(&clientModel{})
+	models := map[string]interface{}{
+		"clients": &clientModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
 
 // CRUD

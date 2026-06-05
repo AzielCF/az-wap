@@ -7,6 +7,7 @@ import (
 	"time"
 
 	domainBot "github.com/AzielCF/az-wap/botengine/domain/bot"
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 	pkgError "github.com/AzielCF/az-wap/core/pkg/error"
 	"gorm.io/gorm"
 )
@@ -56,7 +57,10 @@ func NewBotGormRepository(db *gorm.DB) *BotGormRepository {
 
 // Init inicializa el esquema usando AutoMigrate.
 func (r *BotGormRepository) Init(ctx context.Context) error {
-	return r.db.WithContext(ctx).AutoMigrate(&botModel{})
+	models := map[string]interface{}{
+		"bots": &botModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
 
 // Create inserta un nuevo bot.

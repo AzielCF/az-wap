@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AzielCF/az-wap/clients/domain"
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -48,7 +49,10 @@ func NewSubscriptionGormRepository(db *gorm.DB) *SubscriptionGormRepository {
 }
 
 func (r *SubscriptionGormRepository) InitSchema(ctx context.Context) error {
-	return r.db.WithContext(ctx).AutoMigrate(&subscriptionModel{})
+	models := map[string]interface{}{
+		"subscriptions": &subscriptionModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
 
 // CRUD

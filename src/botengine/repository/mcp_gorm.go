@@ -8,6 +8,7 @@ import (
 	"time"
 
 	domainMCP "github.com/AzielCF/az-wap/botengine/domain/mcp"
+	db_pkg "github.com/AzielCF/az-wap/core/pkg/db"
 	"github.com/AzielCF/az-wap/core/pkg/crypto"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -60,10 +61,11 @@ func NewMCPGormRepository(db *gorm.DB) *MCPGormRepository {
 }
 
 func (r *MCPGormRepository) Init(ctx context.Context) error {
-	return r.db.WithContext(ctx).AutoMigrate(
-		&mcpServerModel{},
-		&botMCPConfigModel{},
-	)
+	models := map[string]interface{}{
+		"mcp_servers":     &mcpServerModel{},
+		"bot_mcp_configs": &botMCPConfigModel{},
+	}
+	return db_pkg.SafeMigrateSQLite(ctx, r.db, models)
 }
 
 // === MCP Servers ===
