@@ -58,7 +58,7 @@ func NewDatabaseWithCustomPath(cfg *config.Config, path string) (*gorm.DB, error
 	level := os.Getenv("DB_LOG_LEVEL")
 	fmt.Printf("[DEBUG] DB_LOG_LEVEL detected: '%s'\n", level)
 	if level == "" {
-		level = "info"
+		level = "warn"
 	}
 
 	switch level {

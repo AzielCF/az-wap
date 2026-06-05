@@ -400,6 +400,10 @@ func (m *Manager) handleIncomingMessage(adapter channelDomain.ChannelAdapter, ms
 		msg.Language = "en"
 	}
 
+	if ch.Config.IsTester {
+		msg.Metadata["is_tester"] = true
+	}
+
 	if botID == "" && (ch.Config.Chatwoot == nil || !ch.Config.Chatwoot.Enabled) {
 		logrus.WithField("channel_id", msg.ChannelID).Warn("[WorkspaceManager] Message ignored: No BotID assigned to channel")
 		return

@@ -323,15 +323,31 @@ func runServer(cmd *cobra.Command, _ []string) {
 		Root:       http.FS(EmbedFrontend),
 		PathPrefix: "frontend/dist",
 		Browse:     false,
-		Index:      "index.html",
-		NotFoundFile: "index.html",
 		Next: func(c *fiber.Ctx) bool {
 			path := c.Path()
-			return strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/api") || strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/statics")
+			if strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/api") || strings.HasPrefix(path, coreconfig.Global.App.BasePath+"/statics") {
+				return true
+			}
+			// Skip filesystem if it's not a file request (doesn't contain a dot)
+			if !strings.Contains(path, ".") {
+				return true
+			}
+			return false
 		},
 	}))
 
-	// Fallback route removed since filesystem handles NotFoundFile
+	app.Get(coreconfig.Global.App.BasePath+"/*", func(c *fiber.Ctx) error {
+		path := c.Path()
+		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/statics") || strings.Contains(path, ".") {
+			return c.Next()
+		}
+		file, err := EmbedFrontend.ReadFile("frontend/dist/index.html")
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).SendString("Frontend not found")
+		}
+		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
+		return c.Send(file)
+	})
 
 	if err := app.Listen(":" + coreconfig.Global.App.Port); err != nil {
 		logrus.Fatalf("[APP] Failed to start server: %v", err)
