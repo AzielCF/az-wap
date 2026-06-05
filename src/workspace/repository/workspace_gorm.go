@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,9 +18,9 @@ import (
 
 type workspaceModel struct {
 	ID                    string         `gorm:"primaryKey;column:id"`
-	Name                  string         `gorm:"column:name;not null;default:Workspace"`
+	Name                  string         `gorm:"column:name;not null"`
 	Description           sql.NullString `gorm:"column:description"`
-	OwnerID               string         `gorm:"column:owner_id;not null;default:system"`
+	OwnerID               string         `gorm:"column:owner_id;not null"`
 	ConfigTimezone        string         `gorm:"column:config_timezone;default:UTC"`
 	ConfigDefaultLanguage string         `gorm:"column:config_default_language;default:en"`
 	ConfigMetadata        sql.NullString `gorm:"column:config_metadata"` // JSON
@@ -28,8 +29,8 @@ type workspaceModel struct {
 	MaxBots               int            `gorm:"column:limits_max_bots;default:10"`
 	RateLimitPerMinute    int            `gorm:"column:limits_rate_limit_per_minute;default:60"`
 	Enabled               bool           `gorm:"column:enabled;default:true"`
-	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+	CreatedAt             time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at;not null"`
 }
 
 func (workspaceModel) TableName() string { return "workspaces" }
@@ -38,17 +39,17 @@ type channelModel struct {
 	ID              string         `gorm:"primaryKey;column:id"`
 	WorkspaceID     string         `gorm:"column:workspace_id;not null;index"`
 	OwnerID         sql.NullString `gorm:"column:owner_id;index"` // Client ID
-	Type            string         `gorm:"column:type;not null;default:whatsapp"`
-	Name            string         `gorm:"column:name;not null;default:Channel"`
+	Type            string         `gorm:"column:type;not null"`
+	Name            string         `gorm:"column:name;not null"`
 	Enabled         bool           `gorm:"column:enabled;default:false"`
 	Config          sql.NullString `gorm:"column:config;type:text"` // JSON
 	Status          string         `gorm:"column:status;default:pending"`
 	ExternalRef     *string        `gorm:"column:external_ref;uniqueIndex"`
 	LastSeen        *time.Time     `gorm:"column:last_seen"`
 	AccumulatedCost float64        `gorm:"column:accumulated_cost;default:0"`
-	CostBreakdown   sql.NullString `gorm:"column:cost_breakdown;default:{}"` // JSON
-	CreatedAt       time.Time      `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt       time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+	CostBreakdown   sql.NullString `gorm:"column:cost_breakdown"` // JSON
+	CreatedAt       time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt       time.Time      `gorm:"column:updated_at;not null"`
 }
 
 func (channelModel) TableName() string { return "channels" }
@@ -59,8 +60,8 @@ type accessRuleModel struct {
 	Identity  string `gorm:"not null;uniqueIndex:idx_channel_identity"`
 	Action    string `gorm:"not null"`
 	Label     sql.NullString
-	CreatedAt time.Time `gorm:"autoCreateTime"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	CreatedAt time.Time `gorm:"not null"`
+	UpdatedAt time.Time `gorm:"not null"`
 }
 
 func (accessRuleModel) TableName() string { return "access_rules" }
@@ -79,8 +80,8 @@ type scheduledPostModel struct {
 	RecurrenceDays sql.NullString `gorm:"column:recurrence_days"`
 	OriginalTime   sql.NullString `gorm:"column:original_time"`
 	ExecutionCount int            `gorm:"column:execution_count;default:0"`
-	CreatedAt      time.Time      `gorm:"autoCreateTime"`
-	UpdatedAt      time.Time      `gorm:"autoUpdateTime"`
+	CreatedAt      time.Time      `gorm:"not null"`
+	UpdatedAt      time.Time      `gorm:"not null"`
 }
 
 func (scheduledPostModel) TableName() string { return "scheduled_posts" }
@@ -90,8 +91,8 @@ type clientWorkspaceModel struct {
 	OwnerID     string         `gorm:"column:owner_id;not null;index"`
 	Name        string         `gorm:"column:name;not null"`
 	Description sql.NullString `gorm:"column:description"`
-	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+	CreatedAt   time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time      `gorm:"column:updated_at;not null"`
 }
 
 func (clientWorkspaceModel) TableName() string { return "client_workspaces" }
@@ -99,7 +100,7 @@ func (clientWorkspaceModel) TableName() string { return "client_workspaces" }
 type clientWorkspaceChannelModel struct {
 	ClientWorkspaceID string    `gorm:"primaryKey;column:client_workspace_id"`
 	ChannelID         string    `gorm:"primaryKey;column:channel_id"`
-	CreatedAt         time.Time `gorm:"column:created_at;autoCreateTime"`
+	CreatedAt         time.Time `gorm:"column:created_at;not null"`
 }
 
 func (clientWorkspaceChannelModel) TableName() string { return "client_workspace_channels" }
@@ -112,8 +113,8 @@ type clientWorkspaceGuestModel struct {
 	BotID               string    `gorm:"column:bot_id;not null"`
 	BotTemplateID       string    `gorm:"column:bot_template_id;not null"`
 	PlatformIdentifiers string    `gorm:"column:platform_identifiers;type:text"` // JSON
-	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime"`
+	CreatedAt           time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;not null"`
 }
 
 func (clientWorkspaceGuestModel) TableName() string { return "client_workspace_guests" }
@@ -129,6 +130,15 @@ func NewWorkspaceGormRepository(db *gorm.DB) *WorkspaceGormRepository {
 }
 
 func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
+	// Pre-migration: add missing NOT NULL columns with defaults via raw SQL.
+	// GORM's AutoMigrate recreates SQLite tables (CREATE temp → INSERT SELECT → DROP → RENAME).
+	// If the source table lacks columns that the new schema marks NOT NULL, the INSERT fails.
+	// By adding the columns first with ALTER TABLE + DEFAULT, the data is already there
+	// when GORM copies it to the temp table.
+	if err := r.preMigrateSQLite(ctx); err != nil {
+		return fmt.Errorf("pre-migration failed: %w", err)
+	}
+
 	return r.db.WithContext(ctx).AutoMigrate(
 		&workspaceModel{},
 		&channelModel{},
@@ -138,6 +148,45 @@ func (r *WorkspaceGormRepository) Init(ctx context.Context) error {
 		&clientWorkspaceChannelModel{},
 		&clientWorkspaceGuestModel{},
 	)
+}
+
+// preMigrateSQLite adds missing NOT NULL columns to existing tables before AutoMigrate runs.
+// Each ALTER TABLE is idempotent: if the column already exists, SQLite returns "duplicate column"
+// which we silently ignore.
+func (r *WorkspaceGormRepository) preMigrateSQLite(ctx context.Context) error {
+	type migration struct {
+		table  string
+		column string
+		ddl    string // full ALTER TABLE statement
+	}
+
+	migrations := []migration{
+		// workspaces: name and owner_id were added after initial release
+		{"workspaces", "name", `ALTER TABLE workspaces ADD COLUMN name TEXT NOT NULL DEFAULT 'Workspace'`},
+		{"workspaces", "owner_id", `ALTER TABLE workspaces ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'system'`},
+		{"workspaces", "created_at", `ALTER TABLE workspaces ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`},
+		{"workspaces", "updated_at", `ALTER TABLE workspaces ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`},
+		{"workspaces", "config_default_language", `ALTER TABLE workspaces ADD COLUMN config_default_language TEXT DEFAULT 'en'`},
+	}
+
+	for _, m := range migrations {
+		// Check if table exists first
+		var count int64
+		r.db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", m.table).Scan(&count)
+		if count == 0 {
+			continue // Table doesn't exist yet, AutoMigrate will create it fresh
+		}
+
+		// Try to add the column; ignore "duplicate column name" errors
+		if err := r.db.WithContext(ctx).Exec(m.ddl).Error; err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				continue
+			}
+			return fmt.Errorf("migration %s.%s failed: %w", m.table, m.column, err)
+		}
+	}
+
+	return nil
 }
 
 // Workspace CRUD
