@@ -147,7 +147,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	appCfg := AppConfig{
-		Version:            "v2.0.0-beta.26.2", // To be synced or injected
+		Version:            "v2.0.0-beta.26.3", // To be synced or injected
 		Port:               getEnv("APP_PORT", "3000"),
 		Debug:              debug,
 		Environment:        getEnv("APP_ENV", "development"),
