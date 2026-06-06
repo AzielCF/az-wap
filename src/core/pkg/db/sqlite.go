@@ -2,10 +2,9 @@ package db
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // SafeMigrateSQLite bypasses GORM's flawed SQLite table recreation logic

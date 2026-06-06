@@ -87,6 +87,11 @@ export function useApi() {
       }
       
       if (!response.ok) {
+        if (response.status === 401) {
+            // Token is invalid or missing, clear it and redirect to login
+            logout()
+            throw new Error('Unauthorized')
+        }
         // Create an error object that mimics axios structure so components can read err.response.data
         const err: any = new Error(data?.message || data?.error || `API Error ${response.status}`)
         err.response = {
