@@ -31,7 +31,7 @@ const uploadingPhoto = ref(false)
 // Watch for QR code changes to render image
 watch(() => status.value.qr, async (newVal) => {
     console.log("[QR DEBUG] Watcher triggered. Value:", newVal ? newVal.substring(0, 20) + "..." : "null")
-    if (newVal && !newVal.startsWith('http')) {
+    if (newVal) {
         try {
             qrImage.value = await QRCode.toDataURL(newVal, { 
                 width: 300, 
@@ -45,8 +45,6 @@ watch(() => status.value.qr, async (newVal) => {
         } catch (err) {
             console.error('Failed to generate QR', err)
         }
-    } else if (newVal) {
-        qrImage.value = newVal
     } else {
         qrImage.value = ''
     }
