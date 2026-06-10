@@ -50,6 +50,7 @@ type ChannelConfig struct {
 	WebhookURL            string                      `json:"webhook_url,omitempty"`
 	WebhookSecret         string                      `json:"webhook_secret,omitempty"`
 	BotID                 string                      `json:"bot_id,omitempty"`
+	BotTemplateID         string                      `json:"bot_template_id,omitempty"`
 	DefaultLanguage       string                      `json:"default_language,omitempty"`
 	Timezone              string                      `json:"timezone,omitempty"`
 	SkipTLSVerification   bool                        `json:"skip_tls_verification"`

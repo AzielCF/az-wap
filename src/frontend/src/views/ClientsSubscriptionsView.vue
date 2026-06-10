@@ -106,10 +106,29 @@ function getChannelName(id: string) {
            id
 }
 
-function getBotName(id: string) {
-    if (!id) return 'Use Channel Bot (Default)'
-    return bots.value.find(b => b.id === id)?.name || id
+function getBotName(sub: any) {
+    if (!sub.custom_bot_id) return 'Use Channel Bot (Default)'
+    const bot = bots.value.find(b => b.id === sub.custom_bot_id)
+    if (!bot) return sub.custom_bot_id
+    
+    let templateName = sub.custom_bot_template_id ? sub.custom_bot_template_id : ''
+    if (sub.custom_bot_template_id && bot.variants && bot.variants[sub.custom_bot_template_id]) {
+        const variant = bot.variants[sub.custom_bot_template_id]
+        templateName = variant.name || variant.display_name || sub.custom_bot_template_id
+    }
+    
+    return templateName ? `${bot.name} : ${templateName}` : bot.name
 }
+
+const botVariants = computed(() => {
+    if (!newSub.value.custom_bot_id) return []
+    const bot = bots.value.find((b: any) => b.id === newSub.value.custom_bot_id)
+    if (!bot || !bot.variants) return []
+    return Object.entries(bot.variants).map(([id, variant]: [string, any]) => ({
+        id,
+        ...variant
+    })).filter((v: any) => v.is_active !== false)
+})
 
 function getChannel(id: string) {
     return allKnownChannels.value.find(c => c.id === id) || 
@@ -132,6 +151,7 @@ const newSub = ref({
   workspace_id: '',
   channel_id: '',
   custom_bot_id: '',
+  custom_bot_template_id: '',
   custom_system_prompt: '',
   expires_at: '',
   session_timeout: 10, // User requested defaults for subscription
@@ -214,6 +234,7 @@ async function createSubscription() {
   try {
     const payload = {
         ...newSub.value,
+        custom_bot_template_id: newSub.value.custom_bot_template_id || null,
         expires_at: newSub.value.expires_at ? new Date(newSub.value.expires_at).toISOString() : null,
         clear_expires_at: !newSub.value.expires_at,
         session_timeout: newSub.value.session_timeout && newSub.value.session_timeout > 0 ? newSub.value.session_timeout : null,
@@ -275,6 +296,7 @@ async function openEditSub(sub: any) {
         workspace_id: wsID || '',
         channel_id: sub.channel_id,
         custom_bot_id: sub.custom_bot_id || '',
+        custom_bot_template_id: sub.custom_bot_template_id || '',
         custom_system_prompt: sub.custom_system_prompt || '',
         expires_at: sub.expires_at ? sub.expires_at.split('T')[0] : '',
         session_timeout: sub.session_timeout || null,
@@ -402,7 +424,7 @@ onMounted(loadData)
                 <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="storage-box-premium m-0 py-3">
                          <span class="text-xs font-black text-slate-600 uppercase block mb-1">Override Bot</span>
-                         <span class="text-xs font-mono text-indigo-400">{{ getBotName(sub.custom_bot_id) }}</span>
+                         <span class="text-xs font-mono text-indigo-400">{{ getBotName(sub) }}</span>
                     </div>
                     <div v-if="sub.custom_system_prompt" class="storage-box-premium m-0 py-3">
                          <span class="text-xs font-black text-slate-600 uppercase block mb-1">Custom Prompt</span>
@@ -511,6 +533,18 @@ onMounted(loadData)
                     color="indigo"
                 />
                 <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest">Defaults to channel configuration if signal is null.</p>
+            </div>
+
+            <!-- Bot Template Selector -->
+            <div class="form-control" v-if="newSub.custom_bot_id && botVariants.length > 0">
+                <label class="label-premium text-slate-400">Bot Template (Variant)</label>
+                <select v-model="newSub.custom_bot_template_id" class="select-premium h-14 w-full text-lg font-black">
+                    <option value="">(Standard Template)</option>
+                    <option v-for="variant in botVariants" :key="variant.id" :value="variant.id">
+                        {{ variant.name || variant.display_name || variant.id }}
+                    </option>
+                </select>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest">Select a specific persona variant for this bot.</p>
             </div>
 
              <!-- Session Override Section -->

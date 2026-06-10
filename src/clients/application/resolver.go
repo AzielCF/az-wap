@@ -106,7 +106,8 @@ func (r *ClientResolver) Resolve(ctx context.Context, platformID, secondaryID, p
 			if sub.CustomBotID != "" {
 				resolvedBotID = sub.CustomBotID
 				clientCtx.ResolvedBotID = resolvedBotID
-				logrus.Infof("[ClientResolver] Applying custom bot ID: %s", resolvedBotID)
+				clientCtx.ResolvedBotTemplateID = sub.CustomBotTemplateID
+				logrus.Infof("[ClientResolver] Applying custom bot ID: %s (Template: %s)", resolvedBotID, sub.CustomBotTemplateID)
 			}
 
 			// Override de system prompt si existe
@@ -193,6 +194,8 @@ func ToBotEngineContext(ctx *domain.ClientContext) *botengineDomain.ClientContex
 	if ctx.Subscription != nil {
 		result.CustomSystemPrompt = ctx.Subscription.CustomSystemPrompt
 	}
+
+	result.ResolvedBotTemplateID = ctx.ResolvedBotTemplateID
 
 	return result
 }

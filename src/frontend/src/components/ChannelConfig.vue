@@ -35,6 +35,7 @@ const config = ref<any>({
   webhook_url: '',
   webhook_secret: '',
   bot_id: '',
+  bot_template_id: '',
   skip_tls_verification: false,
   auto_reconnect: true,
   chatwoot: {
@@ -118,6 +119,16 @@ const filteredRules = computed(() => {
     } else {
         return accessRules.value.filter(r => r.action === 'DENY')
     }
+})
+
+const botVariants = computed(() => {
+    if (!config.value.bot_id) return []
+    const bot = props.bots.find(b => b.id === config.value.bot_id)
+    if (!bot || !bot.variants) return []
+    return Object.entries(bot.variants).map(([id, variant]: [string, any]) => ({
+        id,
+        ...variant
+    })).filter((v: any) => v.is_active !== false)
 })
 
 const confirmModal = ref({
@@ -551,6 +562,17 @@ onMounted(loadInitialConfig)
                     :nullable="true"
                     color="primary"
                 />
+            </div>
+
+            <div class="form-control w-full" v-if="config.bot_id && botVariants.length > 0">
+                <label class="label-premium">Bot Template (Variant)</label>
+                <select v-model="config.bot_template_id" class="select-premium h-14 w-full text-lg font-black">
+                    <option value="">(Standard Template)</option>
+                    <option v-for="variant in botVariants" :key="variant.id" :value="variant.id">
+                        {{ variant.name || variant.display_name || variant.id }}
+                    </option>
+                </select>
+                <p class="text-xs text-slate-600 font-bold uppercase mt-2 tracking-widest pl-2">Select a specific persona variant for this bot.</p>
             </div>
 
             <div class="form-control w-full">

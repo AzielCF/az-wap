@@ -49,6 +49,7 @@ type BotVariant struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description,omitempty"`
 	SystemPrompt string   `json:"system_prompt"`
+	IsActive     bool     `json:"is_active"`
 	AllowedTools []string `json:"allowed_tools,omitempty"`
 	AllowedMCPs  []string `json:"allowed_mcps,omitempty"`
 

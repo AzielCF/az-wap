@@ -43,20 +43,23 @@ type UpdateClientRequest struct {
 
 // CreateSubscriptionRequest representa la petición para crear una suscripción
 type CreateSubscriptionRequest struct {
-	ChannelID             string         `json:"channel_id"`
+	ChannelID             string         `json:"channel_id" validate:"required"`
 	CustomBotID           string         `json:"custom_bot_id"`
+	CustomBotTemplateID   string         `json:"custom_bot_template_id"`
 	CustomSystemPrompt    string         `json:"custom_system_prompt"`
-	CustomConfig          map[string]any `json:"custom_config"`
-	Priority              int            `json:"priority"`
-	ExpiresAt             *time.Time     `json:"expires_at"`
 	SessionTimeout        int            `json:"session_timeout"`
 	InactivityWarningTime int            `json:"inactivity_warning_time"`
 	MaxHistoryLimit       *int           `json:"max_history_limit"`
+	MaxRecurringReminders *int           `json:"max_recurring_reminders"`
+	CustomConfig          map[string]any `json:"custom_config"`
+	Priority              int            `json:"priority"`
+	ExpiresAt             *time.Time     `json:"expires_at"`
 }
 
 // UpdateSubscriptionRequest representa la petición para actualizar una suscripción
 type UpdateSubscriptionRequest struct {
 	CustomBotID            *string        `json:"custom_bot_id"`
+	CustomBotTemplateID    *string        `json:"custom_bot_template_id"`
 	CustomSystemPrompt     *string        `json:"custom_system_prompt"`
 	CustomConfig           map[string]any `json:"custom_config"`
 	Priority               *int           `json:"priority"`

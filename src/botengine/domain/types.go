@@ -69,6 +69,7 @@ func (m *BotMedia) Cleanup() {
 // BotInput es la estructura agnóstica de entrada para el motor del bot
 type BotInput struct {
 	BotID         string         `json:"bot_id"`
+	BotTemplateID string         `json:"bot_template_id,omitempty"` // ID of the specific variant to use
 	WorkspaceID   string         `json:"workspace_id"` // Adding WorkspaceID for scoped memory
 	SenderID      string         `json:"sender_id"`    // JID o ID de usuario único en la plataforma
 	ChatID        string         `json:"chat_id"`      // ID de la conversación

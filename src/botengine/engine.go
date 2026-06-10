@@ -212,6 +212,37 @@ func (e *Engine) Process(ctx context.Context, input domain.BotInput) (out domain
 		return domain.BotOutput{}, fmt.Errorf("failed to load bot %s: %w", input.BotID, err)
 	}
 
+	// 1.5 Apply Template Variant Override
+	if input.BotTemplateID != "" {
+		if variant, ok := b.Variants[input.BotTemplateID]; ok && variant.IsActive {
+			logrus.Infof("[ENGINE] Applying variant %s to bot %s", input.BotTemplateID, b.ID)
+			if variant.SystemPrompt != "" {
+				b.SystemPrompt = variant.SystemPrompt
+			}
+			if variant.AudioEnabled != nil {
+				b.AudioEnabled = *variant.AudioEnabled
+			}
+			if variant.ImageEnabled != nil {
+				b.ImageEnabled = *variant.ImageEnabled
+			}
+			if variant.VideoEnabled != nil {
+				b.VideoEnabled = *variant.VideoEnabled
+			}
+			if variant.DocumentEnabled != nil {
+				b.DocumentEnabled = *variant.DocumentEnabled
+			}
+			if variant.MemoryEnabled != nil {
+				b.MemoryEnabled = *variant.MemoryEnabled
+			}
+			// Tools and MCP filtering is done in orchestration later. 
+			// I am attaching the variant to the bot input metadata so tools loader can filter them if needed.
+			input.Metadata["allowed_tools"] = variant.AllowedTools
+			input.Metadata["allowed_mcps"] = variant.AllowedMCPs
+		} else {
+			logrus.Warnf("[ENGINE] Variant %s not found or inactive for bot %s, using defaults", input.BotTemplateID, b.ID)
+		}
+	}
+
 	// 2. Whitelist logic
 	if len(b.Whitelist) > 0 {
 		allowed := false

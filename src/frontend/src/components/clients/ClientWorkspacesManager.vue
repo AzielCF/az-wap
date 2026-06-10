@@ -134,10 +134,9 @@ const botVariants = computed(() => {
     if (!guestForm.value.bot_id) return []
     const bot = botMap.value[guestForm.value.bot_id]
     if (!bot || !bot.variants) return []
-    return Object.entries(bot.variants).map(([id, v]: [string, any]) => ({
-        id,
-        ...v
-    }))
+    return Object.entries(bot.variants)
+        .map(([id, v]: [string, any]) => ({ id, ...v }))
+        .filter(v => v.is_active !== false)
 })
 
 function getBotDisplayName(id: string) {

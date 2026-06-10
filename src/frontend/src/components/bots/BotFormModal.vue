@@ -114,6 +114,19 @@ const currentDescription = computed({
   }
 })
 
+const currentIsActive = computed({
+  get() {
+    if (!selectedVariant.value) return true
+    const variant = newBot.value.variants[selectedVariant.value]
+    return variant ? (variant.is_active !== false) : true
+  },
+  set(val: boolean) {
+    if (selectedVariant.value && newBot.value.variants[selectedVariant.value]) {
+        newBot.value.variants[selectedVariant.value].is_active = val
+    }
+  }
+})
+
 function createCapabilityProp(prop: 'memory_enabled' | 'audio_enabled' | 'image_enabled' | 'video_enabled' | 'document_enabled') {
   return computed({
     get() {
@@ -148,6 +161,7 @@ function addVariant(inherit: boolean) {
             name: newBot.value.name + ' (Copy)',
             description: newBot.value.description,
             system_prompt: newBot.value.system_prompt,
+            is_active: true,
             allowed_tools: undefined, // Let it inherit all active tools initially
             allowed_mcps: undefined // Let it inherit all active servers initially 
         }
@@ -156,6 +170,7 @@ function addVariant(inherit: boolean) {
             name: 'New Sub-Role',
             description: '',
             system_prompt: '',
+            is_active: true,
             allowed_tools: [],
             allowed_mcps: [] 
         }
@@ -613,15 +628,24 @@ function clearMemory() {
               <textarea v-model="newBot.knowledge_base" rows="5" class="input-premium w-full leading-relaxed text-sm p-6" placeholder="Add custom domain data..."></textarea>
           </div>
           
-          <div v-if="selectedVariant !== ''" class="p-6 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex items-start gap-4">
-              <div class="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0">
-                  <Bot class="w-4 h-4 text-indigo-400" />
+          <div v-if="selectedVariant !== ''" class="p-6 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex flex-col gap-4">
+              <div class="flex items-start gap-4">
+                  <div class="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0">
+                      <Bot class="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <div class="flex-1">
+                      <h4 class="text-sm font-bold text-indigo-400 mb-1">Sub-Role Mode Active</h4>
+                      <p class="text-xs text-slate-400 leading-relaxed">
+                          This system prompt will completely override the Base Identity's prompt when this variant is invoked dynamically via the API. The Base Identity's Engine capabilities, MCP tools, and Knowledge Context are still inherited unless restricted.
+                      </p>
+                  </div>
               </div>
-              <div>
-                  <h4 class="text-sm font-bold text-indigo-400 mb-1">Sub-Role Mode Active</h4>
-                  <p class="text-xs text-slate-400 leading-relaxed">
-                      This system prompt will completely override the Base Identity's prompt when this variant is invoked dynamically via the API. The Base Identity's Engine capabilities, MCP tools, and Knowledge Context are still inherited unless restricted.
-                  </p>
+              <div class="pt-4 border-t border-indigo-500/10 flex items-center justify-between">
+                  <div>
+                      <h4 class="text-sm font-bold text-slate-300">Selectable in Assignments</h4>
+                      <p class="text-[11px] text-slate-500 mt-0.5">Allow this variant to be selected manually in workspaces or channels.</p>
+                  </div>
+                  <input type="checkbox" v-model="currentIsActive" class="toggle toggle-primary" />
               </div>
           </div>
       </div>

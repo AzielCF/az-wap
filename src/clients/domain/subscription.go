@@ -18,6 +18,7 @@ type ClientSubscription struct {
 	ClientID              string             `json:"client_id"`
 	ChannelID             string             `json:"channel_id"`
 	CustomBotID           string             `json:"custom_bot_id,omitempty"`
+	CustomBotTemplateID   string             `json:"custom_bot_template_id,omitempty"`
 	CustomSystemPrompt    string             `json:"custom_system_prompt,omitempty"`
 	CustomConfig          map[string]any     `json:"custom_config"`
 	Priority              int                `json:"priority"`

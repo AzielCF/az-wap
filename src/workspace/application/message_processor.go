@@ -82,19 +82,25 @@ func (p *MessageProcessor) ProcessFinal(ctx context.Context, ch channelDomain.Ch
 		}
 	}
 
+	botTemplateID := ""
+	if cCtx, ok := safeMetadata["client_context"].(*botengineDomain.ClientContext); ok && cCtx != nil {
+		botTemplateID = cCtx.ResolvedBotTemplateID
+	}
+
 	input := botengineDomain.BotInput{
-		BotID:       botID,
-		WorkspaceID: ch.WorkspaceID,
-		TraceID:     fmt.Sprintf("%v", safeMetadata["message_id"]),
-		InstanceID:  ch.ID,
-		ChatID:      msg.ChatID,
-		SenderID:    msg.SenderID,
-		Platform:    p.mapChannelTypeToPlatform(ch.Type),
-		Text:        msg.Text,
-		Metadata:    safeMetadata,
-		FocusScore:  currentFocus,
-		Language:    ch.Config.DefaultLanguage, // Default from channel
-		IsTester:    ch.Config.IsTester,
+		BotID:         botID,
+		BotTemplateID: botTemplateID,
+		WorkspaceID:   ch.WorkspaceID,
+		TraceID:       fmt.Sprintf("%v", safeMetadata["message_id"]),
+		InstanceID:    ch.ID,
+		ChatID:        msg.ChatID,
+		SenderID:      msg.SenderID,
+		Platform:      p.mapChannelTypeToPlatform(ch.Type),
+		Text:          msg.Text,
+		Metadata:      safeMetadata,
+		FocusScore:    currentFocus,
+		Language:      ch.Config.DefaultLanguage, // Default from channel
+		IsTester:      ch.Config.IsTester,
 	}
 
 	// Inject channel timezone into metadata for tool resolution chain

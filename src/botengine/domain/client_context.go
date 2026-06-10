@@ -30,8 +30,9 @@ type ClientContext struct {
 	IsPremium       bool `json:"is_premium"`
 
 	// Override de suscripción
-	CustomSystemPrompt string `json:"custom_system_prompt,omitempty"`
-	IsTester           bool   `json:"is_tester"`
+	CustomSystemPrompt    string `json:"custom_system_prompt,omitempty"`
+	ResolvedBotTemplateID string `json:"resolved_bot_template_id,omitempty"`
+	IsTester              bool   `json:"is_tester"`
 }
 
 // ForPrompt generates text to inject into the bot's system prompt.

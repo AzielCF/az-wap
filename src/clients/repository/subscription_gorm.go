@@ -21,6 +21,7 @@ type subscriptionModel struct {
 	ClientID              string `gorm:"index:idx_subscriptions_client;index:idx_unique_sub,unique;not null"`
 	ChannelID             string `gorm:"index:idx_subscriptions_channel;index:idx_unique_sub,unique;not null"` // FK logic handled by DB constraints ideally
 	CustomBotID           sql.NullString
+	CustomBotTemplateID   sql.NullString
 	CustomSystemPrompt    sql.NullString
 	CustomConfig          sql.NullString `gorm:"type:text;default:'{}'"` // JSON
 	Priority              int            `gorm:"default:0"`
@@ -227,6 +228,7 @@ func toSubscriptionModel(s *domain.ClientSubscription) (subscriptionModel, error
 		ClientID:              s.ClientID,
 		ChannelID:             s.ChannelID,
 		CustomBotID:           sql.NullString{String: s.CustomBotID, Valid: s.CustomBotID != ""},
+		CustomBotTemplateID:   sql.NullString{String: s.CustomBotTemplateID, Valid: s.CustomBotTemplateID != ""},
 		CustomSystemPrompt:    sql.NullString{String: s.CustomSystemPrompt, Valid: s.CustomSystemPrompt != ""},
 		CustomConfig:          sql.NullString{String: string(configJSON), Valid: true},
 		Priority:              s.Priority,
@@ -247,6 +249,7 @@ func fromSubscriptionModel(m subscriptionModel) (*domain.ClientSubscription, err
 		ClientID:              m.ClientID,
 		ChannelID:             m.ChannelID,
 		CustomBotID:           nullStringValue(m.CustomBotID),
+		CustomBotTemplateID:   nullStringValue(m.CustomBotTemplateID),
 		CustomSystemPrompt:    nullStringValue(m.CustomSystemPrompt),
 		Priority:              m.Priority,
 		Status:                domain.SubscriptionStatus(m.Status),

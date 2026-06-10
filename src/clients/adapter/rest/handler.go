@@ -379,6 +379,7 @@ func (h *ClientHandler) CreateSubscription(c *fiber.Ctx) error {
 		ClientID:              clientID,
 		ChannelID:             req.ChannelID,
 		CustomBotID:           req.CustomBotID,
+		CustomBotTemplateID:   req.CustomBotTemplateID,
 		CustomSystemPrompt:    req.CustomSystemPrompt,
 		CustomConfig:          req.CustomConfig,
 		Priority:              req.Priority,
@@ -473,6 +474,9 @@ func (h *ClientHandler) UpdateSubscription(c *fiber.Ctx) error {
 	// Actualizar campos
 	if req.CustomBotID != nil {
 		sub.CustomBotID = *req.CustomBotID
+	}
+	if req.CustomBotTemplateID != nil {
+		sub.CustomBotTemplateID = *req.CustomBotTemplateID
 	}
 	if req.CustomSystemPrompt != nil {
 		sub.CustomSystemPrompt = *req.CustomSystemPrompt

@@ -11,7 +11,8 @@ type ClientContext struct {
 	Subscription *ClientSubscription `json:"subscription,omitempty"`
 
 	// Bot ID a usar (resuelto)
-	ResolvedBotID string `json:"resolved_bot_id"`
+	ResolvedBotID         string `json:"resolved_bot_id"`
+	ResolvedBotTemplateID string `json:"resolved_bot_template_id,omitempty"`
 
 	// System prompt adicional (si hay override)
 	AdditionalPrompt string `json:"additional_prompt,omitempty"`
