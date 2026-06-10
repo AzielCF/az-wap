@@ -335,6 +335,7 @@ function resetForm() {
         workspace_id: '',
         channel_id: '',
         custom_bot_id: '',
+        custom_bot_template_id: '',
         custom_system_prompt: '',
         expires_at: '',
         session_timeout: 10,
