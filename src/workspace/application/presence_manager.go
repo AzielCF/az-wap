@@ -108,7 +108,7 @@ func (pm *PresenceManager) HandleIncomingActivity(channelID string) {
 		go func() {
 			// Ensure it's connected first (self-healing)
 			if adapter.Status() != channel.ChannelStatusConnected {
-				logrus.Infof("[PresenceManager] Reconnecting socket for %s...", channelID)
+				logrus.Tracef("[PresenceManager] Reconnecting socket for %s...", channelID)
 				_ = adapter.Resume(context.Background())
 			}
 			_ = adapter.SetOnline(context.Background(), true)
@@ -159,7 +159,7 @@ func (pm *PresenceManager) CheckChannelPresence(channelID string) {
 			pm.adaptersMu.RUnlock()
 			if ok {
 				// We keep the socket 100% OPEN, just go visually offline
-				logrus.Infof("[PresenceManager] Channel %s going visually OFFLINE (Socket stays persistent)", channelID)
+				logrus.Tracef("[PresenceManager] Channel %s going visually OFFLINE (Socket stays persistent)", channelID)
 				_ = adapter.SetOnline(context.Background(), false)
 				p, _ := pm.store.Get(context.Background(), channelID)
 				if p != nil {
@@ -189,7 +189,7 @@ func (pm *PresenceManager) EnsureChannelConnectivity(channelID string) {
 
 	// If socket is not connected, reconnect it AUTOMATICALLY
 	if adapter.Status() != channel.ChannelStatusConnected {
-		logrus.Infof("[PresenceManager] Auto-healing: reconnecting socket for channel %s", channelID)
+		logrus.Tracef("[PresenceManager] Auto-healing: reconnecting socket for channel %s", channelID)
 		go func() {
 			_ = adapter.Resume(context.Background())
 

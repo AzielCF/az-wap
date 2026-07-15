@@ -869,11 +869,6 @@ func getCachedContact(instance, phone string) (int64, string, bool) {
 	defer contactCacheMu.RUnlock()
 	entry, ok := contactCache[key]
 	if ok && time.Now().After(entry.ExpiresAt) {
-		go func(k string) { // Limpieza lazy asíncrona
-			contactCacheMu.Lock()
-			delete(contactCache, k)
-			contactCacheMu.Unlock()
-		}(key)
 		return 0, "", false
 	}
 	return entry.ContactID, entry.SourceID, ok
@@ -905,11 +900,6 @@ func getCachedConversation(instance, phone string) (int64, bool) {
 	defer conversationCacheMu.RUnlock()
 	entry, ok := conversationCache[key]
 	if ok && time.Now().After(entry.ExpiresAt) {
-		go func(k string) {
-			conversationCacheMu.Lock()
-			delete(conversationCache, k)
-			conversationCacheMu.Unlock()
-		}(key)
 		return 0, false
 	}
 	return entry.ConversationID, ok

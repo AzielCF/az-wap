@@ -792,11 +792,9 @@ func (m *Manager) acquireLock(key string, expiration time.Duration) bool {
 		if loaded {
 			return false
 		}
-		// Cleanup goroutine for this key (simple, not efficient for high load but functional)
-		go func() {
-			time.Sleep(expiration)
+		time.AfterFunc(expiration, func() {
 			m.messageDedup.Delete(key)
-		}()
+		})
 		return true
 	}
 

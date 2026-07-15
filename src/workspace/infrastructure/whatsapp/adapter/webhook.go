@@ -27,6 +27,7 @@ func (wa *WhatsAppAdapter) submitWebhook(ctx context.Context, payload map[string
 	}
 
 	transport := &http.Transport{
+		DisableKeepAlives: true,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: insecureSkipVerify,
 		},
@@ -65,9 +66,10 @@ func (wa *WhatsAppAdapter) submitWebhook(ctx context.Context, payload map[string
 		req.Body = io.NopCloser(bytes.NewBuffer(postBody))
 		resp, err := client.Do(req)
 		if err == nil {
-			defer resp.Body.Close()
+			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				logrus.Infof("Successfully submitted webhook on attempt %d", attempt+1)
+				client.CloseIdleConnections()
 				return nil
 			}
 			err = fmt.Errorf("webhook returned status %d", resp.StatusCode)
@@ -79,5 +81,6 @@ func (wa *WhatsAppAdapter) submitWebhook(ctx context.Context, payload map[string
 		}
 	}
 
+	client.CloseIdleConnections()
 	return pkgError.WebhookError(fmt.Sprintf("error when submit webhook after %d attempts: %v", attempt, err))
 }

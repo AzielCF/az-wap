@@ -19,6 +19,7 @@ type TaskScheduler struct {
 	valkeyClient *valkey.Client
 	channels     *ChannelService
 	acquireLock  func(key string, expiration time.Duration) bool
+	wakeUpChan   chan struct{}
 }
 
 // NewTaskScheduler creates a new instance of the scheduler.
@@ -33,6 +34,7 @@ func NewTaskScheduler(
 		valkeyClient: vk,
 		channels:     channels,
 		acquireLock:  lockFunc,
+		wakeUpChan:   make(chan struct{}, 1),
 	}
 }
 
@@ -49,6 +51,10 @@ func (s *TaskScheduler) StartLoop(ctx context.Context) {
 	go func() {
 		err := s.valkeyClient.Inner().Receive(ctx, s.valkeyClient.Inner().B().Subscribe().Channel(signalChan).Build(), func(msg valkeylib.PubSubMessage) {
 			logrus.Debug("[SCHEDULER] Wake-up signal received from Valkey")
+			select {
+			case s.wakeUpChan <- struct{}{}:
+			default:
+			}
 		})
 		if err != nil && ctx.Err() == nil {
 			logrus.WithError(err).Error("[SCHEDULER] Pub/Sub listener failed")
@@ -86,6 +92,10 @@ func (s *TaskScheduler) runWorker(ctx context.Context) {
 		case <-ctx.Done():
 			adaptiveTimer.Stop()
 			return
+		case <-s.wakeUpChan:
+			adaptiveTimer.Stop()
+			s.PromoteTasks(ctx)
+			s.ExecTasks(ctx)
 		case <-safetyTicker.C:
 			adaptiveTimer.Stop()
 			s.PromoteTasks(ctx)
