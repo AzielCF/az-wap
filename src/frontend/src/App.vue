@@ -20,31 +20,18 @@ const appVersion = ref('v0.0.0') // Default to zero state
 const { get } = useApi()
 
 onMounted(async () => {
-    // 1. Fetch Version ASAP
-    try {
-        const info: any = await get('/app/version')
-        if (info && info.version) {
-            appVersion.value = info.version
-        }
-    } catch(e) { /* ignore */ }
-
-    // Wait for router
     await router.isReady()
-    
-    // Optional: Validate session if we have a token and are not on public route
+
     const token = localStorage.getItem('api_token')
     if (token && !router.currentRoute.value.meta.isPublic) {
       try {
         await get('/health/status')
-      } catch (e: any) {
-        // If 401, clear token and redirect
-        if (e.response && e.response.status === 401) {
-          localStorage.removeItem('api_token')
-          if (router.currentRoute.value.name !== 'login') {
-            router.push('/login')
-          }
+
+        const info: any = await get('/app/version')
+        if (info?.version) {
+          appVersion.value = info.version
         }
-      }
+      } catch { /* useApi handles invalid credentials */ }
     }
 
     // Small artificial delay for smoothness if loading was too fast
