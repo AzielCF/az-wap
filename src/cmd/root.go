@@ -260,6 +260,11 @@ func runServer(cmd *cobra.Command, _ []string) {
 
 	apiGroup.Use(basicauth.New(basicauth.Config{
 		Users: account,
+		Unauthorized: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid or missing API credentials",
+			})
+		},
 		Next: func(c *fiber.Ctx) bool {
 			if c.Method() == fiber.MethodOptions {
 				return true
