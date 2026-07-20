@@ -98,38 +98,6 @@ onMounted(loadStats)
 
 <template>
   <div class="space-y-16 max-w-[1400px] mx-auto pb-20 animate-in fade-in duration-700">
-    <!-- Professional Hero Section -->
-    <div class="relative group">
-        <div class="absolute -inset-2 bg-primary/20 rounded-[3rem] blur-3xl opacity-10 group-hover:opacity-20 transition duration-1000"></div>
-        <div class="relative bg-[#161a23]/40 backdrop-blur-xl rounded-[2.5rem] border border-white/5 p-10 lg:p-16 overflow-hidden flex flex-col lg:flex-row items-center justify-between shadow-2xl">
-            <div class="relative z-10 max-w-2xl text-center lg:text-left">
-                <div class="flex items-center justify-center lg:justify-start gap-4 mb-8">
-                    <span class="w-10 h-[2px] bg-primary/40 hidden lg:block"></span>
-                    <span class="text-xs font-black uppercase tracking-widest text-primary">Az-Wap AI WhatsApp Engine</span>
-                </div>
-                
-                <h1 class="text-5xl lg:text-7xl font-black tracking-tighter mb-6 text-white leading-[0.9]">
-                  Intelligent AI <br/> <span class="text-primary italic">WhatsApp Protocols</span>.
-                </h1>
-                
-                <p class="text-slate-400 text-lg mb-12 max-w-lg leading-relaxed font-medium mx-auto lg:mx-0">
-                  Deploy AI-powered conversational bots with human-like presence. Multi-tenant management, tool orchestration, and scalable automation.
-                </p>
-                
-                <div class="flex flex-wrap justify-center lg:justify-start gap-6">
-                  <RouterLink to="/workspaces" class="btn-premium btn-premium-primary px-12 h-16">
-                    Launch Workspaces
-                  </RouterLink>
-                  <RouterLink to="/monitoring" class="btn-premium btn-premium-ghost px-10 h-16 border border-white/5">
-                    Live Telemetry
-                  </RouterLink>
-                </div>
-            </div>
-
-            <!-- Aesthetic Background Overlay -->
-            <div class="absolute right-0 top-0 w-1/2 h-full bg-gradient-to-l from-primary/5 to-transparent pointer-events-none"></div>
-        </div>
-    </div>
 
     <!-- Stats Grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">

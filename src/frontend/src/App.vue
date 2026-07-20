@@ -19,6 +19,11 @@ const isReady = ref(false)
 const appVersion = ref('v0.0.0') // Default to zero state
 const { get } = useApi()
 
+const logout = () => {
+    localStorage.removeItem('api_token')
+    router.push({ name: 'login' })
+}
+
 onMounted(async () => {
     await router.isReady()
 
@@ -181,14 +186,19 @@ onMounted(async () => {
 
         <!-- Bottom Cluster Node Info (Fixed Bottom) -->
         <div class="p-8 bg-black/30 border-t border-white/5 shrink-0">
-          <div class="flex items-center gap-4">
-            <div class="bg-primary/20 text-primary rounded-lg w-10 h-10 flex items-center justify-center ring-1 ring-primary/30 shadow-inner">
-                 <span class="text-xs font-bold uppercase tracking-widest">AZL</span>
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary/20 text-primary rounded-lg w-10 h-10 flex items-center justify-center ring-1 ring-primary/30 shadow-inner">
+                     <span class="text-xs font-bold uppercase tracking-widest">AZL</span>
+                </div>
+                <div>
+                  <p class="text-xs font-bold text-white uppercase tracking-tight">Cloud Master</p>
+                   <p class="text-xs text-success font-bold uppercase tracking-widest animate-pulse">Running Pulse</p>
+                </div>
             </div>
-            <div>
-              <p class="text-xs font-bold text-white uppercase tracking-tight">Cloud Master</p>
-               <p class="text-xs text-success font-bold uppercase tracking-widest animate-pulse">Running Pulse</p>
-            </div>
+            <button @click="logout" class="text-slate-500 hover:text-error transition-colors p-2 rounded-lg hover:bg-white/5" title="Logout">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            </button>
           </div>
         </div>
       </div>
